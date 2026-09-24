@@ -184,9 +184,15 @@ _SKILL_ABILITIES = {
 
 
 @router.post("/character/{character_id}/attack")
-def character_attack(character_id: str, item_name: str):
+def character_attack(character_id: str, item_name: str,
+                     mode: str = "normal",
+                     target_ac: int | None = None):
     """Ataque completo con un arma del inventario: tirada de impacto
-    (d20 + mod + prof, con efectos/condiciones) + tirada de daño."""
+    (d20 + mod + prof, con condiciones/efectos) + tirada de daño.
+
+    mode: normal|adv|dis — ventaja/desventaja explícita del jugador;
+    las condiciones mecánicas del personaje se aplican encima.
+    target_ac: si se informa, el resultado indica impacto/fallo."""
     conn = state_db()
     row = conn.execute(
         "SELECT data FROM characters WHERE id = ?", (character_id,)
@@ -210,13 +216,29 @@ def character_attack(character_id: str, item_name: str):
         str(w.get("weapon_range", "")).lower() else "str")
     hit_bonus = char.proficiency_bonus + mod
     dmg_dice = (w.get("damage") or {}).get("damage_dice", "1d4")
-    hit = dice_roll(f"1d20{hit_bonus:+d}")
+
+    # condiciones: la mecánica es idéntica a /roll
+    c_adv, c_dis, fail, c_notes = _condition_mods(char, "attack")
+    if mode == "adv":
+        c_adv = True
+    elif mode == "dis":
+        c_dis = True
+    suffix = ("adv" if c_adv and not c_dis
+              else "dis" if c_dis and not c_adv else "")
+    hit = dice_roll(f"1d20{suffix}{hit_bonus:+d}")
     dmg = dice_roll(f"{dmg_dice}{mod:+d}")
-    return {"weapon": item.name,
-            "hit": {"rolls": hit.rolls, "total": hit.total,
-                    "bonus": hit_bonus},
-            "damage": {"expression": dmg.expression, "rolls": dmg.rolls,
-                       "total": dmg.total}}
+    result = {"weapon": item.name,
+              "auto_fail": fail,
+              "notes": c_notes,
+              "hit": {"rolls": hit.rolls, "total": hit.total,
+                      "bonus": hit_bonus,
+                      "mode": suffix or "normal"},
+              "damage": {"expression": dmg.expression,
+                         "rolls": dmg.rolls, "total": dmg.total}}
+    if target_ac is not None and not fail:
+        result["hit"]["hits"] = hit.total >= target_ac
+        result["hit"]["target_ac"] = target_ac
+    return result
 
 
 _MODELS = {"character": Character, "combat": Combat}

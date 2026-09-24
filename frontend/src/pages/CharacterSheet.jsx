@@ -26,6 +26,7 @@ export default function CharacterSheet() {
   const [derived, setDerived] = useState(null)
   const [shops, setShops] = useState([])
   const [condOptions, setCondOptions] = useState([])
+  const [atkItem, setAtkItem] = useState(null)   // arma en panel de ataque
 
   const loadMeta = () => {
     api.derivedAll(id).then(setDerived).catch(() => {})
@@ -454,9 +455,7 @@ export default function CharacterSheet() {
               {it.attuned && <span className="muted"> · sintonizado</span>}
             </span>
             {it.source_id && (
-              <button onClick={() =>
-                op('character.attack', { item_id: it.id })
-              }>Atacar</button>)}
+              <button onClick={() => setAtkItem(it)}>Atacar</button>)}
             <button onClick={() =>
               op(it.equipped ? 'character.item.unequip'
                              : 'character.item.equip',
@@ -466,6 +465,11 @@ export default function CharacterSheet() {
                                       { item_id: it.id, quantity: 1 })}>-</button>
           </div>
         ))}
+        {atkItem && (
+          <AttackPanel charId={id} item={atkItem}
+                       onResult={(line) =>
+                         setRollLog((l) => [line, ...l].slice(0, 10))}
+                       onClose={() => setAtkItem(null)} />)}
       </section>
 
       <section className="card" hidden={focus ? !hud.has('combate') : tab !== 'combate'}>
@@ -753,6 +757,52 @@ const COND_RULES = {
   grappled: 'Velocidad 0', agarrado: 'Velocidad 0',
   agarrada: 'Velocidad 0',
   dead: 'Muerto', muerto: 'Muerto', muerta: 'Muerto',
+}
+
+/** Panel de ataque: muestra mods antes de tirar y permite marcar
+    ventaja/desventaja y CA del objetivo — nada de tiradas ciegas. */
+function AttackPanel({ charId, item, onResult, onClose }) {
+  const [mode, setMode] = useState('normal')
+  const [ac, setAc] = useState('')
+  const [last, setLast] = useState(null)
+  const roll = async () => {
+    const r = await api.characterAttack(
+      charId, item.name, mode, ac ? +ac : null)
+    setLast(r)
+    const miss = r.hit.hits === false ? ' — fallo'
+               : r.hit.hits === true ? ' — ¡impacta!' : ''
+    onResult(`${item.name}: impacto ${r.hit.total}${miss}` +
+             ` · daño ${r.damage.expression} = ${r.damage.total}` +
+             (r.notes?.length ? ` [${r.notes.join(', ')}]` : ''))
+  }
+  return (
+    <div className="card" role="dialog" aria-label={`Atacar con ${item.name}`}
+         style={{ background: 'var(--card-raised)' }}>
+      <strong>{item.name}</strong>
+      <div className="row" role="radiogroup" aria-label="Modo de ataque">
+        {[['normal', 'Normal'], ['adv', 'Ventaja'],
+          ['dis', 'Desventaja']].map(([v, l]) => (
+          <label key={v}>
+            <input type="radio" name="atk-mode" checked={mode === v}
+                   onChange={() => setMode(v)} /> {l}</label>))}
+      </div>
+      <div className="row">
+        <input type="number" placeholder="CA objetivo (opcional)"
+               aria-label="CA del objetivo" style={{ maxWidth: 150 }}
+               value={ac} onChange={(e) => setAc(e.target.value)} />
+        <button className="primary" onClick={roll}>Tirar ataque</button>
+        <button className="ghost" onClick={onClose}>Cerrar</button>
+      </div>
+      {last && (
+        <p className="muted" role="status">
+          Impacto: {last.hit.rolls.join(' + ')} = <b>{last.hit.total}</b>
+          {last.hit.target_ac != null &&
+            ` vs CA ${last.hit.target_ac} → ${last.hit.hits ? 'impacta' : 'falla'}`}
+          <br />Daño: {last.damage.expression} = <b>{last.damage.total}</b>
+          {last.notes?.length > 0 && <><br />{last.notes.join(' · ')}</>}
+        </p>)}
+    </div>
+  )
 }
 
 function CondChip({ name, onRemove }) {

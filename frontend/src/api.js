@@ -99,9 +99,11 @@ export const api = {
   startScene: (campaignId, sceneId) =>
     req(`/api/campaigns/${campaignId}/scenes/${sceneId}/start`,
         { method: 'POST' }),
-  characterAttack: (characterId, itemName) =>
+  characterAttack: (characterId, itemName, mode = 'normal',
+                    targetAc = null) =>
     req(`/api/operations/character/${characterId}/attack` +
-        `?item_name=${encodeURIComponent(itemName)}`, { method: 'POST' }),
+        `?item_name=${encodeURIComponent(itemName)}&mode=${mode}` +
+        (targetAc ? `&target_ac=${targetAc}` : ''), { method: 'POST' }),
   characterRoll: (characterId, expression, rollType = 'check',
                   useInspiration = false) =>
     req(`/api/operations/character/${characterId}/roll` +

@@ -506,9 +506,23 @@ export default function CharacterSheet() {
           </div>)}
       </section>
 
-      {(d.skill_proficiencies?.length > 0 || d.save_proficiencies?.length > 0) && (
-        <section className="card optional">
-          <h2>Competencias</h2>
+      <section className="card optional">
+        <h2>Competencias</h2>
+        <SpellPicker entityType="skill" verb="Competente"
+          placeholder="Habilidad (percepción, sigilo…)"
+          onPick={(sid) =>
+            op('character.proficiency.add',
+               { kind: 'skill',
+                 name: sid.split(':').pop().split('|')[0]
+                      .replace(/-/g, ' ') })} />
+        <div className="row">
+          <span className="muted">Salvación:</span>
+          {['str', 'dex', 'con', 'int', 'wis', 'cha'].map((a) => (
+            <button key={a} className="ghost" onClick={() =>
+              op('character.proficiency.add',
+                 { kind: 'save', name: a })}>{a.toUpperCase()}</button>))}
+        </div>
+        {(d.skill_proficiencies?.length > 0 || d.save_proficiencies?.length > 0) && (
           <div className="row" style={{ flexWrap: 'wrap' }}>
             {d.save_proficiencies?.map((s) => (
               <span key={s} className="chip">save:{s}
@@ -523,8 +537,8 @@ export default function CharacterSheet() {
                      { kind: 'skill', name: s })}>×</button>
               </span>))}
           </div>
-        </section>
-      )}
+        )}
+      </section>
 
       <section className="card optional">
         <h2>Diario</h2>

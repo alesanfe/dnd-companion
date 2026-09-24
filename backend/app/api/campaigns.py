@@ -41,18 +41,37 @@ def create_campaign(body: CampaignCreate):
 
 class JoinIn(BaseModel):
     invite_code: str
+    user_id: str | None = None          # registra membresía si se pasa
+    role: str = "player"
 
 
 @router.post("/join")
 def join_campaign(body: JoinIn):
-    """Unirse a una campaña por código de invitación."""
+    """Unirse a una campaña por código de invitación. Si llega user_id,
+    queda registrado como miembro con su rol."""
     conn = state_db()
     row = conn.execute(
         "SELECT id, name, ruleset FROM campaigns WHERE invite_code = ?",
         (body.invite_code,)).fetchone()
     if row is None:
         raise HTTPException(404, "campaign not found")
+    if body.user_id:
+        conn.execute(
+            "INSERT OR IGNORE INTO members "
+            "(campaign_id, user_id, role, joined_at) VALUES (?,?,?,?)",
+            (row["id"], body.user_id, body.role,
+             datetime.now(timezone.utc).isoformat()))
+        conn.commit()
     return {"id": row["id"], "name": row["name"], "ruleset": row["ruleset"]}
+
+
+@router.get("/{campaign_id}/members")
+def list_members(campaign_id: str):
+    conn = state_db()
+    rows = conn.execute(
+        "SELECT user_id, role, joined_at FROM members "
+        "WHERE campaign_id = ?", (campaign_id,)).fetchall()
+    return {"members": [dict(r) for r in rows]}
 
 
 @router.get("/{campaign_id}/state")

@@ -380,6 +380,38 @@ def shop_buy(char: Character, p: dict, ctx):
                      "purse": char.purse}}]
 
 
+@op("character.craft")
+def craft(char: Character, p: dict, ctx):
+    """Fabricación/downtime: consume ingredientes del inventario y
+    produce el objeto. Reversible via snapshot."""
+    inputs = p.get("inputs", [])
+    output = p.get("output", {})
+    if not inputs or not output.get("name"):
+        raise ValueError("craft requiere inputs y output.name")
+    for need in inputs:
+        have = next((i for i in char.inventory
+                     if i.name == need["name"]), None)
+        if not have or have.quantity < int(need.get("quantity", 1)):
+            raise ValueError(f"falta ingrediente: {need['name']}")
+    before = char.model_dump()
+    for need in inputs:
+        for _ in range(int(need.get("quantity", 1))):
+            item = next(i for i in char.inventory
+                        if i.name == need["name"])
+            item.quantity -= 1
+            if item.quantity <= 0:
+                char.inventory.remove(item)
+    from ..domain.character import InventoryItem
+    import uuid as _uuid
+    char.inventory.append(InventoryItem(
+        id=_uuid.uuid4().hex, name=output["name"],
+        quantity=int(output.get("quantity", 1))))
+    return _restore_inverse(before), [
+        {"type": "inventory.item.transferred",
+         "payload": {"crafted": output["name"],
+                     "consumed": [i["name"] for i in inputs]}}]
+
+
 def _content(ctx, entity_id: str) -> dict | None:
     """Lee una entidad de la content DB (None si no hay ctx/DB)."""
     import json as _json

@@ -20,6 +20,7 @@ from ..db.connections import content_db, state_db
 from ..domain.character import Character
 from ..domain.combat import Combat
 from ..domain.events import Event, EventType, OperationStatus
+from ..engine.dice import roll as dice_roll
 from ..engine.combat_ops import apply_combat_operation
 from ..engine.ops import apply_operation
 from ..ws.rooms import manager
@@ -50,6 +51,52 @@ class OpContext:
 
     def state_db(self):
         return self._state
+
+
+@router.post("/character/{character_id}/roll")
+def character_roll(character_id: str, expression: str = "1d20",
+                   roll_type: str = "check"):
+    """Tirada a través del motor de efectos: consulta ventaja/desventaja
+    y mods declarativos sobre el roll_type (attack|save|check|skill:X).
+    Devuelve el resultado con trazabilidad de qué efectos aplicaron."""
+    conn = state_db()
+    row = conn.execute(
+        "SELECT data FROM characters WHERE id = ?", (character_id,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "character not found")
+    char = Character(**json.loads(row["data"]))
+
+    expr = expression.strip().lower()
+    adv = dis = False
+    extra_mod = 0
+    applied = []
+    for eff in char.effects:
+        for o in eff.operations:
+            tgt = o.target or ""
+            if tgt not in (roll_type, f"*.{roll_type}", "*", "roll"):
+                continue
+            if o.op.value == "grant_advantage":
+                adv = True; applied.append(f"{eff.name}: ventaja")
+            elif o.op.value == "grant_disadvantage":
+                dis = True; applied.append(f"{eff.name}: desventaja")
+            elif o.op.value == "add_modifier" and o.value is not None:
+                extra_mod += int(o.value)
+                applied.append(f"{eff.name}: {int(o.value):+d}")
+    if adv and not dis and "adv" not in expr and "dis" not in expr \
+            and "d20" in expr:
+        expr += "adv"
+    elif dis and not adv and "adv" not in expr and "dis" not in expr \
+            and "d20" in expr:
+        expr += "dis"
+    if extra_mod:
+        expr += f"{extra_mod:+d}"
+    try:
+        r = dice_roll(expr)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"expression": r.expression, "rolls": r.rolls, "kept": r.kept,
+            "total": r.total, "effects_applied": applied}
 
 
 _MODELS = {"character": Character, "combat": Combat}

@@ -187,3 +187,87 @@ def test_contextual_actions_groups_spells_and_weapons():
     assert "Attack" in names
     assert any("Daga" in n for n in names)
     assert any(a["name"] == "Opportunity Attack" for a in acts["reaction"])
+
+
+# --- combate ↔ ficha, craft, miembros, tirada con efectos --------------
+
+def _combat_op(combat_id, version, otype, payload):
+    return client.post("/api/operations", json={
+        "operation_id": uuid.uuid4().hex,
+        "entity_id": combat_id, "entity_version": version,
+        "client_id": "c1", "user_id": "dm", "entity_kind": "combat",
+        "operation_type": otype, "payload": payload})
+
+
+def test_combat_damage_syncs_character_sheet():
+    cid = _mkchar()
+    d0 = client.get(f"/api/characters/{cid}").json()["data"]
+    hp0 = d0["hp"]["current"]
+    combat = client.post("/api/combat", json={"name": "X"}).json()
+    # añade el personaje como combatiente (ref_id = character id)
+    r = _combat_op(combat["id"], combat["version"], "combatant.add",
+                   {"name": "Héroe", "kind": "character", "ref_id": cid})
+    assert r.status_code == 200
+    cdata = client.get(f"/api/combat/{combat['id']}").json()["combat"]
+    bid = cdata["combatants"][0]["id"]
+    assert cdata["combatants"][0]["hp_current"] == hp0  # HP de la ficha
+    _combat_op(combat["id"],
+               client.get(f"/api/combat/{combat['id']}").json()["version"],
+               "combatant.damage", {"combatant_id": bid, "amount": 3})
+    hp1 = client.get(f"/api/characters/{cid}").json()["data"]["hp"]["current"]
+    assert hp1 == hp0 - 3
+
+
+def test_craft_consumes_inputs_and_produces():
+    cid = _mkchar()
+    _op(cid, _version(cid), "character.inventory.add",
+        {"name": "Hierro", "quantity": 3})
+    r = _op(cid, _version(cid), "character.craft", {
+        "inputs": [{"name": "Hierro", "quantity": 2}],
+        "output": {"name": "Herradura"}})
+    assert r.status_code == 200
+    inv = client.get(f"/api/characters/{cid}").json()["data"]["inventory"]
+    assert next(i for i in inv if i["name"] == "Hierro")["quantity"] == 1
+    assert any(i["name"] == "Herradura" for i in inv)
+
+
+def test_craft_missing_input_rejected():
+    cid = _mkchar()
+    r = _op(cid, _version(cid), "character.craft", {
+        "inputs": [{"name": "Mithril"}], "output": {"name": "Anillo"}})
+    assert r.status_code == 400
+
+
+def test_join_registers_member():
+    camp = client.post("/api/campaigns", json={"name": "M"})
+    # busca el invite_code en la respuesta
+    code = camp.json().get("invite_code")
+    assert code
+    cid = camp.json()["id"]
+    client.post("/api/campaigns/join", json={
+        "invite_code": code, "user_id": "ana", "role": "player"})
+    members = client.get(f"/api/campaigns/{cid}/members").json()["members"]
+    assert any(m["user_id"] == "ana" and m["role"] == "player"
+               for m in members)
+
+
+def test_character_roll_applies_advantage_effect():
+    cid = _mkchar()
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    d["effects"] = [{
+        "id": "e1", "name": "Guía", "trigger": None,
+        "operations": [{"op": "grant_advantage", "target": "check"}],
+    }]
+    # escribe effects directamente — no hay op pública aún para añadirlos
+    import sqlite3
+    from app.db.connections import state_db
+    conn = state_db()
+    conn.execute("UPDATE characters SET data = ? WHERE id = ?",
+                 (__import__("json").dumps(d), cid))
+    conn.commit()
+    r = client.post(f"/api/operations/character/{cid}/roll",
+                    params={"expression": "1d20", "roll_type": "check"})
+    body = r.json()
+    assert len(body["rolls"]) == 2          # ventaja: tiró 2d20
+    assert body["kept"][0] == max(body["rolls"])
+    assert body["effects_applied"]

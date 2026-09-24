@@ -7,6 +7,7 @@ export default function CharacterSheet() {
   const [char, setChar] = useState(null)
   const [amount, setAmount] = useState(1)
   const [expr, setExpr] = useState('1d20')
+  const [rollType, setRollType] = useState('check')
   const [rollLog, setRollLog] = useState([])
   const [err, setErr] = useState(null)
   const [history, setHistory] = useState(null)
@@ -43,8 +44,12 @@ export default function CharacterSheet() {
 
   const doRoll = async (e) => {
     e.preventDefault()
-    const r = await api.roll(expr)
-    setRollLog((l) => [`${r.expression} → ${r.kept.join('+')}${r.modifier ? `${r.modifier}` : ''} = ${r.total}`, ...l].slice(0, 10))
+    // tirada a través del motor de efectos: aplica ventaja/desventaja y
+    // mods declarativos activos sobre el personaje
+    const r = await api.characterRoll(id, expr, rollType)
+    const fx = (r.effects_applied || []).length
+      ? ` [${r.effects_applied.join(', ')}]` : ''
+    setRollLog((l) => [`${r.expression} → ${r.kept.join('+')} = ${r.total}${fx}`, ...l].slice(0, 10))
   }
 
   if (err && !char) return <main><p className="error">{err}</p></main>
@@ -244,6 +249,10 @@ export default function CharacterSheet() {
         <form onSubmit={doRoll} className="row">
           <input value={expr} onChange={(e) => setExpr(e.target.value)}
                  placeholder="2d6+3, 1d20adv, 4d6kh3" />
+          <select value={rollType} onChange={(e) => setRollType(e.target.value)}>
+            {['check', 'attack', 'save', 'damage'].map((t) => (
+              <option key={t} value={t}>{t}</option>))}
+          </select>
           <button type="submit">Tirar</button>
         </form>
         <ul className="log">{rollLog.map((l, i) => <li key={i}>{l}</li>)}</ul>

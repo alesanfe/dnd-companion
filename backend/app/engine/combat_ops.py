@@ -39,6 +39,29 @@ def _hp_inverse(c: Combatant) -> dict:
                         "temp": c.hp_temp}}
 
 
+def _sync_character(c: Combatant, ctx) -> None:
+    """Si el combatiente es una ficha de personaje, propaga el HP a la
+    tabla characters dentro de la misma transacción."""
+    if c.kind != "character" or not c.ref_id:
+        return
+    try:
+        conn = ctx.state_db()
+    except AttributeError:
+        return
+    if conn is None:
+        return
+    from ..domain.character import Character
+    row = conn.execute("SELECT data FROM characters WHERE id = ?",
+                       (c.ref_id,)).fetchone()
+    if row is None:
+        return
+    ch = Character(**json.loads(row["data"]))
+    ch.hp.current = c.hp_current
+    ch.hp.temp = c.hp_temp
+    conn.execute("UPDATE characters SET data = ? WHERE id = ?",
+                 (ch.model_dump_json(), c.ref_id))
+
+
 @op("combat.next_turn")
 def next_turn(combat: Combat, p: dict, ctx):
     order = combat.ordered()
@@ -99,6 +122,16 @@ def combatant_add(combat: Combat, p: dict, ctx):
             (p["content_entity_id"],)).fetchone()
         if row:
             data = json.loads(row["data"])
+    char_hp = None
+    if p.get("kind") == "character" and p.get("ref_id"):
+        try:
+            srow = ctx.state_db().execute(
+                "SELECT data FROM characters WHERE id = ?",
+                (p["ref_id"],)).fetchone()
+            if srow:
+                char_hp = json.loads(srow["data"]).get("hp")
+        except (AttributeError, Exception):
+            char_hp = None
     dex = data.get("dexterity", 10)
     init = p.get("initiative")
     if init is None:
@@ -110,8 +143,11 @@ def combatant_add(combat: Combat, p: dict, ctx):
         name=p.get("name") or data.get("name", "?"),
         ref_id=p.get("ref_id") or p.get("content_entity_id"),
         initiative=int(init),
-        hp_current=p.get("hp_max") or data.get("hit_points", 1),
-        hp_max=p.get("hp_max") or data.get("hit_points", 1),
+        hp_current=(p.get("hp_max") or (char_hp or {}).get("current")
+                    or data.get("hit_points", 1)),
+        hp_max=(p.get("hp_max") or (char_hp or {}).get("max")
+                or data.get("hit_points", 1)),
+        hp_temp=(char_hp or {}).get("temp", 0),
         ac=p.get("ac") or (acs[0].get("value", 10) if acs else 10),
         stat_block=data or None,
     )
@@ -148,6 +184,7 @@ def combatant_damage(combat: Combat, p: dict, ctx):
     absorbed = min(c.hp_temp, amount)
     c.hp_temp -= absorbed
     c.hp_current = max(0, c.hp_current - (amount - absorbed))
+    _sync_character(c, ctx)
     return inv, [{"type": "character.hp.changed",
                   "payload": {"combatant": c.name, "amount": amount,
                               "state": hp_state(c)}}]
@@ -159,6 +196,7 @@ def combatant_heal(combat: Combat, p: dict, ctx):
     inv = _hp_inverse(c)
     amount = max(0, int(p["amount"]))
     c.hp_current = min(c.hp_max, c.hp_current + amount)
+    _sync_character(c, ctx)
     return inv, [{"type": "character.hp.changed",
                   "payload": {"combatant": c.name, "healed": amount,
                               "state": hp_state(c)}}]
@@ -170,6 +208,7 @@ def combatant_hp_set(combat: Combat, p: dict, ctx):
     inv = _hp_inverse(c)
     c.hp_current = max(0, min(c.hp_max, int(p["current"])))
     c.hp_temp = max(0, int(p.get("temp", c.hp_temp)))
+    _sync_character(c, ctx)
     return inv, []
 
 

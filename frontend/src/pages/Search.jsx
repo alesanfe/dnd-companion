@@ -3,10 +3,12 @@ import { Link } from 'react-router-dom'
 import { api } from '../api.js'
 
 export default function Search() {
-  const [q, setQ] = useState('')
-  const [type, setType] = useState('')
-  const [edition, setEdition] = useState('')
-  const [source, setSource] = useState('')
+  // los filtros sobreviven al ir y volver del detalle (sessionStorage)
+  const saved = JSON.parse(sessionStorage.getItem('dnd-search') || '{}')
+  const [q, setQ] = useState(saved.q || '')
+  const [type, setType] = useState(saved.type || '')
+  const [edition, setEdition] = useState(saved.edition || '')
+  const [source, setSource] = useState(saved.source || '')
   const [sources, setSources] = useState([])
   const [results, setResults] = useState([])
   const [parsed, setParsed] = useState(null)
@@ -17,6 +19,10 @@ export default function Search() {
   useEffect(() => {
     api.contentSources().then((r) => setSources(r.sources)).catch(() => {})
   }, [])
+  useEffect(() => {
+    sessionStorage.setItem('dnd-search',
+      JSON.stringify({ q, type, edition, source }))
+  }, [q, type, edition, source])
 
   const go = async (e) => {
     e.preventDefault()

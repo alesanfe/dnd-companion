@@ -30,6 +30,23 @@ export default function CharacterList() {
                placeholder="Nombre rápido (vacío)" />
         <button type="submit">Crear</button>
         <Link to="/new"><button type="button">Wizard →</button></Link>
+        <label className="ghost" style={{ cursor: 'pointer',
+             display: 'inline-flex', alignItems: 'center',
+             minHeight: 44, padding: '0 1rem', borderRadius: 6,
+             border: '1px solid var(--border)' }}>
+          Importar
+          <input type="file" accept=".json" hidden
+                 aria-label="Importar personaje desde JSON"
+                 onChange={async (e) => {
+                   const f = e.target.files[0]
+                   if (!f) return
+                   try {
+                     const data = JSON.parse(await f.text())
+                     await api.importCharacter(data)
+                     load()
+                   } catch (ex) { setErr(`Importación: ${ex.message}`) }
+                 }} />
+        </label>
       </form>
       {chars.length === 0 && !err && (
         <div className="card empty">

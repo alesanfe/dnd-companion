@@ -828,13 +828,23 @@ function CondChip({ name, onRemove }) {
 
 function SpellList({ ids, onCast, onForget }) {
   const [names, setNames] = useState({})
+  const [meta, setMeta] = useState({})
   const [menu, setMenu] = useState(null)
   const navigate = useNavigate()
   useEffect(() => {
     for (const sid of ids) {
       if (names[sid]) continue
       api.getEntity(sid)
-        .then((e) => setNames((n) => ({ ...n, [sid]: e.name || sid })))
+        .then((e) => {
+          const dd = e.data || {}
+          const sub = [
+            dd.level != null && `Nv. ${dd.level}`,
+            dd.school && String(dd.school).replace(/_/g, ' '),
+            dd.concentration && '⭑ conc.',
+          ].filter(Boolean).join(' · ')
+          setNames((n) => ({ ...n, [sid]: e.name || sid }))
+          setMeta((m) => ({ ...m, [sid]: sub }))
+        })
         .catch(() => setNames((n) => ({ ...n, [sid]: sid })))
     }
   }, [ids])
@@ -842,7 +852,11 @@ function SpellList({ ids, onCast, onForget }) {
     <ul>
       {ids.map((sid) => (
         <li key={sid} className="row">
-          <span style={{ flex: 1 }}>{names[sid] || sid}</span>
+          <span style={{ flex: 1 }}>{names[sid] || sid}
+            {meta[sid] && (
+              <><br /><span className="muted"
+                style={{ fontSize: '.8em' }}>{meta[sid]}</span></>)}
+          </span>
           <button onClick={() => onCast(sid)}>Lanzar</button>
           <button className="ghost" aria-label={`Opciones de ${names[sid] || sid}`}
                   aria-expanded={menu === sid}

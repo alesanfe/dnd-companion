@@ -8,6 +8,21 @@ const ABILITY_NAMES = {
   str: 'Fuerza', dex: 'Destreza', con: 'Constitución',
   int: 'Inteligencia', wis: 'Sabiduría', cha: 'Carisma',
 }
+// prioridad de características por clase (orden de asignación)
+const CLASS_PRIORITY = {
+  barbarian: ['str', 'con', 'dex', 'wis', 'cha', 'int'],
+  bard: ['cha', 'dex', 'con', 'wis', 'int', 'str'],
+  cleric: ['wis', 'str', 'con', 'dex', 'int', 'cha'],
+  druid: ['wis', 'con', 'dex', 'int', 'cha', 'str'],
+  fighter: ['str', 'con', 'dex', 'wis', 'cha', 'int'],
+  monk: ['dex', 'wis', 'con', 'str', 'cha', 'int'],
+  paladin: ['str', 'cha', 'con', 'wis', 'dex', 'int'],
+  ranger: ['dex', 'wis', 'con', 'str', 'int', 'cha'],
+  rogue: ['dex', 'int', 'con', 'cha', 'wis', 'str'],
+  sorcerer: ['cha', 'con', 'dex', 'wis', 'int', 'str'],
+  warlock: ['cha', 'con', 'dex', 'wis', 'int', 'str'],
+  wizard: ['int', 'dex', 'con', 'wis', 'cha', 'str'],
+}
 
 export default function Wizard() {
   const nav = useNavigate()
@@ -163,6 +178,17 @@ export default function Wizard() {
               </div>
             )})}
           <div className="row">
+            <button className="ghost" onClick={() => {
+              // mejor ajuste por prioridad de clase si la conocemos
+              const key = Object.keys(CLASS_PRIORITY).find((k) =>
+                classId.toLowerCase().includes(k))
+              const order = key ? CLASS_PRIORITY[key] : ABILITIES
+              setAbilities(Object.fromEntries(
+                order.map((ab, i) => [ab, STANDARD_ARRAY[i]])))
+              setRemaining([])
+            }}>Asignación recomendada{classId &&
+              ` (${classId.split(':').pop().split('|')[0]
+                .replace(/-/g, ' ')})`}</button>
             <button className="ghost" onClick={() => {
               setAbilities({}); setRemaining([...STANDARD_ARRAY])
             }}>Restablecer</button>

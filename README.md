@@ -32,6 +32,42 @@ dnd-companion/
 5. **Offline-first.** La ficha funciona sin conexión (IndexedDB) y sincroniza
    al reconectar.
 
+## Funcionalidad actual
+
+**Ficha de personaje** — HP/temp, dados de golpe, descansos, espacios de
+conjuro, recursos, condiciones, inventario, monedas (pp/gp/ep/sp/cp con
+conversión), XP, inspiración, concentración, sintonía (máx 3), diario,
+export/import JSON, subida de nivel multiclase.
+
+**Automatización de reglas** — motor de efectos declarativo (triggers +
+operaciones, explicables), tiradas con ventaja/desventaja por condiciones y
+efectos, mods automáticos por `check:X`/`save:X`/`skill:X`, ataque
+arma-completo (impacto+daño), lanzamiento de conjuros con validación de
+nivel y concentración, stats derivadas (CA por armadura equipada, iniciativa,
+percepción pasiva, CD/ataque de conjuro, XP para próximo nivel).
+
+**Combate** — iniciativa (manual o tirada por servidor), HP sincronizado
+con la ficha, condiciones, salvaciones de muerte (pifia/crítico SRD),
+añadir grupo/monstruos del bestiario, escenas → combate con un clic.
+
+**Campaña** — entidades con visibilidad por rol (public/dm/known_to),
+revelación selectiva, relaciones, cronología, sesiones con escenas
+ordenadas, tiendas con stock (compra atómica + refund al deshacer),
+miembros por invitación, feed de eventos, export de backup, tiradas
+de jugadores retransmitidas por WS.
+
+**Contenido** — SRD 2014 + 2024 (species/subspecies/poisons/weapon-mastery),
+buscador FTS con comandos (`level:3 cr:1..5 ruleset:2024`), comparador de
+ediciones, homebrew aislado, paquetes declarativos (manifest sin código
+ejecutable), asistente de reglas con citas exactas.
+
+**Auth** — cuentas locales + tokens Bearer, enforcement de visibilidad por
+rol (owner/co_dm/player), modo anónimo local preservado.
+
+**Accesibilidad** — temas oscuro/claro/sepia/alto contraste, escala de
+texto, reducción de movimiento, modo mesa, indicador online/cola offline,
+objetivos táctiles ≥44px, PWA instalable.
+
 ## Quickstart
 
 ```bash

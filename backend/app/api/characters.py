@@ -32,12 +32,13 @@ def create_character(body: CharacterCreate):
     conn = state_db()
     cid = uuid.uuid4().hex
     now = datetime.now(timezone.utc).isoformat()
+    char = Character(name=body.name, ruleset=body.ruleset, **body.data)
     conn.execute(
         """INSERT INTO characters
            (id, name, player_id, campaign_id, ruleset, version, data, updated_at)
            VALUES (?,?,?,?,?,1,?,?)""",
         (cid, body.name, body.player_id, body.campaign_id,
-         body.ruleset.value, json.dumps(body.data), now),
+         body.ruleset.value, json.dumps(char.model_dump()), now),
     )
     conn.commit()
     return {"id": cid, "version": 1}
@@ -123,6 +124,49 @@ def list_characters(campaign_id: str | None = None):
         params.append(campaign_id)
     rows = conn.execute(sql, params).fetchall()
     return {"characters": [dict(r) for r in rows]}
+
+
+EXPORT_VERSION = 1
+
+
+@router.get("/{character_id}/export")
+def export_character(character_id: str):
+    """JSON versionado y portable de la ficha completa."""
+    conn = state_db()
+    row = conn.execute(
+        "SELECT * FROM characters WHERE id = ?", (character_id,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "character not found")
+    return {
+        "format": "dnd-companion-character",
+        "format_version": EXPORT_VERSION,
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "character": json.loads(row["data"]),
+    }
+
+
+class ImportIn(BaseModel):
+    character: dict
+    campaign_id: str | None = None
+    player_id: str | None = None
+
+
+@router.post("/import", status_code=201)
+def import_character(body: ImportIn):
+    """Importa una ficha exportada. Revalida contra el modelo actual."""
+    char = Character(**body.character)
+    conn = state_db()
+    cid = uuid.uuid4().hex
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """INSERT INTO characters
+           (id, name, player_id, campaign_id, ruleset, version, data, updated_at)
+           VALUES (?,?,?,?,?,1,?,?)""",
+        (cid, char.name, body.player_id, body.campaign_id,
+         char.ruleset.value, json.dumps(char.model_dump()), now))
+    conn.commit()
+    return {"id": cid, "version": 1}
 
 
 @router.get("/{character_id}/derived/{stat}")

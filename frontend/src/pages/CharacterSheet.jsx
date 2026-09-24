@@ -9,6 +9,9 @@ export default function CharacterSheet() {
   const [expr, setExpr] = useState('1d20')
   const [rollLog, setRollLog] = useState([])
   const [err, setErr] = useState(null)
+  const [history, setHistory] = useState(null)
+  const [newItem, setNewItem] = useState('')
+  const [newCond, setNewCond] = useState('')
 
   const load = () => api.getCharacter(id).then(setChar).catch((e) => setErr(e.message))
   useEffect(() => { load() }, [id])
@@ -51,8 +54,53 @@ export default function CharacterSheet() {
 
   return (
     <main>
-      <h1>{char.name}</h1>
+      <h1>{char.name}
+        <span className="muted" style={{ fontSize: '0.9rem' }}>
+          {' '}nivel {d.classes?.reduce((s, c) => s + c.level, 0) || 1}
+        </span>
+      </h1>
+      <div className="row">
+        <button onClick={async () => {
+          const ex = await api.exportCharacter(id)
+          const blob = new Blob([JSON.stringify(ex, null, 2)],
+                                { type: 'application/json' })
+          const a = document.createElement('a')
+          a.href = URL.createObjectURL(blob)
+          a.download = `${char.name}.json`
+          a.click()
+        }}>Exportar</button>
+        {d.classes?.length > 0 && (
+          <button onClick={() =>
+            op('character.level_up',
+               { class_id: d.classes[0].class_id, hp_mode: 'fixed' })}>
+            Subir nivel
+          </button>
+        )}
+        <button onClick={async () => {
+          const h = await api.opHistory(id)
+          setHistory(history ? null : h.operations)
+        }}>Historial</button>
+      </div>
       {err && <p className="error">{err}</p>}
+
+      {history && (
+        <section className="card">
+          <h2>Historial <span className="muted">(reversible)</span></h2>
+          {history.map((h) => (
+            <div key={h.operation_id} className="row">
+              <span className="muted">{h.timestamp.slice(11, 19)}</span>
+              <span style={{ flex: 1 }}>{h.operation_type}</span>
+              {h.reversible ? (
+                <button onClick={async () => {
+                  await api.undoOp(h.operation_id)
+                  setHistory(null)
+                  load()
+                }}>Deshacer</button>
+              ) : <span className="muted">—</span>}
+            </div>
+          ))}
+        </section>
+      )}
 
       <section className="card">
         <h2>Puntos de golpe</h2>
@@ -115,17 +163,42 @@ export default function CharacterSheet() {
         </section>
       )}
 
-      {(d.conditions || []).length > 0 && (
-        <section className="card">
-          <h2>Condiciones</h2>
-          {d.conditions.map((c) => (
-            <span key={c} className="chip">
-              {c}
-              <button onClick={() => op('character.condition.remove', { condition: c })}>×</button>
-            </span>
-          ))}
-        </section>
-      )}
+      <section className="card">
+        <h2>Condiciones</h2>
+        <div className="row">
+          <input value={newCond} onChange={(e) => setNewCond(e.target.value)}
+                 placeholder="poisoned, stunned…" />
+          <button disabled={!newCond.trim()} onClick={() => {
+            op('character.condition.apply', { condition: newCond.trim() })
+            setNewCond('')
+          }}>Aplicar</button>
+        </div>
+        {(d.conditions || []).map((c) => (
+          <span key={c} className="chip">
+            {c}
+            <button onClick={() => op('character.condition.remove', { condition: c })}>×</button>
+          </span>
+        ))}
+      </section>
+
+      <section className="card">
+        <h2>Inventario</h2>
+        <div className="row">
+          <input value={newItem} onChange={(e) => setNewItem(e.target.value)}
+                 placeholder="Objeto nuevo" />
+          <button disabled={!newItem.trim()} onClick={() => {
+            op('character.inventory.add', { name: newItem.trim() })
+            setNewItem('')
+          }}>Añadir</button>
+        </div>
+        {(d.inventory || []).map((it) => (
+          <div key={it.id} className="row">
+            <span style={{ flex: 1 }}>{it.name} ×{it.quantity}</span>
+            <button onClick={() => op('character.inventory.remove',
+                                      { item_id: it.id, quantity: 1 })}>-</button>
+          </div>
+        ))}
+      </section>
 
       <section className="card">
         <h2>Dados</h2>

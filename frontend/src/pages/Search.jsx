@@ -4,13 +4,18 @@ import { api } from '../api.js'
 export default function Search() {
   const [q, setQ] = useState('')
   const [results, setResults] = useState([])
+  const [parsed, setParsed] = useState(null)
   const [err, setErr] = useState(null)
 
   const go = async (e) => {
     e.preventDefault()
     try {
-      const r = await api.search(q)
+      // sintaxis de comandos: /spell fire level:3 — si no, FTS normal
+      const r = q.trim().startsWith('/')
+        ? await api.commandSearch(q)
+        : await api.search(q)
       setResults(r.results)
+      setParsed(r.parsed || null)
     } catch (e2) { setErr(e2.message) }
   }
 
@@ -19,14 +24,28 @@ export default function Search() {
       <h1>Buscador de reglas</h1>
       <form onSubmit={go} className="row">
         <input value={q} onChange={(e) => setQ(e.target.value)}
-               placeholder="fireball, goblin, grapple…" autoFocus />
+               placeholder="fireball — o /monster cr:1..5 type:undead" autoFocus />
         <button type="submit">Buscar</button>
       </form>
       {err && <p className="error">{err}</p>}
+      {parsed && (
+        <p className="muted">
+          tipo: {parsed.type || 'cualquiera'}
+          {parsed.terms.length > 0 && ` · texto: ${parsed.terms.join(' ')}`}
+          {Object.keys(parsed.filters).length > 0 &&
+            ` · filtros: ${JSON.stringify(parsed.filters)}`}
+        </p>
+      )}
       <ul className="results">
         {results.map((r) => (
           <li key={r.id}>
-            <strong>{r.name}</strong> <span className="muted">{r.entity_type} · {r.ruleset}</span>
+            <strong>{r.name}</strong>{' '}
+            <span className="muted">{r.entity_type} · {r.ruleset}</span>
+            {r.summary && (
+              <p className="excerpt">
+                {Object.entries(r.summary).map(([k, v]) => `${k}: ${v}`).join(' · ')}
+              </p>
+            )}
             {r.excerpt && <p className="excerpt" dangerouslySetInnerHTML={{ __html: r.excerpt }} />}
           </li>
         ))}

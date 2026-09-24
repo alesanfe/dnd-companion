@@ -65,3 +65,50 @@ CREATE TABLE IF NOT EXISTS combats (
 );
 CREATE INDEX IF NOT EXISTS idx_combats_campaign
     ON combats(campaign_id);
+
+-- Miembros de campaña: rol por campaña (owner|co_dm|player|guest|
+-- spectator|delegated_npc). La enforcement llega con auth.
+CREATE TABLE IF NOT EXISTS members (
+    campaign_id TEXT NOT NULL REFERENCES campaigns(id),
+    user_id     TEXT NOT NULL,
+    role        TEXT NOT NULL DEFAULT 'player',
+    character_id TEXT,
+    joined_at   TEXT NOT NULL,
+    PRIMARY KEY (campaign_id, user_id)
+);
+
+-- Entidades de campaña: NPC, lugares, misiones, facciones, escenas,
+-- notas. Visibilidad: public|dm|players — known_to lista jugadores
+-- que conocen info parcial; reveal_* describe cuándo se revela.
+CREATE TABLE IF NOT EXISTS campaign_entities (
+    id           TEXT PRIMARY KEY,
+    campaign_id  TEXT NOT NULL REFERENCES campaigns(id),
+    kind         TEXT NOT NULL,   -- npc|location|quest|faction|scene|note
+    name         TEXT NOT NULL,
+    data         TEXT NOT NULL DEFAULT '{}',
+    visibility   TEXT NOT NULL DEFAULT 'public',
+    known_to     TEXT NOT NULL DEFAULT '[]',
+    reveal_condition TEXT,
+    revealed_at  TEXT,
+    version      INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_entities_campaign
+    ON campaign_entities(campaign_id, kind);
+
+-- Grafo de relaciones dirigidas entre entidades/personajes.
+CREATE TABLE IF NOT EXISTS relationships (
+    id          TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL REFERENCES campaigns(id),
+    from_id     TEXT NOT NULL,    -- entity o character id
+    to_id       TEXT NOT NULL,
+    type        TEXT NOT NULL,    -- 'knows'|'works_for'|'hates'|'family'...
+    description TEXT,
+    visibility  TEXT NOT NULL DEFAULT 'dm',
+    world_date  TEXT,
+    status      TEXT NOT NULL DEFAULT 'active',
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rel_campaign
+    ON relationships(campaign_id);

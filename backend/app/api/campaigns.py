@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from ..db.connections import state_db
 from ..domain.ruleset import Ruleset
+from ..ws.rooms import manager
 
 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
 
@@ -75,3 +76,150 @@ def campaign_state(campaign_id: str):
                     for c in combats],
         "events": [dict(e) for e in events],
     }
+
+
+# --- Entidades de campaña: NPC, lugares, misiones, escenas, notas ----
+# Visibilidad: 'public' (todos), 'dm' (solo DM) o parcial via known_to.
+
+class EntityIn(BaseModel):
+    kind: str                          # npc|location|quest|faction|scene|note
+    name: str
+    data: dict = {}
+    visibility: str = "public"         # public|dm
+    known_to: list[str] = []           # player/user ids con info parcial
+    reveal_condition: str | None = None
+
+
+@router.post("/{campaign_id}/entities", status_code=201)
+def create_entity(campaign_id: str, body: EntityIn):
+    conn = state_db()
+    eid = uuid.uuid4().hex
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """INSERT INTO campaign_entities
+           (id, campaign_id, kind, name, data, visibility, known_to,
+            reveal_condition, version, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,1,?,?)""",
+        (eid, campaign_id, body.kind, body.name, json.dumps(body.data),
+         body.visibility, json.dumps(body.known_to),
+         body.reveal_condition, now, now))
+    conn.commit()
+    return {"id": eid}
+
+
+@router.get("/{campaign_id}/entities")
+def list_entities(campaign_id: str, kind: str | None = None,
+                  viewer: str = "dm"):
+    """viewer='dm' ve todo; viewer='player' solo public + known_to."""
+    conn = state_db()
+    sql = "SELECT * FROM campaign_entities WHERE campaign_id = ?"
+    params: list = [campaign_id]
+    if kind:
+        sql += " AND kind = ?"
+        params.append(kind)
+    rows = conn.execute(sql, params).fetchall()
+    out = []
+    for r in rows:
+        e = dict(r)
+        e["data"] = json.loads(e["data"])
+        e["known_to"] = json.loads(e["known_to"])
+        if viewer != "dm" and e["visibility"] == "dm" \
+                and viewer not in e["known_to"]:
+            continue
+        out.append(e)
+    return {"entities": out}
+
+
+@router.post("/{campaign_id}/entities/{entity_id}/reveal")
+def reveal_entity(campaign_id: str, entity_id: str):
+    """El DM revela la entidad a todos los jugadores."""
+    conn = state_db()
+    now = datetime.now(timezone.utc).isoformat()
+    cur = conn.execute(
+        """UPDATE campaign_entities
+           SET visibility='public', revealed_at=?, updated_at=?,
+               version=version+1
+           WHERE id=? AND campaign_id=?""",
+        (now, now, entity_id, campaign_id))
+    conn.commit()
+    if cur.rowcount == 0:
+        raise HTTPException(404, "entity not found")
+    return {"id": entity_id, "visibility": "public"}
+
+
+# --- Grafo de relaciones --------------------------------------------
+
+class RelationshipIn(BaseModel):
+    from_id: str
+    to_id: str
+    type: str                          # knows|works_for|hates|family|...
+    description: str | None = None
+    visibility: str = "dm"
+    world_date: str | None = None
+
+
+@router.post("/{campaign_id}/relationships", status_code=201)
+def create_relationship(campaign_id: str, body: RelationshipIn):
+    conn = state_db()
+    rid = uuid.uuid4().hex
+    conn.execute(
+        """INSERT INTO relationships
+           (id, campaign_id, from_id, to_id, type, description,
+            visibility, world_date, status, created_at)
+           VALUES (?,?,?,?,?,?,?,?, 'active', ?)""",
+        (rid, campaign_id, body.from_id, body.to_id, body.type,
+         body.description, body.visibility, body.world_date,
+         datetime.now(timezone.utc).isoformat()))
+    conn.commit()
+    return {"id": rid}
+
+
+@router.get("/{campaign_id}/relationships")
+def list_relationships(campaign_id: str, entity_id: str | None = None):
+    conn = state_db()
+    sql = "SELECT * FROM relationships WHERE campaign_id = ?"
+    params: list = [campaign_id]
+    if entity_id:
+        sql += " AND (from_id = ? OR to_id = ?)"
+        params += [entity_id, entity_id]
+    rows = conn.execute(sql, params).fetchall()
+    return {"relationships": [dict(r) for r in rows]}
+
+
+# --- Solicitud de tirada (DM -> jugador) -----------------------------
+
+class RollRequestIn(BaseModel):
+    character_id: str
+    expression: str = "1d20"
+    reason: str = ""                   # 'tirada de percepción', 'save de SAB'
+    secret: bool = False               # tirada oculta al resto
+
+
+@router.post("/{campaign_id}/roll-request", status_code=202)
+async def request_roll(campaign_id: str, body: RollRequestIn):
+    """El DM pide una tirada; llega como evento a la sala WS."""
+    from ..domain.events import Event, EventType
+    event = Event(
+        event_id=uuid.uuid4().hex,
+        type=EventType.ROLL_REQUESTED,
+        campaign_id=campaign_id,
+        aggregate_id=body.character_id,
+        aggregate_version=0,
+        actor_id="dm",
+        occurred_at=datetime.now(timezone.utc),
+        payload={"expression": body.expression, "reason": body.reason,
+                 "secret": body.secret},
+    )
+    conn = state_db()
+    conn.execute(
+        """INSERT INTO events
+           (event_id, campaign_id, aggregate_id, aggregate_version,
+            actor_id, occurred_at, type, payload)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (event.event_id, campaign_id, event.aggregate_id,
+         event.aggregate_version, event.actor_id,
+         event.occurred_at.isoformat(), event.type.value,
+         json.dumps(event.payload)))
+    conn.commit()
+    await manager.broadcast(campaign_id, event)
+    return {"event_id": event.event_id}

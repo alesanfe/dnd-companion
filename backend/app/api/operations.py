@@ -84,7 +84,7 @@ def apply_to_store(op: OperationIn) -> dict:
                 entity, op.operation_type, op.payload, OpContext())
         else:
             inverse, events = apply_operation(
-                entity, op.operation_type, op.payload)
+                entity, op.operation_type, op.payload, OpContext())
     except (KeyError, ValueError, IndexError) as exc:
         _store_op(conn, op, row["version"], OperationStatus.REJECTED, None)
         conn.commit()
@@ -151,6 +151,21 @@ async def apply(op: OperationIn):
         for event in events:
             await manager.broadcast(result["campaign_id"], event)
     return result
+
+
+@router.get("")
+def history(entity_id: str, limit: int = 50):
+    """Historial de operaciones de una entidad (auditoría + deshacer)."""
+    conn = state_db()
+    rows = conn.execute(
+        """SELECT operation_id, entity_version, user_id, timestamp,
+                  operation_type, payload, status,
+                  inverse IS NOT NULL AS reversible
+           FROM operations WHERE entity_id = ?
+           ORDER BY timestamp DESC LIMIT ?""",
+        (entity_id, limit)).fetchall()
+    return {"operations": [
+        {**dict(r), "payload": json.loads(r["payload"])} for r in rows]}
 
 
 @router.post("/undo/{operation_id}")

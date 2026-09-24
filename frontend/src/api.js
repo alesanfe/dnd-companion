@@ -1,3 +1,5 @@
+import { enqueueOp, pendingOps, markOp } from './db.js'
+
 const CLIENT_ID = crypto.randomUUID()
 
 async function req(path, opts = {}) {
@@ -10,6 +12,27 @@ async function req(path, opts = {}) {
     throw new Error(err.detail ? JSON.stringify(err.detail) : res.statusText)
   }
   return res.json()
+}
+
+/** Reenvía operaciones encoladas mientras estuvimos offline. */
+export async function flushQueue() {
+  const pending = await pendingOps()
+  for (const op of pending) {
+    try {
+      const r = await fetch('/api/operations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(op.payload),
+      })
+      await markOp(op.id, r.ok ? 'synced' : 'rejected')
+    } catch {
+      return // sigue offline; reintentar luego
+    }
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', flushQueue)
 }
 
 export const api = {
@@ -51,19 +74,72 @@ export const api = {
     }),
   getCombat: (id, reveal = true) =>
     req(`/api/combat/${id}?reveal_hp=${reveal}`),
-  /** Cambio de estado vía operación idempotente. */
-  applyOp: (entity, operationType, payload, kind = 'character') =>
-    req('/api/operations', {
+  /** Cambio de estado vía operación idempotente. Si no hay red,
+      encola en IndexedDB y se reenvía al volver (offline-first). */
+  applyOp: async (entity, operationType, payload, kind = 'character') => {
+    const op = {
+      operation_id: crypto.randomUUID(),
+      entity_id: entity.id,
+      entity_version: entity.version,
+      client_id: CLIENT_ID,
+      user_id: 'local',
+      operation_type: operationType,
+      entity_kind: kind,
+      payload,
+    }
+    try {
+      return await req('/api/operations', {
+        method: 'POST', body: JSON.stringify(op),
+      })
+    } catch (e) {
+      if (e.name === 'TypeError' || !navigator.onLine) {
+        await enqueueOp({ entity_id: entity.id, payload: op })
+        return { queued: true, version: entity.version }
+      }
+      throw e
+    }
+  },
+  opHistory: (entityId) => req(`/api/operations?entity_id=${entityId}`),
+  undoOp: (opId) => req(`/api/operations/undo/${opId}`, { method: 'POST' }),
+  exportCharacter: (id) => req(`/api/characters/${id}/export`),
+  importCharacter: (character) => req('/api/characters/import', {
+    method: 'POST', body: JSON.stringify({ character }),
+  }),
+  commandSearch: (q) =>
+    req(`/api/content/command?q=${encodeURIComponent(q)}`),
+  encounterDifficulty: (party_levels, monster_crs) =>
+    req('/api/encounters/difficulty', {
+      method: 'POST',
+      body: JSON.stringify({ party_levels, monster_crs }),
+    }),
+  listEntities: (campaignId, kind, viewer = 'dm') =>
+    req(`/api/campaigns/${campaignId}/entities?viewer=${viewer}` +
+        (kind ? `&kind=${kind}` : '')),
+  createEntity: (campaignId, body) =>
+    req(`/api/campaigns/${campaignId}/entities`, {
+      method: 'POST', body: JSON.stringify(body),
+    }),
+  revealEntity: (campaignId, entityId) =>
+    req(`/api/campaigns/${campaignId}/entities/${entityId}/reveal`,
+        { method: 'POST' }),
+  createRelationship: (campaignId, body) =>
+    req(`/api/campaigns/${campaignId}/relationships`, {
+      method: 'POST', body: JSON.stringify(body),
+    }),
+  listRelationships: (campaignId, entityId) =>
+    req(`/api/campaigns/${campaignId}/relationships` +
+        (entityId ? `?entity_id=${entityId}` : '')),
+  requestRoll: (campaignId, body) =>
+    req(`/api/campaigns/${campaignId}/roll-request`, {
+      method: 'POST', body: JSON.stringify(body),
+    }),
+  transferItem: (fromId, toId, itemId, quantity) =>
+    req('/api/inventory/transfer', {
       method: 'POST',
       body: JSON.stringify({
-        operation_id: crypto.randomUUID(),
-        entity_id: entity.id,
-        entity_version: entity.version,
-        client_id: CLIENT_ID,
-        user_id: 'local',
-        operation_type: operationType,
-        entity_kind: kind,
-        payload,
+        transfer_id: crypto.randomUUID(),
+        from_character: fromId, to_character: toId,
+        item_id: itemId, quantity,
       }),
     }),
 }

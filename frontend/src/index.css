@@ -1,0 +1,30 @@
+:root {
+  color-scheme: dark;
+  --bg: #1a1a2e;
+  --fg: #e8e6e3;
+  --accent: #c0392b;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, sans-serif;
+}
+
+.nav {
+  display: flex;
+  gap: 1.5rem;
+  padding: 1rem;
+  border-bottom: 1px solid #333;
+}
+
+.nav a { color: var(--fg); text-decoration: none; font-size: 1.1rem; }
+.nav a:hover { color: var(--accent); }
+
+main { padding: 1rem; }
+
+/* objetivos táctiles grandes: mesa de juego, dedos, poca luz */
+button, a { min-height: 44px; }

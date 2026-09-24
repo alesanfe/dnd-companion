@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/dev-dist/
+
+# Data — nunca commitear datasets (ver AGENTS.md)
+data/
+*.sqlite3
+*.db
+
+# Env
+.env
+.env.*
+
+# IDE
+.idea/
+.vscode/

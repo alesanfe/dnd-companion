@@ -463,7 +463,7 @@ export default function CharacterSheet() {
         </section>)}
 
       <section className="card optional">
-        <h2>Dotes</h2>
+        <h2>Dotes y dones</h2>
         <SpellPicker entityType="feat" verb="Añadir"
           placeholder="Buscar dote en todas las fuentes"
           onPick={(fid) =>
@@ -471,6 +471,39 @@ export default function CharacterSheet() {
         {(d.feats_known || []).length > 0 && (
           <FeatList ids={d.feats_known} onForget={(fid) =>
             op('character.feat.forget', { feat_id: fid })} />)}
+        <SpellPicker entityType="reward" verb="Añadir"
+          placeholder="Don sobrenatural / bendición (charm, boon…)"
+          onPick={(rid) =>
+            op('character.reward.add', { reward_id: rid })} />
+        {(d.rewards || []).length > 0 && (
+          <FeatList ids={d.rewards} onForget={(rid) =>
+            op('character.reward.remove', { reward_id: rid })} />)}
+      </section>
+
+      <section className="card optional">
+        <h2>Subclase e idiomas</h2>
+        <SpellPicker entityType="subclass" verb="Elegir"
+          placeholder="Buscar subclase…"
+          onPick={(sid) =>
+            op('character.subclass.set',
+               { class_index: 0, subclass_id: sid })} />
+        {(d.classes || []).map((c, i) => (
+          <p key={i} className="muted">
+            {c.class_id}{c.subclass_id ? ` · ${c.subclass_id}` : ''}
+            {' · nv.'}{c.level}</p>))}
+        <SpellPicker entityType="language" verb="Añadir"
+          placeholder="Idioma (elfo, común, dracónico…)"
+          onPick={(lid) =>
+            op('character.language.add',
+               { name: lid.split(':').pop().split('|')[0] })} />
+        {(d.languages || []).length > 0 && (
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            {d.languages.map((l) => (
+              <span key={l} className="chip">{l}
+                <button aria-label={`Quitar idioma ${l}`} onClick={() =>
+                  op('character.language.remove', { name: l })
+                }>×</button></span>))}
+          </div>)}
       </section>
 
       {(d.skill_proficiencies?.length > 0 || d.save_proficiencies?.length > 0) && (

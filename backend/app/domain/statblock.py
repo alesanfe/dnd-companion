@@ -116,16 +116,36 @@ def _clean_text(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+_ACTION_SECTIONS = (
+    # (claves posibles en los schemas, etiqueta canónica)
+    (("trait", "traits"), "trait"),
+    (("actions", "action"), "action"),
+    (("bonus", "bonus_actions"), "bonus action"),
+    (("reaction", "reactions"), "reaction"),
+    (("legendary", "legendary_actions"), "legendary"),
+    (("mythic", "mythic_actions"), "mythic"),
+    (("lair", "lair_actions"), "lair"),
+    (("regional", "regional_effects"), "regional"),
+)
+
+
 def _actions(d: dict) -> list[dict]:
-    acts = d.get("actions") or d.get("action") or []
     out = []
-    for a in acts:
-        if not isinstance(a, dict):
-            continue
-        text = (a.get("desc") or a.get("text")
-                or " ".join(str(e) for e in (a.get("entries") or [])))
-        out.append({"name": a.get("name", "?"),
-                    "text": _clean_text(text)})
+    for keys, label in _ACTION_SECTIONS:
+        for key in keys:
+            acts = d.get(key) or []
+            if isinstance(acts, dict):      # 5etools: {header: [...]}
+                acts = [a for v in acts.values() for a in
+                        (v if isinstance(v, list) else [v])]
+            for a in acts:
+                if not isinstance(a, dict):
+                    continue
+                text = (a.get("desc") or a.get("text")
+                        or " ".join(str(e) for e in
+                                    (a.get("entries") or [])))
+                out.append({"name": a.get("name", "?"),
+                            "category": label,
+                            "text": _clean_text(text)})
     return out
 
 

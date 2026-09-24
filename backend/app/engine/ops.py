@@ -730,6 +730,65 @@ def feat_forget(char: Character, p: dict, ctx):
             "payload": {"feat_id": fid}}, []
 
 
+def _list_add_remove(lst: list, value: str, add: bool):
+    if add:
+        if value in lst:
+            raise ValueError("ya presente")
+        lst.append(value)
+    else:
+        if value not in lst:
+            raise ValueError("no presente")
+        lst.remove(value)
+
+
+@op("character.subclass.set")
+def subclass_set(char: Character, p: dict, ctx):
+    """Fija la subclase de la clase indicada (índice en classes[])."""
+    idx = int(p.get("class_index", 0))
+    if not (0 <= idx < len(char.classes)):
+        raise ValueError("class_index fuera de rango")
+    old = char.classes[idx].subclass_id
+    char.classes[idx].subclass_id = p["subclass_id"]
+    return {"operation_type": "character.subclass.set",
+            "payload": {"class_index": idx, "subclass_id": old}}, [
+        {"type": "resource.usage.changed",
+         "payload": {"subclass_set": p["subclass_id"]}}]
+
+
+@op("character.language.add")
+def language_add(char: Character, p: dict, ctx):
+    name = p["name"].strip().lower()
+    _list_add_remove(char.languages, name, True)
+    return {"operation_type": "character.language.remove",
+            "payload": {"name": name}}, []
+
+
+@op("character.language.remove")
+def language_remove(char: Character, p: dict, ctx):
+    name = p["name"].strip().lower()
+    _list_add_remove(char.languages, name, False)
+    return {"operation_type": "character.language.add",
+            "payload": {"name": name}}, []
+
+
+@op("character.reward.add")
+def reward_add(char: Character, p: dict, ctx):
+    rid = p["reward_id"]
+    _list_add_remove(char.rewards, rid, True)
+    return {"operation_type": "character.reward.remove",
+            "payload": {"reward_id": rid}}, [
+        {"type": "resource.usage.changed",
+         "payload": {"reward_added": rid}}]
+
+
+@op("character.reward.remove")
+def reward_remove(char: Character, p: dict, ctx):
+    rid = p["reward_id"]
+    _list_add_remove(char.rewards, rid, False)
+    return {"operation_type": "character.reward.add",
+            "payload": {"reward_id": rid}}, []
+
+
 @op("character.proficiency.add")
 def proficiency_add(char: Character, p: dict, ctx):
     """Añade competencia: kind = skill|save (usa las listas

@@ -53,7 +53,10 @@ export default function Entity() {
             </tr></tbody>
           </table>
           {block.actions.map((a, i) => (
-            <p key={i}><strong>{a.name}.</strong> {a.text}</p>))}
+            <p key={i}>
+              {a.category && a.category !== 'action' &&
+                <em className="muted">[{a.category}] </em>}
+              <strong>{a.name}.</strong> {a.text}</p>))}
         </section>)}
 
       {!block && view && (

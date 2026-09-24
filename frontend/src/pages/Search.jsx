@@ -83,6 +83,14 @@ export default function Search() {
             ))}
         </section>
       )}
+      {/* recientes + favoritos cuando no hay consulta */}
+      {!q.trim() && results.length === 0 && (
+        <QuickAccess />)}
+
+      {results.length === 0 && q.trim() && (
+        <p className="empty">Sin resultados — prueba otro término,
+          quita filtros o busca en otra fuente.</p>)}
+
       {parsed && (
         <p className="muted">
           tipo: {parsed.type || 'cualquiera'}
@@ -113,4 +121,30 @@ export default function Search() {
       </ul>
     </main>
   )
+}
+
+
+/** Favoritos (guardados con ☆ en detalle) + recientes (visitas). */
+function QuickAccess() {
+  const favs = JSON.parse(localStorage.getItem('dnd-favs') || '[]')
+  const recs = JSON.parse(localStorage.getItem('dnd-recents') || '[]')
+  const norm = (x) => typeof x === 'string'
+    ? { id: x, name: x.split(':').pop(), type: '' } : x
+  if (!favs.length && !recs.length) return null
+  const block = (title, items) => items.length > 0 && (
+    <section className="card">
+      <h2>{title}</h2>
+      {items.map((x0) => {
+        const x = norm(x0)
+        return (
+          <div key={x.id} className="row">
+            <Link to={`/content/${encodeURIComponent(x.id)}`}
+                  style={{ flex: 1 }}>{x.name}</Link>
+            <span className="muted">{x.type}</span>
+          </div>)})}
+    </section>)
+  return (<>
+    {block('★ Favoritos', favs)}
+    {block('Recientes', recs)}
+  </>)
 }

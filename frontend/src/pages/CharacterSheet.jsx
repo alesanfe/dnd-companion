@@ -6,6 +6,7 @@ export default function CharacterSheet() {
   const { id } = useParams()
   const [char, setChar] = useState(null)
   const [amount, setAmount] = useState(1)
+  const [charDmgType, setCharDmgType] = useState('')
   const [expr, setExpr] = useState('1d20')
   const [rollType, setRollType] = useState('check')
   const [rollLog, setRollLog] = useState([])
@@ -70,6 +71,12 @@ export default function CharacterSheet() {
       const cc = (r.events || []).find((e) => e.payload?.concentration_check)
       if (cc) {
         setNotice(`Concentración (${cc.payload.spell}): salva CON, CD ${cc.payload.concentration_dc}`)
+      }
+      // transparencia mecánica: resistencia/vuln/inmunidad aplicada
+      const fx = (r.events || [])
+        .flatMap((e) => e.payload?.damage_effects || [])
+      if (fx.length) {
+        setRollLog((l) => [`Daño aplicado: ${fx.join(' · ')}`, ...l].slice(0, 10))
       }
       load()
     } catch (e) {
@@ -275,8 +282,20 @@ export default function CharacterSheet() {
         <div className="row">
           <input type="number" min="1" value={amount}
                  onChange={(e) => setAmount(+e.target.value)} />
-          <button className="dmg" onClick={() => op('character.hp.damage', { amount })}>Daño</button>
-          <button className="heal" onClick={() => op('character.hp.heal', { amount })}>Curar</button>
+          <select value={charDmgType}
+                  onChange={(e) => setCharDmgType(e.target.value)}
+                  aria-label="Tipo de daño" style={{ maxWidth: 130 }}>
+            <option value="">sin tipo</option>
+            {['fire', 'cold', 'lightning', 'poison', 'acid', 'necrotic',
+              'radiant', 'psychic', 'thunder', 'force', 'bludgeoning',
+              'piercing', 'slashing']
+              .map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <button className="dmg" onClick={() =>
+            op('character.hp.damage',
+               { amount, type: charDmgType || undefined })}>Daño</button>
+          <button className="heal" onClick={() =>
+            op('character.hp.heal', { amount })}>Curar</button>
         </div>
       </section>
 
@@ -408,10 +427,9 @@ export default function CharacterSheet() {
           }}>Aplicar</button>
         </div>
         {(d.conditions || []).map((c) => (
-          <span key={c} className="chip">
-            {c}
-            <button onClick={() => op('character.condition.remove', { condition: c })}>×</button>
-          </span>
+          <CondChip key={c} name={c}
+                    onRemove={() => op('character.condition.remove',
+                                       { condition: c })} />
         ))}
       </section>
 
@@ -471,7 +489,8 @@ export default function CharacterSheet() {
           </select>
           <button type="submit">Tirar</button>
         </form>
-        <ul className="log">{rollLog.map((l, i) => <li key={i}>{l}</li>)}</ul>
+        <ul className="log" role="status" aria-live="polite">
+          {rollLog.map((l, i) => <li key={i}>{l}</li>)}</ul>
       </section>
 
       <section className="card optional" hidden={focus ? !hud.has('magia') : tab !== 'magia'}>
@@ -698,6 +717,64 @@ function SpellPicker({ onPick, entityType = 'spell',
   )
 }
 
+
+/** Efecto mecánico SRD de la condición — espejo de
+    domain/conditions.py (los nombres en ES se muestran tal cual). */
+const COND_RULES = {
+  blinded: 'Desventaja en ataques', cegado: 'Desventaja en ataques',
+  cegada: 'Desventaja en ataques',
+  invisible: 'Ventaja en ataques',
+  poisoned: 'Desventaja en ataques y pruebas',
+  envenenado: 'Desventaja en ataques y pruebas',
+  envenenada: 'Desventaja en ataques y pruebas',
+  prone: 'Desventaja en ataques', tumbado: 'Desventaja en ataques',
+  derribado: 'Desventaja en ataques', postrado: 'Desventaja en ataques',
+  restrained: 'Desventaja en ataques y salvaciones de DES',
+  apresado: 'Desventaja en ataques y salvaciones de DES',
+  apresada: 'Desventaja en ataques y salvaciones de DES',
+  frightened: 'Desventaja en ataques y pruebas',
+  asustado: 'Desventaja en ataques y pruebas',
+  atemorizado: 'Desventaja en ataques y pruebas',
+  stunned: 'Incapacitado · autofallo STR/DES', aturdido: 'Incapacitado · autofallo STR/DES',
+  aturdida: 'Incapacitado · autofallo STR/DES',
+  paralyzed: 'Incapacitado · autofallo STR/DES',
+  paralizado: 'Incapacitado · autofallo STR/DES',
+  paralizada: 'Incapacitado · autofallo STR/DES',
+  petrified: 'Incapacitado · autofallo STR/DES',
+  petrificado: 'Incapacitado · autofallo STR/DES',
+  unconscious: 'Incapacitado · autofallo STR/DES',
+  inconsciente: 'Incapacitado · autofallo STR/DES',
+  incapacitated: 'Sin acciones ni reacciones',
+  incapacitado: 'Sin acciones ni reacciones',
+  incapacitada: 'Sin acciones ni reacciones',
+  exhaustion: 'Desventaja en pruebas (3+: también ataques y saves)',
+  exhausto: 'Desventaja en pruebas (3+: también ataques y saves)',
+  agotado: 'Desventaja en pruebas (3+: también ataques y saves)',
+  grappled: 'Velocidad 0', agarrado: 'Velocidad 0',
+  agarrada: 'Velocidad 0',
+  dead: 'Muerto', muerto: 'Muerto', muerta: 'Muerto',
+}
+
+function CondChip({ name, onRemove }) {
+  const [open, setOpen] = useState(false)
+  const rule = COND_RULES[name.toLowerCase()]
+  return (
+    <span>
+      <span className="chip" role="button" tabIndex={0}
+            title="Ver efecto mecánico"
+            onClick={() => setOpen(!open)}
+            onKeyDown={(e) => e.key === 'Enter' && setOpen(!open)}>
+        {name}
+        <button aria-label={`Quitar condición ${name}`}
+                onClick={(e) => { e.stopPropagation(); onRemove() }}>×</button>
+      </span>
+      {open && (
+        <p className="muted" style={{ margin: '.2rem 0 .4rem' }}>
+          {rule || 'Sin efecto mecánico registrado — condición narrativa.'}
+        </p>)}
+    </span>
+  )
+}
 
 function SpellList({ ids, onCast, onForget }) {
   const [names, setNames] = useState({})

@@ -20,16 +20,42 @@ export default function Entity() {
       .catch(() => setView(null))
   }, [id])
 
+  // favoritos + recientes: compendio local, no del backend
+  const [fav, setFav] = useState(() =>
+    (JSON.parse(localStorage.getItem('dnd-favs') || '[]')).includes(id))
+  useEffect(() => {
+    if (!ent) return
+    const rec = JSON.parse(localStorage.getItem('dnd-recents') || '[]')
+    const nx = [{ id: ent.id, name: ent.name, type: ent.entity_type },
+      ...rec.filter((r) => r.id !== ent.id)].slice(0, 12)
+    localStorage.setItem('dnd-recents', JSON.stringify(nx))
+  }, [ent?.id])
+  const toggleFav = () => {
+    const favs = JSON.parse(localStorage.getItem('dnd-favs') || '[]')
+    const nx = fav
+      ? favs.filter((f) => f.id !== id && f !== id)
+      : [...favs, { id: ent.id, name: ent.name, type: ent.entity_type }]
+    localStorage.setItem('dnd-favs', JSON.stringify(nx))
+    setFav(!fav)
+  }
+
   if (err) return <main><p className="error">{err}</p></main>
   if (!ent) return <main><p className="muted">Cargando…</p></main>
 
   const d = ent.data || {}
   return (
     <main className="wide">
-      <h1>{ent.name}</h1>
+      <div className="row">
+        <h1 style={{ flex: 1, margin: 0 }}>{ent.name}</h1>
+        <button className="ghost" aria-pressed={fav}
+                aria-label="Guardar en favoritos"
+                onClick={toggleFav}>
+          {fav ? '★ Guardado' : '☆ Guardar'}</button>
+      </div>
       <p className="muted">
         {ent.entity_type} · {ent.ruleset} · {ent.source_id}
-        {!ent.is_redistributable && ' · contenido privado'}
+        {!ent.is_redistributable &&
+          <span className="tag-private"> · contenido privado</span>}
       </p>
 
       {block && (

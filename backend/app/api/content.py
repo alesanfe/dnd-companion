@@ -39,6 +39,20 @@ def search(
     return {"results": [dict(r) for r in rows]}
 
 
+@router.get("/options")
+def options(entity_type: str, ruleset: str | None = None):
+    """Opciones para el wizard: lista {id, name} de un tipo de entidad."""
+    conn = content_db()
+    sql = ("SELECT id, name FROM content_entities WHERE entity_type = ?")
+    params: list = [entity_type]
+    if ruleset:
+        sql += " AND ruleset = ?"
+        params.append(ruleset)
+    sql += " ORDER BY name"
+    rows = conn.execute(sql, params).fetchall()
+    return {"options": [dict(r) for r in rows]}
+
+
 @router.get("/{entity_id:path}")
 def get_entity(entity_id: str):
     conn = content_db()

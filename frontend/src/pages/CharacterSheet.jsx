@@ -13,6 +13,19 @@ export default function CharacterSheet() {
   const load = () => api.getCharacter(id).then(setChar).catch((e) => setErr(e.message))
   useEffect(() => { load() }, [id])
 
+  // Sync en vivo: si el personaje está en una campaña, escucha eventos
+  // de la sala y recarga cuando algo lo toca.
+  useEffect(() => {
+    if (!char?.campaign_id) return undefined
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+    const ws = new WebSocket(`${proto}://${location.host}/ws/campaign/${char.campaign_id}`)
+    ws.onmessage = (m) => {
+      const msg = JSON.parse(m.data)
+      if (msg.type === 'event' && msg.event?.aggregate_id === id) load()
+    }
+    return () => ws.close()
+  }, [char?.campaign_id, id])
+
   const op = async (type, payload) => {
     try {
       await api.applyOp(char, type, payload)

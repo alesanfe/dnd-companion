@@ -91,3 +91,31 @@ button.heal { background: #2d7a3a; }
 .excerpt { color: var(--muted); font-size: 0.85rem; margin: 0.2rem 0; }
 .log { font-family: ui-monospace, monospace; }
 .char-list a { font-size: 1.15rem; }
+
+/* tracker de combate */
+.combatant {
+  padding: 0.4rem;
+  border-radius: 6px;
+}
+.combatant.active {
+  background: #3d2c1e;
+  outline: 1px solid var(--accent);
+}
+.combatant .init {
+  font-weight: 700;
+  min-width: 2rem;
+}
+.combatant .cname { flex: 1; }
+.combatant .hp { font-family: ui-monospace, monospace; }
+
+select {
+  padding: 0.6rem;
+  font-size: 1rem;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid #444;
+  border-radius: 6px;
+  min-height: 44px;
+}
+
+label { display: flex; align-items: center; gap: 0.4rem; }

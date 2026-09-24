@@ -52,3 +52,16 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_campaign
     ON events(campaign_id, occurred_at);
+
+-- Tracker de combate: un combat por encuentro, combatants en data JSON.
+CREATE TABLE IF NOT EXISTS combats (
+    id          TEXT PRIMARY KEY,
+    campaign_id TEXT REFERENCES campaigns(id),
+    name        TEXT NOT NULL,
+    ruleset     TEXT NOT NULL DEFAULT 'dnd5e-2014',
+    version     INTEGER NOT NULL DEFAULT 1,
+    data        TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_combats_campaign
+    ON combats(campaign_id);

@@ -1,12 +1,4 @@
 """Operations endpoint: idempotency, optimistic locking, undo."""
-import os
-import sys
-import tempfile
-from pathlib import Path
-
-os.environ["DND_STATE_DB"] = str(Path(tempfile.mkdtemp()) / "state.sqlite3")
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
 from fastapi.testclient import TestClient
 
 from app.main import app

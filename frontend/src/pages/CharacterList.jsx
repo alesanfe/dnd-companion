@@ -27,8 +27,9 @@ export default function CharacterList() {
       {err && <p className="error">Backend no disponible: {err}</p>}
       <form onSubmit={create} className="row">
         <input value={name} onChange={(e) => setName(e.target.value)}
-               placeholder="Nombre del personaje" />
+               placeholder="Nombre rápido (vacío)" />
         <button type="submit">Crear</button>
+        <Link to="/new"><button type="button">Wizard →</button></Link>
       </form>
       <ul className="char-list">
         {chars.map((c) => (

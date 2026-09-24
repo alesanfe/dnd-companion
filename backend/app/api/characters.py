@@ -9,8 +9,10 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..db.connections import state_db
-from ..domain.character import Character
+from ..db.connections import content_db, state_db
+from ..domain.character import (
+    AbilityScores, Character, ClassLevel, HitDicePool, HitPoints,
+)
 from ..domain.ruleset import Ruleset
 from ..engine.engine import resolve_stat
 
@@ -37,6 +39,76 @@ def create_character(body: CharacterCreate):
         (cid, body.name, body.player_id, body.campaign_id,
          body.ruleset.value, json.dumps(body.data), now),
     )
+    conn.commit()
+    return {"id": cid, "version": 1}
+
+
+class WizardCreate(BaseModel):
+    """Creación guiada: ids de entidades de la content DB + stats."""
+    name: str
+    ruleset: Ruleset = Ruleset.DND5E_2014
+    class_id: str                       # content entity id, 'srd-2014:barbarian'
+    species_id: str | None = None
+    background_id: str | None = None
+    abilities: dict = {}                # {'str':15,'dex':14,...}
+    player_id: str | None = None
+    campaign_id: str | None = None
+
+
+def _content_row(entity_id: str) -> dict | None:
+    row = content_db().execute(
+        "SELECT data FROM content_entities WHERE id = ?",
+        (entity_id,)).fetchone()
+    return json.loads(row["data"]) if row else None
+
+
+@router.post("/create-from-options", status_code=201)
+def create_from_options(body: WizardCreate):
+    """Construye un Character nivel 1 desde la content DB:
+    HP = hit_die + mod CON, pool de hit dice, spell slots si es caster."""
+    cls = _content_row(body.class_id)
+    if cls is None:
+        raise HTTPException(400, "class not found in content DB")
+
+    abilities = AbilityScores(**(body.abilities or {}))
+    hit_die = int(cls.get("hit_die", 8))
+    hp_max = max(1, hit_die + abilities.modifier("con"))
+
+    # spell slots y prof bonus nivel 1: entidad 'level' '{clase}-1'
+    spell_slots: dict[str, dict[str, int]] = {}
+    prof_bonus = 2
+    source, class_index = body.class_id.split(":", 1)
+    lvl = _content_row(f"{source}:{class_index}-1")
+    if lvl:
+        prof_bonus = int(lvl.get("prof_bonus", 2))
+        sc = lvl.get("spellcasting") or {}
+        for n in range(1, 10):
+            slots = sc.get(f"spell_slots_level_{n}", 0)
+            if slots:
+                spell_slots[str(n)] = {"total": slots, "used": 0}
+
+    char = Character(
+        name=body.name,
+        ruleset=body.ruleset,
+        species_id=body.species_id,
+        background_id=body.background_id,
+        classes=[ClassLevel(class_id=body.class_id, level=1)],
+        abilities=abilities,
+        hp=HitPoints(current=hp_max, max=hp_max),
+        hit_dice=[HitDicePool(die=f"d{hit_die}", total=1, remaining=1)],
+        spell_slots=spell_slots,
+        proficiency_bonus=prof_bonus,
+    )
+
+    conn = state_db()
+    cid = uuid.uuid4().hex
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """INSERT INTO characters
+           (id, name, player_id, campaign_id, ruleset, version, data, updated_at)
+           VALUES (?,?,?,?,?,1,?,?)""",
+        (cid, body.name, body.player_id, body.campaign_id,
+         body.ruleset.value, json.dumps(char.model_dump()), now))
     conn.commit()
     return {"id": cid, "version": 1}
 

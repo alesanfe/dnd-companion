@@ -196,10 +196,51 @@ def combatant_heal(combat: Combat, p: dict, ctx):
     inv = _hp_inverse(c)
     amount = max(0, int(p["amount"]))
     c.hp_current = min(c.hp_max, c.hp_current + amount)
+    if c.hp_current > 0:                      # levantado: reset saves
+        c.death_saves = {"success": 0, "fail": 0}
+        for dead in ("muerto", "estable"):
+            if dead in c.conditions:
+                c.conditions.remove(dead)
     _sync_character(c, ctx)
     return inv, [{"type": "character.hp.changed",
                   "payload": {"combatant": c.name, "healed": amount,
                               "state": hp_state(c)}}]
+
+
+@op("combatant.death_save")
+def combatant_death_save(combat: Combat, p: dict, ctx):
+    """Tirada de salvación de muerte: 3 éxitos → estable, 3 fallos →
+    muerto. El resultado (success bool) lo pasa el cliente tras tirar."""
+    c = _find(combat, p["combatant_id"])
+    if c.hp_current > 0:
+        raise ValueError("el combatiente no está a 0 PG")
+    inv = {"operation_type": "combatant.death_save.set",
+           "payload": {"combatant_id": c.id,
+                       "death_saves": dict(c.death_saves)}}
+    key = "success" if p.get("success") else "fail"
+    c.death_saves[key] += 1
+    outcome = None
+    if c.death_saves["success"] >= 3:
+        c.conditions.append("estable")
+        c.death_saves = {"success": 0, "fail": 0}
+        outcome = "estable"
+    elif c.death_saves["fail"] >= 3:
+        c.conditions.append("muerto")
+        outcome = "muerto"
+    return inv, [{"type": "character.hp.changed",
+                  "payload": {"combatant": c.name,
+                              "death_save": key,
+                              "outcome": outcome}}]
+
+
+@op("combatant.death_save.set")
+def combatant_death_save_set(combat: Combat, p: dict, ctx):
+    c = _find(combat, p["combatant_id"])
+    inv = {"operation_type": "combatant.death_save.set",
+           "payload": {"combatant_id": c.id,
+                       "death_saves": dict(c.death_saves)}}
+    c.death_saves = dict(p["death_saves"])
+    return inv, []
 
 
 @op("combatant.hp.set")

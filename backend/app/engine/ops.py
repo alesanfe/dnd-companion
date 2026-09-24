@@ -37,9 +37,13 @@ def hp_damage(char: Character, p: dict, ctx):
     absorbed = min(char.hp.temp, amount)
     char.hp.temp -= absorbed
     char.hp.current = max(0, char.hp.current - (amount - absorbed))
-    return inv, [{"type": "character.hp.changed",
-                  "payload": {"amount": amount, "temp_absorbed": absorbed,
-                              "current": char.hp.current}}]
+    payload = {"amount": amount, "temp_absorbed": absorbed,
+               "current": char.hp.current}
+    if char.concentrating_on:
+        # recibir daño exige tirada de CON para mantener el conjuro
+        payload["concentration_check"] = True
+        payload["spell"] = char.concentrating_on
+    return inv, [{"type": "character.hp.changed", "payload": payload}]
 
 
 @op("character.hp.heal")
@@ -365,7 +369,6 @@ def shop_buy(char: Character, p: dict, ctx):
         raise ValueError("sin stock")
 
     price_cp = int(entry["price_cp"])
-    before = char.model_dump()
     _spend(char, price_cp)
     inv_add, _ = HANDLERS["character.inventory.add"](
         char, {"name": p["item"], "quantity": 1,
@@ -374,10 +377,119 @@ def shop_buy(char: Character, p: dict, ctx):
     ctx.state_db().execute(
         "UPDATE campaign_entities SET data = ? WHERE id = ?",
         (_json.dumps(shop), p["shop_id"]))
-    return _restore_inverse(before), [
+    # inversa real: devuelve objeto, repone stock y reembolsa monedas
+    inv = {"operation_type": "character.shop.refund",
+           "payload": {"shop_id": p["shop_id"], "item": p["item"],
+                       "price_cp": price_cp}}
+    return inv, [
         {"type": "inventory.item.transferred",
          "payload": {"bought": p["item"], "price_cp": price_cp,
                      "purse": char.purse}}]
+
+
+@op("character.effect.add")
+def effect_add(char: Character, p: dict, ctx):
+    """Añade un Effect declarativo (rasgo, aura, homebrew…)."""
+    import uuid as _uuid
+    from ..domain.effects import Effect
+    eff = Effect(**{**p["effect"], "id": p["effect"].get("id")
+                    or _uuid.uuid4().hex})
+    if any(e.id == eff.id for e in char.effects):
+        raise ValueError(f"efecto duplicado: {eff.id}")
+    char.effects.append(eff)
+    return {"operation_type": "character.effect.remove",
+            "payload": {"effect_id": eff.id}}, [
+        {"type": "character.condition.applied",
+         "payload": {"effect": eff.name}}]
+
+
+@op("character.effect.remove")
+def effect_remove(char: Character, p: dict, ctx):
+    idx = next((i for i, e in enumerate(char.effects)
+                if e.id == p["effect_id"]), None)
+    if idx is None:
+        raise ValueError(f"efecto no encontrado: {p['effect_id']}")
+    eff = char.effects.pop(idx)
+    return {"operation_type": "character.effect.add",
+            "payload": {"effect": eff.model_dump(mode="json")}}, [
+        {"type": "character.condition.removed",
+         "payload": {"effect": eff.name}}]
+
+
+@op("character.spell.cast")
+def spell_cast(char: Character, p: dict, ctx):
+    """Lanza un conjuro: consume espacio (si level>0), marca
+    concentración si el conjuro la requiere. Reversible via snapshot."""
+    spell_id = p["spell_id"]
+    level = int(p.get("level", 0))
+    sp = _content(ctx, spell_id) or {}
+    before = char.model_dump()
+    if level > 0:
+        slot = char.spell_slots.setdefault(
+            str(level), {"total": 0, "used": 0})
+        if slot["used"] >= slot["total"]:
+            raise ValueError(f"sin espacios de nivel {level}")
+        slot["used"] += 1
+    if sp.get("concentration") == "yes":
+        char.concentrating_on = sp.get("name", spell_id)
+    return _restore_inverse(before), [
+        {"type": "resource.usage.changed",
+         "payload": {"spell_cast": sp.get("name", spell_id),
+                     "level": level,
+                     "concentration": char.concentrating_on}}]
+
+
+@op("character.concentration.break")
+def concentration_break(char: Character, p: dict, ctx):
+    before = char.model_dump()
+    spell = char.concentrating_on
+    char.concentrating_on = None
+    return _restore_inverse(before), [
+        {"type": "resource.usage.changed",
+         "payload": {"concentration_broken": spell}}]
+
+
+@op("character.xp.add")
+def xp_add(char: Character, p: dict, ctx):
+    amount = int(p["amount"])
+    inv = {"operation_type": "character.xp.add",
+           "payload": {"amount": -amount}}
+    char.xp = max(0, char.xp + amount)
+    return inv, [{"type": "resource.usage.changed",
+                  "payload": {"xp": char.xp, "delta": amount}}]
+
+
+@op("character.shop.refund")
+def shop_refund(char: Character, p: dict, ctx):
+    """Inversa real de shop.buy: devuelve el objeto, repone el stock y
+    reembolsa las monedas — todo en la transacción de la operación."""
+    if ctx is None or ctx.state_db() is None:
+        raise ValueError("shop.refund requiere contexto de estado")
+    import json as _json
+    item = next((i for i in char.inventory if i.name == p["item"]), None)
+    if item is None:
+        raise ValueError("objeto no encontrado para devolver")
+    item.quantity -= 1
+    if item.quantity <= 0:
+        char.inventory.remove(item)
+    price_cp = int(p["price_cp"])
+    char.purse = _normalize_purse(_purse_cp(char) + price_cp)
+    row = ctx.state_db().execute(
+        "SELECT data FROM campaign_entities WHERE id = ?",
+        (p["shop_id"],)).fetchone()
+    if row:
+        shop = _json.loads(row["data"])
+        for s in shop.get("stock", []):
+            if s.get("name") == p["item"]:
+                s["quantity"] = s.get("quantity", 0) + 1
+                break
+        ctx.state_db().execute(
+            "UPDATE campaign_entities SET data = ? WHERE id = ?",
+            (_json.dumps(shop), p["shop_id"]))
+    return {"operation_type": "character.shop.buy",
+            "payload": {"shop_id": p["shop_id"], "item": p["item"]}}, [
+        {"type": "inventory.item.transferred",
+         "payload": {"refunded": p["item"], "price_cp": price_cp}}]
 
 
 @op("character.craft")

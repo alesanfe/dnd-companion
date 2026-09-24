@@ -52,8 +52,24 @@ def register(body: Credentials):
     return {"user_id": uid, "token": _issue(conn, uid)}
 
 
+# throttle de login en memoria: max 5 intentos/min por usuario
+_login_attempts: dict[str, list[float]] = {}
+
+
+def _throttle(username: str) -> None:
+    import time
+    now = time.time()
+    tries = [t for t in _login_attempts.get(username, [])
+             if now - t < 60]
+    if len(tries) >= 5:
+        raise HTTPException(429, "demasiados intentos; espera un minuto")
+    tries.append(now)
+    _login_attempts[username] = tries
+
+
 @router.post("/login")
 def login(body: Credentials):
+    _throttle(body.username)
     conn = state_db()
     row = conn.execute(
         "SELECT * FROM users WHERE username = ?", (body.username,)
@@ -62,6 +78,17 @@ def login(body: Credentials):
                                                   row["salt"]):
         raise HTTPException(401, "invalid credentials")
     return {"user_id": row["id"], "token": _issue(conn, row["id"])}
+
+
+@router.post("/logout")
+def logout(authorization: str | None = Header(None)):
+    """Revoca el token actual."""
+    token = (authorization or "").removeprefix("Bearer ").strip()
+    if token:
+        conn = state_db()
+        conn.execute("DELETE FROM auth_tokens WHERE token = ?", (token,))
+        conn.commit()
+    return {"ok": True}
 
 
 def _issue(conn, user_id: str) -> str:

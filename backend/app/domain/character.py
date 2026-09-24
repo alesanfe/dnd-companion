@@ -101,6 +101,8 @@ class Character(BaseModel):
         default_factory=lambda: {"pp": 0, "gp": 0, "ep": 0, "sp": 0, "cp": 0})
     narrative: Narrative = Field(default_factory=Narrative)
     proficiency_bonus: int = 2
+    xp: int = 0                             # puntos de experiencia
+    concentrating_on: str | None = None     # conjuro en concentración
 
     @property
     def total_level(self) -> int:

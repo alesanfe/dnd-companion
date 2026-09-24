@@ -33,9 +33,15 @@ export default function CharacterList() {
       </form>
       <ul className="char-list">
         {chars.map((c) => (
-          <li key={c.id}>
-            <Link to={`/character/${c.id}`}>{c.name}</Link>
+          <li key={c.id} className="row">
+            <Link to={`/character/${c.id}`} style={{ flex: 1 }}>{c.name}</Link>
             <span className="muted"> v{c.version} · {c.ruleset}</span>
+            <button className="ghost" aria-label={`Borrar ${c.name}`}
+                    onClick={async () => {
+              if (!confirm(`¿Borrar a ${c.name}? Esta acción no se puede deshacer.`)) return
+              await fetch(`/api/characters/${c.id}`, { method: 'DELETE' })
+              load()
+            }}>×</button>
           </li>
         ))}
       </ul>

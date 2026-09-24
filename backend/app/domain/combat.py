@@ -19,6 +19,8 @@ class Combatant(BaseModel):
     conditions: list[str] = Field(default_factory=list)
     stat_block: dict | None = None       # monstruo completo (solo DM)
     hidden_hp: bool = True               # jugadores ven estado, no número
+    death_saves: dict = Field(
+        default_factory=lambda: {"success": 0, "fail": 0})
 
 
 class Combat(BaseModel):

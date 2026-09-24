@@ -322,3 +322,150 @@ def test_wrong_password_rejected():
     client.post("/api/auth/register", json={"username": u, "password": "a"})
     r = client.post("/api/auth/login", json={"username": u, "password": "b"})
     assert r.status_code == 401
+
+
+def test_logout_revokes_token():
+    h = _auth_headers(f"lo{uuid.uuid4().hex[:8]}")
+    assert client.post("/api/auth/logout", headers=h).status_code == 200
+    assert client.get("/api/auth/me", headers=h).status_code == 401
+
+
+# --- mejoras incrementales ---------------------------------------------
+
+def test_effect_add_remove_ops():
+    cid = _mkchar()
+    r = _op(cid, _version(cid), "character.effect.add", {
+        "effect": {"name": "Bendición",
+                   "operations": [{"op": "add_modifier", "target": "attack",
+                                   "value": 1}]}})
+    assert r.status_code == 200
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    eff_id = d["effects"][0]["id"]
+    r = _op(cid, _version(cid), "character.effect.remove",
+            {"effect_id": eff_id})
+    assert r.status_code == 200
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert d["effects"] == []
+
+
+def test_spell_cast_consumes_slot_and_concentration():
+    cid = _mkchar()
+    import json as _j
+    from app.db.connections import state_db
+    conn = state_db()
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    d["spell_slots"] = {"1": {"total": 2, "used": 0}}
+    conn.execute("UPDATE characters SET data = ? WHERE id = ?",
+                 (_j.dumps(d), cid))
+    conn.commit()
+    r = _op(cid, _version(cid), "character.spell.cast",
+            {"spell_id": "srd-2014:mage-armor", "level": 1})
+    assert r.status_code == 200
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert d["spell_slots"]["1"]["used"] == 1
+    # sin espacios → 400
+    _op(cid, _version(cid), "character.spell.cast",
+        {"spell_id": "x", "level": 1})
+    r = _op(cid, _version(cid), "character.spell.cast",
+            {"spell_id": "x", "level": 1})
+    assert r.status_code == 400
+
+
+def test_xp_and_concentration_break():
+    cid = _mkchar()
+    _op(cid, _version(cid), "character.xp.add", {"amount": 300})
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert d["xp"] == 300
+    d["concentrating_on"] = "bendición"
+    import json as _j
+    from app.db.connections import state_db
+    conn = state_db()
+    conn.execute("UPDATE characters SET data = ? WHERE id = ?",
+                 (_j.dumps(d), cid))
+    conn.commit()
+    _op(cid, _version(cid), "character.concentration.break", {})
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert d["concentrating_on"] is None
+
+
+def test_damage_flags_concentration_check():
+    cid = _mkchar()
+    import json as _j
+    from app.db.connections import state_db
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    d["concentrating_on"] = "invisibilidad"
+    conn = state_db()
+    conn.execute("UPDATE characters SET data = ? WHERE id = ?",
+                 (_j.dumps(d), cid))
+    conn.commit()
+    r = _op(cid, _version(cid), "character.hp.damage", {"amount": 5})
+    ev = r.json()["events"][0]["payload"]
+    assert ev["concentration_check"] is True
+
+
+def test_shop_buy_undo_restores_stock():
+    camp = client.post("/api/campaigns", json={"name": "S"}).json()["id"]
+    shop = client.post(f"/api/campaigns/{camp}/entities", json={
+        "kind": "shop", "name": "Tienda", "visibility": "public",
+        "data": {"stock": [{"name": "Poción", "price_cp": 500,
+                            "quantity": 1}]}}).json()["id"]
+    cid = _mkchar()
+    _op(cid, _version(cid), "character.currency.earn", {"gp": 10})
+    r = _op(cid, _version(cid), "character.shop.buy",
+            {"shop_id": shop, "item": "Poción"})
+    op_id = r.json()["operation_id"]
+    # deshacer: repone stock, quita objeto, devuelve monedas
+    client.post(f"/api/operations/undo/{op_id}")
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert not any(i["name"] == "Poción" for i in d["inventory"])
+    shopd = client.get(
+        f"/api/campaigns/{camp}/entities?kind=shop").json()["entities"]
+    assert shopd[0]["data"]["stock"][0]["quantity"] == 1
+    total_cp = sum(d["purse"][c] * v for c, v in
+                   {"pp": 1000, "gp": 100, "ep": 50, "sp": 10,
+                    "cp": 1}.items())
+    assert total_cp == 1000          # reembolso íntegro (normalizado)
+
+
+def test_death_saves():
+    combat = client.post("/api/combat", json={"name": "D"}).json()
+    _combat_op(combat["id"], combat["version"], "combatant.add",
+               {"name": "Hero", "hp_max": 10})
+    cdata = client.get(f"/api/combat/{combat['id']}").json()["combat"]
+    bid = cdata["combatants"][0]["id"]
+    v = client.get(f"/api/combat/{combat['id']}").json()["version"]
+    _combat_op(combat["id"], v, "combatant.damage",
+               {"combatant_id": bid, "amount": 99})
+    v = client.get(f"/api/combat/{combat['id']}").json()["version"]
+    for _ in range(3):
+        r = _combat_op(combat["id"], v, "combatant.death_save",
+                       {"combatant_id": bid, "success": True})
+        v = r.json()["version"]
+    c = client.get(f"/api/combat/{combat['id']}").json()["combat"]
+    assert "estable" in c["combatants"][0]["conditions"]
+
+
+def test_condition_disadvantage_and_autofail():
+    cid = _mkchar()
+    _op(cid, _version(cid), "character.condition.apply",
+        {"condition": "poisoned"})
+    r = client.post(f"/api/operations/character/{cid}/roll",
+                    params={"expression": "1d20", "roll_type": "attack"})
+    b = r.json()
+    assert len(b["rolls"]) == 2                       # desventaja: 2d20
+    assert b["kept"][0] == min(b["rolls"])
+    # stunned → save:str falla automáticamente
+    _op(cid, _version(cid), "character.condition.apply",
+        {"condition": "stunned"})
+    r = client.post(f"/api/operations/character/{cid}/roll",
+                    params={"expression": "1d20", "roll_type": "save:str"})
+    assert r.json()["auto_fail"] is True
+
+
+def test_patch_and_delete_character():
+    cid = _mkchar()
+    r = client.patch(f"/api/characters/{cid}", json={"name": "Renombrado"})
+    assert r.status_code == 200
+    assert client.get(f"/api/characters/{cid}").json()["name"] == "Renombrado"
+    assert client.delete(f"/api/characters/{cid}").status_code == 200
+    assert client.get(f"/api/characters/{cid}").status_code == 404

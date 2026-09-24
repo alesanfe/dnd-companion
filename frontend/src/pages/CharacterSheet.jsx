@@ -20,15 +20,23 @@ export default function CharacterSheet() {
   const load = () => api.getCharacter(id).then(setChar).catch((e) => setErr(e.message))
   useEffect(() => { load() }, [id])
 
+  const [rollRequest, setRollRequest] = useState(null)
+  const [xpAdd, setXpAdd] = useState(0)
+
   // Sync en vivo: si el personaje está en una campaña, escucha eventos
-  // de la sala y recarga cuando algo lo toca.
+  // de la sala y recarga cuando algo lo toca. Las peticiones de tirada
+  // del DM aparecen como banner accionable.
   useEffect(() => {
     if (!char?.campaign_id) return undefined
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
     const ws = new WebSocket(`${proto}://${location.host}/ws/campaign/${char.campaign_id}`)
     ws.onmessage = (m) => {
       const msg = JSON.parse(m.data)
-      if (msg.type === 'event' && msg.event?.aggregate_id === id) load()
+      if (msg.type !== 'event') return
+      const ev = msg.event
+      if (ev.aggregate_id !== id) return
+      if (ev.type === 'dice.roll.requested') setRollRequest(ev.payload)
+      else load()
     }
     return () => ws.close()
   }, [char?.campaign_id, id])
@@ -95,6 +103,38 @@ export default function CharacterSheet() {
         }}>Historial</button>
       </div>
       {err && <p className="error">{err}</p>}
+
+      {rollRequest && (
+        <section className="card" role="alert">
+          <h2>El DM pide una tirada</h2>
+          <p><strong>{rollRequest.expression}</strong>
+            {rollRequest.reason && ` — ${rollRequest.reason}`}
+            {rollRequest.secret && <span className="muted"> (secreta)</span>}
+          </p>
+          <button onClick={async () => {
+            const r = await api.characterRoll(id, rollRequest.expression, 'check')
+            setRollLog((l) => [`${r.expression} → ${r.kept.join('+')} = ${r.total}`, ...l].slice(0, 10))
+            setRollRequest(null)
+          }}>Tirar {rollRequest.expression}</button>
+          <button className="ghost" onClick={() => setRollRequest(null)}>Descartar</button>
+        </section>
+      )}
+
+      <div className="row">
+        <span className="muted">PX: {d.xp || 0}</span>
+        <input type="number" min="0" style={{ maxWidth: 90 }} value={xpAdd}
+               onChange={(e) => setXpAdd(+e.target.value)} />
+        <button disabled={!xpAdd} onClick={() => {
+          op('character.xp.add', { amount: xpAdd }); setXpAdd(0)
+        }}>+XP</button>
+        {d.concentrating_on && (
+          <span className="chip">
+            ⭑ {d.concentrating_on}
+            <button aria-label="Romper concentración" onClick={() =>
+              op('character.concentration.break', {})}>×</button>
+          </span>
+        )}
+      </div>
 
       {history && (
         <section className="card optional">

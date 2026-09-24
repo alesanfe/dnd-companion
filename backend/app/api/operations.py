@@ -53,12 +53,49 @@ class OpContext:
         return self._state
 
 
+# Reglas declarativas de condiciones (SRD): qué impone cada condición
+# sobre tiradas. Es data, no condicionales por clase — igual que los
+# Effect, pero para condiciones que no existen como entidad efecto.
+# roll_type admite 'attack|check|save|damage' y 'save:dex', 'skill:x'.
+_CONDITION_ROLLS = {
+    "blinded":     {"dis": {"attack"}},
+    "invisible":   {"adv": {"attack"}},
+    "poisoned":    {"dis": {"attack", "check"}},
+    "prone":       {"dis": {"attack"}},
+    "restrained":  {"dis": {"attack", "save:dex"}},
+    "frightened":  {"dis": {"check", "attack"}},
+    "grappled":    {},
+    "stunned":     {"fail": {"save:str", "save:dex"}},
+    "paralyzed":   {"fail": {"save:str", "save:dex"}},
+    "unconscious": {"fail": {"save:str", "save:dex"}},
+    "exhaustion":  {"dis": {"check"}},
+}
+
+
+def _condition_mods(char: Character, roll_type: str):
+    """Deriva ventaja/desventaja/autofallo desde char.conditions."""
+    adv = dis = fail = False
+    notes: list[str] = []
+    base = roll_type.split(":")[0]
+    for cond in char.conditions:
+        rule = _CONDITION_ROLLS.get(cond.lower())
+        if not rule:
+            continue
+        if any(roll_type == t or base == t for t in rule.get("adv", ())):
+            adv = True; notes.append(f"{cond}: ventaja")
+        if any(roll_type == t or base == t for t in rule.get("dis", ())):
+            dis = True; notes.append(f"{cond}: desventaja")
+        if roll_type in rule.get("fail", ()):
+            fail = True; notes.append(f"{cond}: salvación automática fallida")
+    return adv, dis, fail, notes
+
+
 @router.post("/character/{character_id}/roll")
 def character_roll(character_id: str, expression: str = "1d20",
                    roll_type: str = "check"):
-    """Tirada a través del motor de efectos: consulta ventaja/desventaja
-    y mods declarativos sobre el roll_type (attack|save|check|skill:X).
-    Devuelve el resultado con trazabilidad de qué efectos aplicaron."""
+    """Tirada a través del motor de efectos: ventaja/desventaja y mods
+    declarativos (efectos pasivos o before_roll) + reglas de condición.
+    roll_type: attack|check|save|damage|save:dex|skill:x."""
     conn = state_db()
     row = conn.execute(
         "SELECT data FROM characters WHERE id = ?", (character_id,)
@@ -72,6 +109,9 @@ def character_roll(character_id: str, expression: str = "1d20",
     extra_mod = 0
     applied = []
     for eff in char.effects:
+        # solo efectos pasivos o con trigger before_roll
+        if eff.trigger is not None and eff.trigger.value != "before_roll":
+            continue
         for o in eff.operations:
             tgt = o.target or ""
             if tgt not in (roll_type, f"*.{roll_type}", "*", "roll"):
@@ -83,6 +123,13 @@ def character_roll(character_id: str, expression: str = "1d20",
             elif o.op.value == "add_modifier" and o.value is not None:
                 extra_mod += int(o.value)
                 applied.append(f"{eff.name}: {int(o.value):+d}")
+    c_adv, c_dis, fail, c_notes = _condition_mods(char, roll_type)
+    adv = adv or c_adv
+    dis = dis or c_dis
+    applied += c_notes
+    if fail:
+        return {"expression": expr, "rolls": [], "kept": [], "total": 0,
+                "auto_fail": True, "effects_applied": applied}
     if adv and not dis and "adv" not in expr and "dis" not in expr \
             and "d20" in expr:
         expr += "adv"
@@ -96,7 +143,8 @@ def character_roll(character_id: str, expression: str = "1d20",
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"expression": r.expression, "rolls": r.rolls, "kept": r.kept,
-            "total": r.total, "effects_applied": applied}
+            "total": r.total, "auto_fail": False,
+            "effects_applied": applied}
 
 
 _MODELS = {"character": Character, "combat": Combat}

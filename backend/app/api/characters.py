@@ -126,6 +126,52 @@ def list_characters(campaign_id: str | None = None):
     return {"characters": [dict(r) for r in rows]}
 
 
+class CharPatch(BaseModel):
+    name: str | None = None
+    campaign_id: str | None = None
+
+
+@router.patch("/{character_id}")
+def patch_character(character_id: str, body: CharPatch):
+    """Renombrar / reasignar campaña (los cambios de estado de juego van
+    por /api/operations; esto es solo metadata)."""
+    conn = state_db()
+    row = conn.execute(
+        "SELECT * FROM characters WHERE id = ?", (character_id,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "character not found")
+    data = json.loads(row["data"])
+    changed = []
+    if body.name is not None:
+        data["name"] = body.name
+        changed.append("name")
+    if body.campaign_id is not None:
+        changed.append("campaign_id")
+    conn.execute(
+        """UPDATE characters SET name = ?, campaign_id = ?, data = ?,
+           version = version + 1, updated_at = ? WHERE id = ?""",
+        (data["name"],
+         body.campaign_id if body.campaign_id is not None
+         else row["campaign_id"],
+         json.dumps(data), datetime.now(timezone.utc).isoformat(),
+         character_id))
+    conn.commit()
+    return {"id": character_id, "changed": changed}
+
+
+@router.delete("/{character_id}")
+def delete_character(character_id: str):
+    """Borra la ficha (sus operaciones quedan en el historial)."""
+    conn = state_db()
+    cur = conn.execute("DELETE FROM characters WHERE id = ?",
+                       (character_id,))
+    conn.commit()
+    if cur.rowcount == 0:
+        raise HTTPException(404, "character not found")
+    return {"deleted": character_id}
+
+
 EXPORT_VERSION = 1
 
 

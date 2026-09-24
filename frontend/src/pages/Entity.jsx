@@ -41,6 +41,26 @@ export default function Entity() {
             <span className="chip">CR {block.cr}</span>
             <span className="chip">Vel {block.speed || '—'}</span>
           </div>
+          {[
+            ['Resistencias', block.resistances],
+            ['Inmunidades', block.immunities],
+            ['Vulnerabilidades', block.vulnerabilities],
+            ['Cond. inmunes', block.condition_immune],
+          ].filter(([, v]) => v?.length).map(([label, v]) => (
+            <p key={label} className="muted">
+              <strong>{label}:</strong> {v.join(', ')}</p>))}
+          {block.senses && <p className="muted">
+            <strong>Sentidos:</strong> {block.senses}</p>}
+          {block.languages && <p className="muted">
+            <strong>Idiomas:</strong> {block.languages}</p>}
+          {Object.keys(block.skills || {}).length > 0 && (
+            <p className="muted"><strong>Habilidades:</strong>{' '}
+              {Object.entries(block.skills)
+                .map(([k, v]) => `${k} ${v >= 0 ? '+' : ''}${v}`)
+                .join(', ')}</p>)}
+          {block.spellcasting && (
+            <p className="muted"><strong>Conjuros:</strong>{' '}
+              {block.spellcasting.spells.join(', ')}</p>)}
           <table className="abilities">
             <thead><tr>
               {Object.keys(block.abilities).map((a) =>

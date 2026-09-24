@@ -21,6 +21,7 @@ La content DB agrega fuentes con schemas muy distintos:
 """
 from __future__ import annotations
 
+import json
 import re
 
 ABILITIES = ("str", "dex", "con", "int", "wis", "cha")
@@ -149,6 +150,81 @@ def _actions(d: dict) -> list[dict]:
     return out
 
 
+def _flatten_strs(v) -> list[str]:
+    """'a, b' | ['a','b'] | [{index/name}] | {resist:[…]} → ['a','b']."""
+    out: list[str] = []
+    if isinstance(v, str):
+        out.extend(x.strip() for x in v.split(",") if x.strip())
+    elif isinstance(v, list):
+        for x in v:
+            if isinstance(x, dict):
+                name = x.get("index") or x.get("name")
+                if name:
+                    out.append(str(name))
+                else:                    # 5etools: {resist:[…]}
+                    for sub in x.values():
+                        out.extend(_flatten_strs(sub))
+            else:
+                out.extend(_flatten_strs(str(x)))
+    elif isinstance(v, dict):
+        for sub in v.values():
+            out.extend(_flatten_strs(sub))
+    return out
+
+
+def _pick(d: dict, *keys) -> list[str]:
+    for k in keys:
+        if d.get(k):
+            return _flatten_strs(d[k])
+    return []
+
+
+def _skills(d: dict) -> dict[str, int]:
+    """Totales de habilidad: open5e skills:{perception:4} ·
+    codexMUNDI skill:'Perception +12, Stealth +5'."""
+    out = {}
+    src = d.get("skills") or {}
+    if isinstance(src, dict):
+        out.update({k.lower(): int(v) for k, v in src.items()
+                    if isinstance(v, (int, float))})
+    raw = d.get("skill")
+    if isinstance(raw, str):
+        for m in re.finditer(r"([A-Za-zñ]+)\s*([+-]?\d+)", raw):
+            out[m.group(1).lower()] = int(m.group(2))
+    return out
+
+
+def _spellcasting(d: dict) -> dict | None:
+    """Lanzamiento de conjuros del monstruo: nombres {@spell X} y
+    el texto del bloque (5etools spellcasting[])."""
+    scs = d.get("spellcasting") or []
+    if not isinstance(scs, list):
+        return None
+    names: list[str] = []
+    texts: list[str] = []
+    for sc in scs:
+        if not isinstance(sc, dict):
+            continue
+        block = " ".join(clean_txt for clean_txt in
+                         (_clean_text(e) for e in
+                          (sc.get("headerEntries") or []) +
+                          (sc.get("footerEntries") or []))
+                         if clean_txt)
+        if block:
+            texts.append(block)
+        for sec in sc.get("will") or []:
+            names += re.findall(r"\{@spell ([^}|]+)", str(sec))
+        for lvl, sec in (sc.get("daily") or {}).items():
+            names += re.findall(r"\{@spell ([^}|]+)", str(sec))
+        for lvl, sec in (sc.get("spells") or {}).items():
+            if isinstance(sec, dict):
+                names += re.findall(r"\{@spell ([^}|]+)",
+                                    str(sec.get("spells", "")))
+        names += re.findall(r"\{@spell ([^}|]+)", json.dumps(sc))
+    return {"spells": sorted(set(names)), "text": " ".join(texts)} \
+        if (names or texts) else None
+
+
 def normalize(data: dict | None) -> dict | None:
     """Stat block canónico + original bajo ``raw``. None si no hay data."""
     if not isinstance(data, dict) or not data:
@@ -167,5 +243,18 @@ def normalize(data: dict | None) -> dict | None:
         "initiative_mod": _mod(abilities["dex"]),
         "speed": _speed(data),
         "actions": _actions(data),
+        "resistances": _pick(data, "damage_resistances", "resist"),
+        "immunities": _pick(data, "damage_immunities", "immune"),
+        "vulnerabilities": _pick(data, "damage_vulnerabilities",
+                                 "vulnerable"),
+        "condition_immune": _pick(data, "condition_immunities",
+                                  "conditionImmune"),
+        "senses": (lambda s: s.get("as_string", s) if isinstance(s, dict)
+                   else str(s or ""))(data.get("senses")),
+        "skills": _skills(data),
+        "languages": (lambda s: s.get("as_string", s)
+                      if isinstance(s, dict) else str(s or ""))(
+            data.get("languages")),
+        "spellcasting": _spellcasting(data),
         "raw": data,
     }

@@ -193,16 +193,32 @@ def combatant_add_raw(combat: Combat, p: dict, ctx):
 
 @op("combatant.damage")
 def combatant_damage(combat: Combat, p: dict, ctx):
+    """Daño con tipo opcional: aplica resistencia (÷2), inmunidad (0)
+    o vulnerabilidad (×2) del stat block si lo hay."""
     c = _find(combat, p["combatant_id"])
     inv = _hp_inverse(c)
     amount = max(0, int(p["amount"]))
+    note = None
+    dtype = (p.get("damage_type") or "").strip().lower()
+    if dtype and c.stat_block:
+        res = [str(x).lower() for x in c.stat_block.get("resistances", [])]
+        imm = [str(x).lower() for x in c.stat_block.get("immunities", [])]
+        vul = [str(x).lower() for x in
+               c.stat_block.get("vulnerabilities", [])]
+        if any(dtype in x for x in imm):
+            amount, note = 0, f"inmune a {dtype}"
+        elif any(dtype in x for x in res):
+            amount, note = amount // 2, f"resistente a {dtype} (÷2)"
+        elif any(dtype in x for x in vul):
+            amount, note = amount * 2, f"vulnerable a {dtype} (×2)"
     absorbed = min(c.hp_temp, amount)
     c.hp_temp -= absorbed
     c.hp_current = max(0, c.hp_current - (amount - absorbed))
     _sync_character(c, ctx)
     return inv, [{"type": "character.hp.changed",
                   "payload": {"combatant": c.name, "amount": amount,
-                              "state": hp_state(c)}}]
+                              "state": hp_state(c),
+                              **({"note": note} if note else {})}}]
 
 
 @op("combatant.heal")
@@ -360,10 +376,17 @@ def combatant_cond_apply(combat: Combat, p: dict, ctx):
         c.conditions.append(p["condition"])
     if p.get("rounds"):
         c.condition_durations[p["condition"]] = int(p["rounds"])
+    payload = {"combatant": c.name, "condition": p["condition"],
+               "rounds": p.get("rounds")}
+    # Muerte de un monstruo con CR → sugerencia de XP al DM
+    if p["condition"].lower() in ("muerto", "dead", "muerta") \
+            and c.stat_block:
+        from ..domain.xp import cr_to_xp
+        xp = cr_to_xp(c.stat_block.get("cr", 0))
+        if xp:
+            payload["xp_suggestion"] = xp
     return inv, [{"type": "character.condition.applied",
-                  "payload": {"combatant": c.name,
-                              "condition": p["condition"],
-                              "rounds": p.get("rounds")}}]
+                  "payload": payload}]
 
 
 @op("combatant.save")
@@ -422,6 +445,36 @@ def combatant_action_roll(combat: Combat, p: dict, ctx):
     if m_dc:
         ev["payload"]["save_dc"] = int(m_dc.group(1))
     return {"operation_type": "noop", "payload": {}}, [ev]
+
+
+@op("combatant.check")
+def combatant_check(combat: Combat, p: dict, ctx):
+    """Tirada de habilidad del combatiente: total de stat_block.skills
+    si existe (p.ej. Perception +12), si no mod de habilidad ligada."""
+    c = _find(combat, p["combatant_id"])
+    skill = p["skill"].lower()
+    block = c.stat_block or {}
+    total_mod = (block.get("skills") or {}).get(skill)
+    if total_mod is None:
+        ability = SKILL_ABILITY.get(skill, "int")
+        total_mod = (block.get("abilities") or {}).get(ability, 10)
+        total_mod = (total_mod - 10) // 2
+    r = roll("1d20")
+    return {"operation_type": "noop", "payload": {}}, [
+        {"type": "dice.roll.created",
+         "payload": {"combatant": c.name, "skill": skill,
+                     "roll": r.total, "total": r.total + total_mod,
+                     "mod": total_mod}}]
+
+
+SKILL_ABILITY = {
+    "athletics": "str", "acrobatics": "dex", "sleight of hand": "dex",
+    "stealth": "dex", "arcana": "int", "history": "int",
+    "investigation": "int", "nature": "int", "religion": "int",
+    "animal handling": "wis", "insight": "wis", "medicine": "wis",
+    "perception": "wis", "survival": "wis", "deception": "cha",
+    "intimidation": "cha", "performance": "cha", "persuasion": "cha",
+}
 
 
 @op("noop")

@@ -18,6 +18,7 @@ export default function DmBoard() {
   const [crs, setCrs] = useState('')
   const [difficulty, setDifficulty] = useState(null)
   const [rollReq, setRollReq] = useState({ character_id: '', expression: '1d20', reason: '' })
+  const [dmgType, setDmgType] = useState('')
   const [sessions, setSessions] = useState([])
   const [sessTitle, setSessTitle] = useState('')
   const [timeline, setTimeline] = useState(null)
@@ -378,6 +379,21 @@ export default function DmBoard() {
 
           <section className="card">
             <h2>Iniciativa</h2>
+            <div className="row">
+              <select value={dmgType}
+                      onChange={(e) => setDmgType(e.target.value)}
+                      style={{ maxWidth: 160 }}
+                      aria-label="Tipo de daño">
+                <option value="">daño sin tipo</option>
+                {['fire', 'cold', 'lightning', 'poison', 'acid',
+                  'necrotic', 'radiant', 'psychic', 'thunder',
+                  'force', 'bludgeoning', 'piercing', 'slashing']
+                  .map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <span className="muted">
+                se aplica resistencia/inmunidad/vulnerabilidad del stat block
+              </span>
+            </div>
             {ordered.map((c, i) => (
               <div key={c.id} className={`row combatant ${i === activeIdx && combat.combat.status === 'active' ? 'active' : ''}`}>
                 <span className="init">{c.initiative}</span>
@@ -389,7 +405,9 @@ export default function DmBoard() {
                        value={dmg[c.id] || ''}
                        onChange={(e) => setDmg({ ...dmg, [c.id]: +e.target.value })} />
                 <button className="dmg" disabled={!dmg[c.id]}
-                        onClick={() => cop('combatant.damage', { combatant_id: c.id, amount: dmg[c.id] })}>-</button>
+                        onClick={() => cop('combatant.damage', {
+                          combatant_id: c.id, amount: dmg[c.id],
+                          damage_type: dmgType || undefined })}>-</button>
                 <button className="heal" disabled={!dmg[c.id]}
                         onClick={() => cop('combatant.heal', { combatant_id: c.id, amount: dmg[c.id] })}>+</button>
                 <button onClick={() => cop('combatant.remove', { combatant_id: c.id })}>×</button>

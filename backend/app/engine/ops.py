@@ -351,10 +351,20 @@ def character_attack(char: Character, p: dict, ctx):
     if item is None:
         raise ValueError("objeto no encontrado en inventario")
     dmg_expr = "1d4"
+    finesse = False
     if item.source_id:
         w = _content(ctx, item.source_id) or {}
         dmg_expr = _item_damage(w) or dmg_expr
-    total_mod = char.proficiency_bonus + char.abilities.modifier("str")
+        props = w.get("properties") or w.get("property") or []
+        finesse = any(
+            (x.get("index") or x.get("name") or "").lower() == "finesse"
+            if isinstance(x, dict) else str(x).lower() in ("finesse", "f")
+            for x in (props if isinstance(props, list) else [props]))
+    # finesse: mejor de FUE/DES; si no, FUE (aproximación marcial)
+    mod = max(char.abilities.modifier("str"),
+              char.abilities.modifier("dex")) if finesse \
+        else char.abilities.modifier("str")
+    total_mod = char.proficiency_bonus + mod
     atk = roll("1d20")
     dmg = roll(dmg_expr)
     return {"operation_type": "noop", "payload": {}}, [

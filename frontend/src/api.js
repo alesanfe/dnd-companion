@@ -79,8 +79,11 @@ export const api = {
   contentSources: () => req('/api/content/sources'),
   statblockPreview: (id) =>
     req(`/api/content/${encodeURIComponent(id)}/statblock`),
-  contentOptions: (entityType, ruleset = 'dnd5e-2014') =>
-    req(`/api/content/options?entity_type=${entityType}&ruleset=${ruleset}`),
+  contentOptions: (entityType, ruleset = 'dnd5e-2014',
+                   allSources = false) =>
+    req(`/api/content/options?entity_type=${entityType}` +
+        `&ruleset=${ruleset}` +
+        (allSources ? '&all_sources=true' : '')),
   derivedAll: (id) => req(`/api/characters/${id}/derived`),
   getEntity: (id) => req(`/api/content/${encodeURIComponent(id)}`),
   campaignEvents: (campaignId, limit = 100) =>

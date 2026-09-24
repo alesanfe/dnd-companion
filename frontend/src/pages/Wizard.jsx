@@ -25,9 +25,20 @@ export default function Wizard() {
   const [err, setErr] = useState(null)
 
   useEffect(() => {
-    api.contentOptions('class', ruleset).then((r) => setClasses(r.options)).catch((e) => setErr(e.message))
-    api.contentOptions('race', ruleset).then((r) => setSpecies(r.options)).catch(() => {})
-    api.contentOptions('background', ruleset).then((r) => setBackgrounds(r.options)).catch(() => {})
+    // all_sources: ofrece también homebrew/UA/terceros importados
+    api.contentOptions('class', ruleset, true)
+      .then((r) => setClasses(r.options)).catch((e) => setErr(e.message))
+    // 2024 usa 'species'; 2014 usa 'race'; 'mixed' trae ambos
+    Promise.all([
+      api.contentOptions('race', ruleset, true),
+      api.contentOptions('species', ruleset, true),
+    ]).then(([a, b]) => {
+      const seen = new Set()
+      setSpecies([...a.options, ...b.options]
+        .filter((o) => !seen.has(o.id) && seen.add(o.id)))
+    }).catch(() => {})
+    api.contentOptions('background', ruleset, true)
+      .then((r) => setBackgrounds(r.options)).catch(() => {})
   }, [ruleset])
 
   const assign = (ab, val) => {
@@ -58,10 +69,7 @@ export default function Wizard() {
   }
 
   const sel = (list, value, set) => (
-    <select value={value} onChange={(e) => set(e.target.value)}>
-      <option value="">— elegir —</option>
-      {list.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-    </select>
+    <SearchableSelect list={list} value={value} onChange={set} />
   )
 
   return (
@@ -128,5 +136,34 @@ export default function Wizard() {
         </section>
       )}
     </main>
+  )
+}
+
+
+/** Select buscable — el corpus importado puede tener miles de
+    opciones por tipo (p.ej. ~130 especies/razas). */
+function SearchableSelect({ list, value, onChange }) {
+  const [filter, setFilter] = useState('')
+  const shown = filter.trim()
+    ? list.filter((o) =>
+        o.name.toLowerCase().includes(filter.trim().toLowerCase()))
+        .slice(0, 60)
+    : list.slice(0, 60)
+  return (
+    <div>
+      <input value={filter} onChange={(e) => setFilter(e.target.value)}
+             placeholder={`Buscar… (${list.length} opciones)`}
+             aria-label="Filtrar opciones" />
+      <select value={value} onChange={(e) => onChange(e.target.value)}
+              size={Math.min(8, shown.length + 1)}>
+        <option value="">— elegir —</option>
+        {shown.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
+            {o.source_id && !o.source_id.startsWith('srd-')
+              ? ` · ${o.source_id}` : ''}
+          </option>))}
+      </select>
+    </div>
   )
 }

@@ -415,15 +415,17 @@ export default function CharacterSheet() {
         <ul className="log">{rollLog.map((l, i) => <li key={i}>{l}</li>)}</ul>
       </section>
 
-      {(d.spells_known || []).length > 0 && (
-        <section className="card optional">
-          <h2>Conjuros</h2>
+      <section className="card optional">
+        <h2>Conjuros</h2>
+        <SpellPicker onPick={(sid) =>
+          op('character.spell.learn', { spell_id: sid })} />
+        {(d.spells_known || []).length > 0 && (
           <SpellList ids={d.spells_known} onCast={(sid) =>
             op('character.spell.cast', { spell_id: sid, level: 0 })}
             onForget={(sid) =>
               op('character.spell.forget', { spell_id: sid })} />
-        </section>
-      )}
+        )}
+      </section>
 
       {shops.length > 0 && (
         <section className="card optional">
@@ -481,6 +483,37 @@ export default function CharacterSheet() {
         <ul>{(d.narrative?.journal || []).map((j, i) => <li key={i}>{j}</li>)}</ul>
       </section>
     </main>
+  )
+}
+
+
+function SpellPicker({ onPick }) {
+  const [q, setQ] = useState('')
+  const [hits, setHits] = useState([])
+  const go = async (e) => {
+    e.preventDefault()
+    if (!q.trim()) return
+    const r = await api.search(q.trim(), 'spell')
+    setHits(r.results.slice(0, 12))
+  }
+  return (
+    <div>
+      <form onSubmit={go} className="row">
+        <input value={q} onChange={(e) => setQ(e.target.value)}
+               placeholder="Aprender conjuro — buscar en todas las fuentes" />
+        <button type="submit">Buscar</button>
+      </form>
+      {hits.length > 0 && (
+        <ul>
+          {hits.map((h) => (
+            <li key={h.id} className="row">
+              <span style={{ flex: 1 }}>{h.name}
+                <span className="muted"> · {h.source_id}</span></span>
+              <button onClick={() => { onPick(h.id); setHits([]) }}>
+                Aprender</button>
+            </li>))}
+        </ul>)}
+    </div>
   )
 }
 

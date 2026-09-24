@@ -442,7 +442,8 @@ def spell_cast(char: Character, p: dict, ctx):
     spell_id = p["spell_id"]
     level = int(p.get("level", 0))
     sp = _content(ctx, spell_id) or {}
-    spell_level = int(sp.get("level", 0))
+    spell_level = int(sp.get("level")
+                      or (sp.get("properties") or {}).get("Level") or 0)
     # upcasting válido; no se puede lanzar un conjuro por debajo de su nivel
     if level and level < spell_level:
         raise ValueError(
@@ -456,7 +457,13 @@ def spell_cast(char: Character, p: dict, ctx):
         if slot["used"] >= slot["total"]:
             raise ValueError(f"sin espacios de nivel {level}")
         slot["used"] += 1
-    if sp.get("concentration") == "yes":
+    # concentración: "yes" (5e-bits/open5e), true, o flag en
+    # duration[] (5etools: duration:[{concentration:true}])
+    conc = sp.get("concentration")
+    needs_conc = conc in (True, "yes", "Yes") or any(
+        d.get("concentration") for d in sp.get("duration") or []
+        if isinstance(d, dict))
+    if needs_conc:
         char.concentrating_on = sp.get("name", spell_id)
     return _restore_inverse(before), [
         {"type": "resource.usage.changed",

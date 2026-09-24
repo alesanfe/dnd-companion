@@ -21,6 +21,7 @@ export default function DmBoard() {
   const [rollReq, setRollReq] = useState({ character_id: '', expression: '1d20', reason: '' })
   const [dmgType, setDmgType] = useState('')
   const [selId, setSelId] = useState(null)
+  const [feedFilter, setFeedFilter] = useState('todas')
   const [sessions, setSessions] = useState([])
   const [sessTitle, setSessTitle] = useState('')
   const [timeline, setTimeline] = useState(null)
@@ -121,7 +122,16 @@ export default function DmBoard() {
       {campaign && rollFeed.length > 0 && (
         <section className="card" hidden={dmTab !== 'sesion'}>
           <h2>Tiradas de la mesa</h2>
-          {rollFeed.map((r, i) => (
+          <div className="row" role="group" aria-label="Filtrar tiradas">
+            {['todas', 'check', 'save', 'attack', 'damage'].map((f) => (
+              <button key={f} className="ghost"
+                      aria-pressed={feedFilter === f}
+                      style={{ borderColor: feedFilter === f
+                        ? 'var(--accent)' : undefined }}
+                      onClick={() => setFeedFilter(f)}>{f}</button>))}
+          </div>
+          {rollFeed.filter((r) => feedFilter === 'todas' ||
+                r.roll_type === feedFilter).map((r, i) => (
             <div key={i} className="row">
               <span>{r.character}</span>
               <span className="muted">{r.roll_type} · {r.expression}</span>

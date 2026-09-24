@@ -149,8 +149,15 @@ function TableView({ data }) {
           <button style={{ marginLeft: '1rem' }}
                   onClick={roll}>Tirar</button>}</h2>
       {rolled && (
-        <p className="chip">
-          {Array.isArray(rolled) ? rolled.join(' — ') : String(rolled)}</p>)}
+        <div className="row">
+          <p className="chip">
+            {Array.isArray(rolled) ? rolled.join(' — ') : String(rolled)}</p>
+          <button className="ghost" onClick={() => {
+            const txt = Array.isArray(rolled)
+              ? rolled.join(' — ') : String(rolled)
+            navigator.clipboard?.writeText(txt)
+          }}>Copiar</button>
+        </div>)}
       {cols.length > 0 && rows.length > 0 && (
         <table>
           <thead><tr>{cols.map((c, i) => <th key={i}>{c}</th>)}</tr></thead>

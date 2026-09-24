@@ -404,12 +404,21 @@ def combatant_save(combat: Combat, p: dict, ctx):
              "int": "intelligence", "wis": "wisdom", "cha": "charisma"
              }.get(ability, ability), 10)
         total_mod = (score - 10) // 2
-    r = roll("1d20")
+    from ..domain.conditions import mods_for
+    adv, dis, fail, notes = mods_for(c.conditions, f"save:{ability}")
+    if fail:
+        return {"operation_type": "noop", "payload": {}}, [
+            {"type": "dice.roll.created",
+             "payload": {"combatant": c.name, "save": ability,
+                         "auto_fail": True, "notes": notes}}]
+    r = roll("1d20adv" if adv and not dis else
+             "1d20dis" if dis and not adv else "1d20")
     total = r.total + total_mod
     return {"operation_type": "noop", "payload": {}}, [
         {"type": "dice.roll.created",
          "payload": {"combatant": c.name, "save": ability,
-                     "roll": r.total, "total": total}}]
+                     "roll": r.total, "total": total,
+                     **({"notes": notes} if notes else {})}}]
 
 
 @op("combatant.action.roll")
@@ -419,6 +428,10 @@ def combatant_action_roll(combat: Combat, p: dict, ctx):
     ambos. Acciones de salvación emiten la CD detectada."""
     import re
     c = _find(combat, p["combatant_id"])
+    from ..domain.conditions import is_incapacitated, mods_for
+    incap = is_incapacitated(c.conditions)
+    if incap:
+        raise ValueError(f"{c.name} está incapacitado ({incap})")
     actions = (c.stat_block or {}).get("actions") or []
     idx = int(p.get("action_index", -1))
     if not (0 <= idx < len(actions)):
@@ -430,11 +443,14 @@ def combatant_action_roll(combat: Combat, p: dict, ctx):
     m_dc = re.search(r"DC\s*(\d+)", text, re.IGNORECASE)
     m_dmg = re.search(r"(\d+d\d+(?:\s*[+-]\s*\d+)?)", text)
 
+    adv, dis, fail, notes = mods_for(c.conditions, "attack")
     ev = {"type": "dice.roll.created", "payload": {
-        "combatant": c.name, "action": action.get("name", "?")}}
+        "combatant": c.name, "action": action.get("name", "?"),
+        **({"notes": notes} if notes else {})}}
     if m_hit:
         mod = int(m_hit.group(1))
-        r = roll("1d20")
+        r = roll("1d20adv" if adv and not dis else
+                 "1d20dis" if dis and not adv else "1d20")
         ev["payload"].update(
             attack_roll=r.total, attack_total=r.total + mod,
             attack_mod=mod)
@@ -459,12 +475,16 @@ def combatant_check(combat: Combat, p: dict, ctx):
         ability = SKILL_ABILITY.get(skill, "int")
         total_mod = (block.get("abilities") or {}).get(ability, 10)
         total_mod = (total_mod - 10) // 2
-    r = roll("1d20")
+    from ..domain.conditions import mods_for
+    adv, dis, _fail, notes = mods_for(c.conditions, "check")
+    r = roll("1d20adv" if adv and not dis else
+             "1d20dis" if dis and not adv else "1d20")
     return {"operation_type": "noop", "payload": {}}, [
         {"type": "dice.roll.created",
          "payload": {"combatant": c.name, "skill": skill,
                      "roll": r.total, "total": r.total + total_mod,
-                     "mod": total_mod}}]
+                     "mod": total_mod,
+                     **({"notes": notes} if notes else {})}}]
 
 
 SKILL_ABILITY = {

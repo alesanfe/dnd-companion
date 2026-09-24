@@ -147,6 +147,16 @@ def _actions(d: dict) -> list[dict]:
                 out.append({"name": a.get("name", "?"),
                             "category": label,
                             "text": _clean_text(text)})
+    if not out:
+        # hazards/trampas y bloques sin secciones: una acción
+        # sintética "Efecto" con el texto — rollable (DC + dados).
+        text = " ".join(_clean_text(e) for e in
+                        (d.get("entries") or
+                         [d.get("desc") or d.get("description")])
+                        if e)
+        if text:
+            out.append({"name": "Efecto", "category": "effect",
+                        "text": text})
     return out
 
 

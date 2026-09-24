@@ -63,6 +63,56 @@ def _content_row(entity_id: str) -> dict | None:
     return json.loads(row["data"]) if row else None
 
 
+def _hit_die(cls: dict) -> int:
+    """Dado de golpe de la clase — cualquier schema de fuente.
+
+    5e-bits: hit_die=12 · 5etools: hd={faces:12} · open5e v1:
+    hit_dice='1d12' · codexMUNDI: hitDie=12 · dnd-data:
+    properties['Hit Dice']."""
+    import re
+    props = cls.get("properties") or {}
+    for cand in (cls.get("hit_die"), (cls.get("hd") or {}).get("faces"),
+                 cls.get("hit_dice"), cls.get("hitDie"),
+                 props.get("Hit Dice")):
+        if cand:
+            s = str(cand)
+            m = re.search(r"d(\d+)", s) or re.search(r"\d+", s)
+            if m:
+                return int(m.group(1) if m.re.pattern.startswith("d")
+                           else m.group())
+    return 8
+
+
+_SAVE_KEYS = {"strength": "str", "dexterity": "dex",
+              "constitution": "con", "intelligence": "int",
+              "wisdom": "wis", "charisma": "cha"}
+
+
+def _save_profs(cls: dict) -> list[str]:
+    """Salvaciones competentes — 5e-bits saving_throws[{index}],
+    5etools proficiency:['str','con'], open5e v1 prof_saving_throws
+    ('Strength, Dexterity'), codexMUNDI saves:'Str, Con'."""
+    out: list[str] = []
+
+    def add(v):
+        key = _SAVE_KEYS.get(str(v).strip().lower(),
+                             str(v).strip().lower()[:3])
+        if key in _SAVE_KEYS.values() and key not in out:
+            out.append(key)
+
+    for s in cls.get("saving_throws") or []:          # 5e-bits
+        if isinstance(s, dict):
+            add(s.get("index") or s.get("name", ""))
+        else:
+            add(s)
+    for s in cls.get("proficiency") or []:            # 5etools
+        add(s)
+    for s in (cls.get("prof_saving_throws")           # open5e v1
+              or cls.get("saves") or "").split(","):  # codexMUNDI
+        add(s)
+    return out
+
+
 @router.post("/create-from-options", status_code=201)
 def create_from_options(body: WizardCreate):
     """Construye un Character nivel 1 desde la content DB:
@@ -72,7 +122,7 @@ def create_from_options(body: WizardCreate):
         raise HTTPException(400, "class not found in content DB")
 
     abilities = AbilityScores(**(body.abilities or {}))
-    hit_die = int(cls.get("hit_die", 8))
+    hit_die = _hit_die(cls)
     hp_max = max(1, hit_die + abilities.modifier("con"))
 
     # spell slots y prof bonus nivel 1: entidad 'level' '{clase}-1'
@@ -99,6 +149,7 @@ def create_from_options(body: WizardCreate):
         hit_dice=[HitDicePool(die=f"d{hit_die}", total=1, remaining=1)],
         spell_slots=spell_slots,
         proficiency_bonus=prof_bonus,
+        save_proficiencies=_save_profs(cls),
     )
 
     conn = state_db()

@@ -63,10 +63,13 @@ def _content_row(entity_id: str) -> dict | None:
     return json.loads(row["data"]) if row else None
 
 
-from ..domain.classinfo import (background_skills as _background_skills,
-                                hit_die as _hit_die,
-                                save_profs as _save_profs,
-                                species_asi as _species_asi)
+from ..domain.classinfo import (
+    background_languages as _background_languages,
+    background_skills as _background_skills,
+    hit_die as _hit_die,
+    save_profs as _save_profs,
+    species_asi as _species_asi,
+    species_traits as _species_traits)
 
 
 @router.post("/create-from-options", status_code=201)
@@ -120,6 +123,13 @@ def create_from_options(body: WizardCreate):
         skill_proficiencies=_background_skills(
             _content_row(body.background_id) or {}
             if body.background_id else {}),
+        # rasgos de especie y lenguas del trasfondo — datos reales
+        features=list(_species_traits(
+            _content_row(body.species_id) or {}
+            if body.species_id else {})),
+        languages=list(_background_languages(
+            _content_row(body.background_id) or {}
+            if body.background_id else {})),
     )
 
     conn = state_db()

@@ -69,6 +69,32 @@ def species_asi(sp: dict) -> dict[str, int]:
     return out
 
 
+def species_traits(sp: dict) -> list[str]:
+    """Nombres de rasgos raciales: 5e-bits traits[] · 5etools
+    entries[].name."""
+    out = []
+    for t in sp.get("traits") or []:
+        out.append(t.get("name") if isinstance(t, dict) else str(t))
+    for e in sp.get("entries") or []:
+        if isinstance(e, dict) and e.get("name"):
+            out.append(str(e["name"]))
+    return [t for t in out if t]
+
+
+def background_languages(bg: dict) -> list[str]:
+    """Lenguas concedidas: 5e-bits language_options (choose → no fija)
+    · 5etools languageProficiencies / languages."""
+    out: list[str] = []
+    for grp in bg.get("languageProficiencies") or []:
+        if isinstance(grp, dict):
+            out.extend(k for k, v in grp.items()
+                       if v is True and k != "choose")
+    for l in bg.get("languages") or []:
+        if isinstance(l, str):
+            out.append(l)
+    return out
+
+
 def background_skills(bg: dict) -> list[str]:
     """Skills del trasfondo: starting_proficiencies[] ·
     skillProficiencies[]."""

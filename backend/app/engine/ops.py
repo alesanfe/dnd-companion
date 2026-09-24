@@ -290,6 +290,29 @@ def level_up(char: Character, p: dict, ctx):
                        for r in rows]
         except Exception:      # noqa: BLE001 - features best-effort
             pass
+    # Rasgos de SUBCLASE: si la clase tiene subclass_id, sus features
+    # llevan subclassShortName = nombre de la subclase (5etools).
+    sub_id = next(
+        (c.subclass_id for c in char.classes if c.class_id == class_id),
+        None)
+    if sub_id and ctx is not None:
+        try:
+            srow = ctx.content_db().execute(
+                "SELECT name FROM content_entities WHERE id = ?",
+                (sub_id,)).fetchone()
+            sub_name = srow["name"] if srow else None
+            if sub_name:
+                rows = ctx.content_db().execute(
+                    """SELECT data FROM content_entities
+                       WHERE entity_type = 'class-feature'
+                       AND json_extract(data, '$.level') = ?
+                       AND lower(json_extract(data,
+                             '$.subclassShortName')) = lower(?)""",
+                    (new_level, sub_name)).fetchall()
+                gained += [json.loads(r["data"]).get("name", "?")
+                           for r in rows]
+        except Exception:      # noqa: BLE001 - subclass features best-effort
+            pass
     for name in gained:
         if name and name not in char.features:
             char.features.append(name)
@@ -300,6 +323,46 @@ def level_up(char: Character, p: dict, ctx):
          "payload": {"level_up": class_id, "level": new_level,
                      "hp_max": char.hp.max,
                      "features_gained": gained}}]
+
+
+def _item_damage(item_data: dict) -> str | None:
+    """Expresión de daño del arma — multi-schema.
+
+    5e-bits: damage.damage_dice · 5etools: dmg1+dmgType ·
+    codexMUNDI: damage · dnd-data: properties.Damage."""
+    dmg = item_data.get("damage")
+    if isinstance(dmg, dict) and dmg.get("damage_dice"):
+        return str(dmg["damage_dice"])
+    if item_data.get("dmg1"):
+        return str(item_data["dmg1"])
+    if isinstance(dmg, str) and "d" in dmg:
+        return dmg
+    props = item_data.get("properties") or {}
+    return props.get("Damage") if "d" in str(props.get("Damage", "")) \
+        else None
+
+
+@op("character.attack")
+def character_attack(char: Character, p: dict, ctx):
+    """Ataque con un arma del inventario: 1d20 + prof + mod (fue por
+    defecto) y daño del arma resuelto desde su entidad de contenido."""
+    item = next((i for i in char.inventory
+                 if i.id == p.get("item_id")), None)
+    if item is None:
+        raise ValueError("objeto no encontrado en inventario")
+    dmg_expr = "1d4"
+    if item.source_id:
+        w = _content(ctx, item.source_id) or {}
+        dmg_expr = _item_damage(w) or dmg_expr
+    total_mod = char.proficiency_bonus + char.abilities.modifier("str")
+    atk = roll("1d20")
+    dmg = roll(dmg_expr)
+    return {"operation_type": "noop", "payload": {}}, [
+        {"type": "dice.roll.created", "payload": {
+            "character": char.name, "weapon": item.name,
+            "attack_roll": atk.total, "attack_mod": total_mod,
+            "attack_total": atk.total + total_mod,
+            "damage_expr": dmg_expr, "damage_total": dmg.total}}]
 
 
 @op("character.inventory.add")
@@ -714,10 +777,23 @@ def feat_learn(char: Character, p: dict, ctx):
     if fid in char.feats_known:
         raise ValueError("dote ya conocida")
     char.feats_known.append(fid)
+    # Dotes con mejora fija de característica (5etools ability:[{str:1}])
+    asi = []
+    feat = _content(ctx, fid) or {}
+    from ..domain.classinfo import _SHORT_2_LONG
+    for grp in feat.get("ability") or []:
+        if isinstance(grp, dict):
+            for k, v in grp.items():
+                if k in _SHORT_2_LONG and isinstance(v, int):
+                    attr = _SHORT_2_LONG[k]
+                    setattr(char.abilities, attr,
+                            getattr(char.abilities, attr) + v)
+                    asi.append(f"{k} +{v}")
     return {"operation_type": "character.feat.forget",
             "payload": {"feat_id": fid}}, [
         {"type": "resource.usage.changed",
-         "payload": {"feat_learned": fid}}]
+         "payload": {"feat_learned": fid,
+                     **({"asi": asi} if asi else {})}}]
 
 
 @op("character.feat.forget")

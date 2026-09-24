@@ -383,6 +383,10 @@ export default function CharacterSheet() {
               {it.equipped && <span className="muted"> · equipado</span>}
               {it.attuned && <span className="muted"> · sintonizado</span>}
             </span>
+            {it.source_id && (
+              <button onClick={() =>
+                op('character.attack', { item_id: it.id })
+              }>Atacar</button>)}
             <button onClick={() =>
               op(it.equipped ? 'character.item.unequip'
                              : 'character.item.equip',

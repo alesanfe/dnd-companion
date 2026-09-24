@@ -12,7 +12,6 @@ export default function DmBoard() {
   const [manual, setManual] = useState({ name: '', hp_max: 10, initiative: 10 })
   const [dmg, setDmg] = useState({})
   const [err, setErr] = useState(null)
-  const [difficulty, setDifficulty] = useState(null)
   const [entities, setEntities] = useState([])
   const [entForm, setEntForm] = useState({ kind: 'npc', name: '', notes: '', monsters: '' })
   const [partyLevels, setPartyLevels] = useState('3,3,3,3')

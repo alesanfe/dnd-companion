@@ -79,10 +79,24 @@ pip install -e .
 python -m pipeline.cli import-srd --edition 2014
 python -m pipeline.cli import-srd --edition 2024
 
-# Open5e API: documentos OGL/CC — Tome of Beasts 1-3 (+2023),
+# Open5e API v1: documentos OGL/CC — Tome of Beasts 1-3 (+2023),
 # Creature Codex, Deep Magic, Vault of Magic, Menagerie, Black Flag,
 # Tal'Dorei, Tome of Heroes, A5E… (~5.600 entidades)
 python -m pipeline.cli import-open5e --document tob   # o sin --document: todo
+
+# Open5e API v2: schema relacional más rico — srd-2024 (SRD 5.2
+# completo: 331 monstruos, 339 conjuros, 2.319 objetos mágicos),
+# Adventurer's Guide, Warlock Zine, Spells That Don't Suck…
+python -m pipeline.cli import-open5e --api v2 --document srd-2024
+
+# Foundry dnd5e packs (SRD 5.1/5.2 modelado para VTT, CC-BY-4.0)
+#   git clone https://github.com/foundryvtt/dnd5e
+python -m pipeline.cli import-foundry --path dnd5e/packs/_source
+
+# cocoajamworld/srd-5.2.1 (SRD 5.2 estructurado, CC-BY-4.0)
+python -m pipeline.cli import-file --path monsters.json \
+    --key monsters --source-id srd521 --license CC-BY-4.0 \
+    --type monster --ruleset dnd5e-2024 --redistributable
 
 # 5etools — TODO el catálogo WotC pero NON-FREE: solo local, nunca
 # se redistribuye (is_redistributable=False en toda la fuente)

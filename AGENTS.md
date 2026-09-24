@@ -13,14 +13,16 @@ cd backend && pip install -e .[dev]
 uvicorn app.main:app --reload          # dev server :8000
 pytest backend/tests                   # tests
 
-# Data pipeline — fuentes: 5e-bits (SRD CC-BY-4.0), Open5e (OGL docs:
-# tob, cc, dmag, vom, menagerie, blackflag, taldorei, a5e…), 5etools
-# (catálogo completo, NON-FREE — solo local), import-file (privado)
+# Data pipeline — fuentes: 5e-bits (SRD CC-BY-4.0), Open5e v1 (OGL docs:
+# tob, cc, dmag, vom, menagerie, blackflag, taldorei, a5e…), Open5e v2
+# (schema rico: srd-2024, a5e-ag…), Foundry packs (YAML, CC-BY-4.0),
+# 5etools (catálogo completo, NON-FREE — solo local), import-file
 cd data-pipeline && pip install -e .
 python -m pipeline.cli import-srd --edition 2014|2024
-python -m pipeline.cli import-open5e --document <slug>   # sin slug: todo
+python -m pipeline.cli import-open5e --document <slug> --api v1|v2
 python -m pipeline.cli import-5etools --path <clone>/data
-python -m pipeline.cli import-file --path <json> --license <lic> --type <t>
+python -m pipeline.cli import-foundry --path <clone>/packs/_source
+python -m pipeline.cli import-file --path <json> --license <lic> --type <t> [--key <k>]
 
 # Frontend
 cd frontend && npm install && npm run dev

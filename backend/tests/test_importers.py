@@ -8,7 +8,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]
                      / "data-pipeline"))
 from pipeline import db                      # noqa: E402
-from pipeline.importers import fiveetools, open5e  # noqa: E402
+from pipeline.importers import (  # noqa: E402
+    fiveetools, foundry, open5e)
 
 
 @pytest.fixture()
@@ -89,6 +90,59 @@ def test_open5e_importer_per_document_sources(conn):
         "SELECT * FROM content_sources WHERE id='open5e-wotc-srd'"
     ).fetchone()
     assert src["name"] == "5e Core Rules"
+
+
+def test_open5e_v2_document_provenance(conn):
+    pages = {
+        "https://x/v2/documents/?limit=500": {
+            "next": None,
+            "results": [{
+                "key": "srd-2024", "name": "System Reference Document 5.2",
+                "licenses": [{"name": "Creative Commons Attribution 4.0"}],
+                "publisher": {"name": "Wizards of the Coast"},
+                "gamesystem": {"key": "5e-2024"},
+                "permalink": "https://dnd.wizards.com",
+            }],
+        },
+        "https://x/v2/creatures/?limit=100&document__key=srd-2024": {
+            "next": None,
+            "results": [{
+                "key": "srd-2024_aboleth", "name": "Aboleth",
+                "document": {"key": "srd-2024"},
+            }],
+        },
+    }
+    n = open5e.import_open5e_v2(
+        conn, "srd-2024", base_url="https://x/v2",
+        fetch=lambda u: pages.get(u, {"next": None, "results": []}))
+    assert n == 1
+    row = conn.execute(
+        "SELECT * FROM content_entities WHERE name='Aboleth'").fetchone()
+    assert row["id"] == "open5e2-srd-2024:srd-2024_aboleth"
+    assert row["ruleset"] == "dnd5e-2024"
+    assert row["license"].startswith("Creative Commons")
+    assert row["is_redistributable"] == 1
+
+
+def test_foundry_importer_yaml(conn, tmp_path):
+    packs = tmp_path / "packs" / "_source"
+    (packs / "spells").mkdir(parents=True)
+    (packs / "monsters").mkdir(parents=True)
+    (packs / "spells" / "fireball.yml").write_text(
+        "_id: abc123\nname: Fireball\n"
+        "system:\n  level: 3\n  school: evo\n", encoding="utf-8")
+    (packs / "monsters" / "goblin.yml").write_text(
+        "_id: def456\nname: Goblin\n"
+        "type: npc\nsystem:\n  details:\n    cr: 0.25\n",
+        encoding="utf-8")
+
+    n = foundry.import_foundry(conn, packs)
+    assert n == 2
+    row = conn.execute(
+        "SELECT * FROM content_entities WHERE name='Fireball'").fetchone()
+    assert row["id"] == "foundry-dnd5e:spells:abc123"
+    assert row["entity_type"] == "spell"
+    assert row["is_redistributable"] == 1      # CC-BY-4.0
 
 
 def test_open5e_pagination_follows_next(conn):

@@ -176,3 +176,25 @@ def test_roll_request_broadcast():
         "character_id": "char-1", "expression": "1d20",
         "reason": "percepción", "secret": True})
     assert r.status_code == 202
+
+
+def test_pending_roll_requests():
+    """La petición del DM queda pendiente hasta que el personaje tira."""
+    camp = client.post("/api/campaigns", json={"name": "PR"}).json()
+    cid = camp["id"]
+    # crear personaje y asignarlo a la campaña
+    char = client.post("/api/characters", json={"name": "Kael"}).json()
+    client.patch(f"/api/characters/{char['id']}",
+                 json={"campaign_id": cid})
+    url = f"/api/campaigns/{cid}/roll-requests/pending"
+    ids = f"character_ids={char['id']}"
+    assert client.get(f"{url}?{ids}").json()["pending"] == []
+    client.post(f"/api/campaigns/{cid}/roll-request", json={
+        "character_id": char["id"], "expression": "1d20",
+        "reason": "save de SAB"})
+    pend = client.get(f"{url}?{ids}").json()["pending"]
+    assert len(pend) == 1 and pend[0]["reason"] == "save de SAB"
+    # el jugador responde → ya no está pendiente
+    client.post(f"/api/operations/character/{char['id']}/roll",
+                params={"expression": "1d20", "roll_type": "save"})
+    assert client.get(f"{url}?{ids}").json()["pending"] == []

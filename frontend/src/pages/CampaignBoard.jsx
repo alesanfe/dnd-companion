@@ -9,13 +9,24 @@ export default function CampaignBoard() {
   const [chars, setChars] = useState([])
   const [code, setCode] = useState('')
   const [err, setErr] = useState(null)
+  const [pend, setPend] = useState([])
+  // el formulario de unirse solo ocupa espacio si todavía no estás dentro
+  const [joined, setJoined] = useState(
+    () => localStorage.getItem(`dnd-joined-${id}`) === '1')
 
   const load = () => {
     api.listEntities(id, null, 'player')
       .then((r) => setEntities(r.entities))
       .catch((e) => setErr(e.message))
-    api.listCharacters(id).then((r) => setChars(r.characters))
-      .catch(() => {})
+    api.listCharacters(id).then((r) => {
+      setChars(r.characters)
+      if (r.characters.length) {
+        setJoined(true)
+        localStorage.setItem(`dnd-joined-${id}`, '1')
+        api.pendingRolls(id, r.characters.map((c) => c.id))
+          .then((x) => setPend(x.pending || [])).catch(() => {})
+      }
+    }).catch(() => {})
   }
   useEffect(load, [id])
 
@@ -23,8 +34,9 @@ export default function CampaignBoard() {
     e.preventDefault()
     try {
       await api.joinCampaign(code.trim())
-      setCode('')
-      setErr(null)
+      setCode(''); setErr(null)
+      setJoined(true)
+      localStorage.setItem(`dnd-joined-${id}`, '1')
       load()
     } catch (ex) { setErr(ex.message) }
   }
@@ -44,11 +56,21 @@ export default function CampaignBoard() {
       <h1>Campaña</h1>
       {err && <p className="error">{err}</p>}
 
-      <form onSubmit={join} className="row">
-        <input value={code} onChange={(e) => setCode(e.target.value)}
-               placeholder="Código de invitación" />
-        <button type="submit">Unirse</button>
-      </form>
+      {/* peticiones de tirada del DM para mis personajes */}
+      {pend.map((p) => (
+        <div key={p.character_id + p.at} className="notice" role="alert">
+          <span><strong>{chars.find((c) => c.id === p.character_id)?.name}</strong>:
+            {' '}tirada {p.expression}{p.reason && ` — ${p.reason}`}</span>
+          <Link to={`/character/${p.character_id}`}>
+            <button>Ir a la ficha</button></Link>
+        </div>))}
+
+      {!joined && (
+        <form onSubmit={join} className="row">
+          <input value={code} onChange={(e) => setCode(e.target.value)}
+                 placeholder="Código de invitación" />
+          <button type="submit">Unirse</button>
+        </form>)}
 
       {chars.length > 0 && (
         <section className="card">

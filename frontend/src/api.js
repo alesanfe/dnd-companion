@@ -91,6 +91,9 @@ export const api = {
   getEntity: (id) => req(`/api/content/${encodeURIComponent(id)}`),
   campaignEvents: (campaignId, limit = 100) =>
     req(`/api/campaigns/${campaignId}/events?limit=${limit}`),
+  pendingRolls: (campaignId, characterIds) =>
+    req(`/api/campaigns/${campaignId}/roll-requests/pending` +
+        `?character_ids=${characterIds.join(',')}`),
   exportCampaign: (campaignId) =>
     req(`/api/campaigns/${campaignId}/export`),
   startScene: (campaignId, sceneId) =>

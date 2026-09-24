@@ -10,6 +10,8 @@ export default function Header() {
   const [creds, setCreds] = useState({ u: '', p: '' })
   const [online, setOnline] = useState(navigator.onLine)
   const [pending, setPending] = useState(0)
+  const [notifs, setNotifs] = useState([])      // peticiones de tirada
+  const [showNotifs, setShowNotifs] = useState(false)
   const [prefs, setPrefs] = useState(getPrefs())
   const [showSettings, setShowSettings] = useState(false)
   const [showLogin, setShowLogin] = useState(false)
@@ -19,12 +21,28 @@ export default function Header() {
     const tick = async () => {
       setOnline(navigator.onLine)
       setPending((await pendingOps()).length)
+      // peticiones de tirada del DM sobre mis personajes en campaña
+      try {
+        const chars = (await api.listCharacters()).characters || []
+        const byCamp = {}
+        for (const c of chars)
+          if (c.campaign_id)
+            (byCamp[c.campaign_id] ||= []).push(c)
+        const out = []
+        for (const [campId, cs] of Object.entries(byCamp)) {
+          const r = await api.pendingRolls(campId, cs.map((c) => c.id))
+          for (const p of r.pending || [])
+            out.push({ ...p, name: cs.find((c) => c.id === p.character_id)?.name })
+        }
+        setNotifs(out)
+      } catch { setNotifs([]) }
     }
     tick()
     const t = setInterval(tick, 5000)
     const onKey = (e) => {
       if (e.key === 'Escape') {
         setShowSettings(false); setShowLogin(false); setShowSync(false)
+        setShowNotifs(false)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -58,6 +76,10 @@ export default function Header() {
         {online ? 'en línea' : 'offline'}
         {pending > 0 && ` · ${pending}`}
       </button>
+      {notifs.length > 0 && (
+        <button className="ghost" aria-label={`${notifs.length} avisos`}
+                aria-live="polite" onClick={() => setShowNotifs(!showNotifs)}>
+          🔔{notifs.length}</button>)}
       <button className="ghost" aria-label="Ajustes"
               onClick={() => setShowSettings(!showSettings)}>⚙</button>
       {user
@@ -75,6 +97,22 @@ export default function Header() {
             <button onClick={() => auth(api.login)}>Entrar</button>
             <button className="ghost" onClick={() => auth(api.register)}>Registrar</button>
           </div>
+        </div>
+      )}
+
+      {showNotifs && notifs.length > 0 && (
+        <div className="popover" role="dialog" aria-label="Avisos">
+          <strong>Avisos del DM</strong>
+          {notifs.map((n) => (
+            <div key={n.character_id + n.at} className="notice">
+              <span><strong>{n.name}</strong>: tirada {n.expression}
+                {n.reason && ` — ${n.reason}`}
+                {n.secret && <span className="muted"> (secreta)</span>}</span>
+              <Link to={`/character/${n.character_id}`}>
+                <button>Ir</button></Link>
+            </div>))}
+          <button className="ghost"
+                  onClick={() => setShowNotifs(false)}>Cerrar</button>
         </div>
       )}
 

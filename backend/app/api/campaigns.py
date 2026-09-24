@@ -613,3 +613,32 @@ async def request_roll(campaign_id: str, body: RollRequestIn):
     conn.commit()
     await manager.broadcast(campaign_id, event)
     return {"event_id": event.event_id}
+
+
+@router.get("/{campaign_id}/roll-requests/pending")
+def pending_roll_requests(campaign_id: str, character_ids: str = ""):
+    """Peticiones de tirada aún sin responder.
+
+    Una petición dice.roll.requested cuenta pendiente si el último
+    evento dice.* de ese personaje es la petición (la respuesta del
+    jugador emite dice.roll.created sobre el mismo aggregate_id).
+    """
+    ids = [x for x in character_ids.split(",") if x]
+    if not ids:
+        return {"pending": []}
+    conn = state_db()
+    rows = conn.execute(
+        f"""SELECT aggregate_id, type, occurred_at, payload
+            FROM events
+            WHERE campaign_id = ?
+              AND aggregate_id IN ({",".join("?" * len(ids))})
+              AND type IN ('dice.roll.requested', 'dice.roll.created')
+            ORDER BY occurred_at""",
+        (campaign_id, *ids)).fetchall()
+    latest: dict[str, dict | None] = {}
+    for r in rows:
+        latest[r["aggregate_id"]] = (
+            {**json.loads(r["payload"]), "at": r["occurred_at"]}
+            if r["type"] == "dice.roll.requested" else None)
+    return {"pending": [
+        {"character_id": k, **v} for k, v in latest.items() if v]}

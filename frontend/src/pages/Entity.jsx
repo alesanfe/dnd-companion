@@ -65,6 +65,52 @@ export default function Entity() {
               {Object.entries(d.properties)
                 .map(([k, v]) => `${k}: ${v}`).join(' · ')}</p>)}
         </section>)}
+
+      {ent.entity_type === 'table' && <TableView data={d} />}
     </main>
+  )
+}
+
+
+/** Tabla aleatoria rodable — 5etools {colLabels, rows:[[…]]} y
+    variantes {entries} / {table:{rows}}. */
+function TableView({ data }) {
+  const [rolled, setRolled] = useState(null)
+  const rows = data.rows || data.table?.rows || []
+  const cols = data.colLabels || data.table?.colLabels || []
+  const entries = data.entries || []
+  const roll = () => {
+    if (rows.length) {
+      setRolled(rows[Math.floor(Math.random() * rows.length)])
+    } else if (entries.length) {
+      setRolled(entries[Math.floor(Math.random() * entries.length)])
+    }
+  }
+  return (
+    <section className="card">
+      <h2>Tabla
+        {(rows.length > 0 || entries.length > 0) &&
+          <button style={{ marginLeft: '1rem' }}
+                  onClick={roll}>Tirar</button>}</h2>
+      {rolled && (
+        <p className="chip">
+          {Array.isArray(rolled) ? rolled.join(' — ') : String(rolled)}</p>)}
+      {cols.length > 0 && rows.length > 0 && (
+        <table>
+          <thead><tr>{cols.map((c, i) => <th key={i}>{c}</th>)}</tr></thead>
+          <tbody>
+            {rows.slice(0, 40).map((r, i) => (
+              <tr key={i}>
+                {(Array.isArray(r) ? r : [r]).map((cell, j) =>
+                  <td key={j}>{typeof cell === 'object'
+                    ? JSON.stringify(cell) : String(cell)}</td>)}
+              </tr>))}
+          </tbody>
+        </table>)}
+      {rows.length === 0 && entries.length > 0 && (
+        <ul>{entries.slice(0, 40).map((e, i) =>
+          <li key={i}>{typeof e === 'object'
+            ? JSON.stringify(e) : String(e)}</li>)}</ul>)}
+    </section>
   )
 }

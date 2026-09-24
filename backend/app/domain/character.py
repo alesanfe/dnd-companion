@@ -94,6 +94,7 @@ class Character(BaseModel):
     spell_slots: dict[str, dict[str, int]] = Field(default_factory=dict)
     # {'1': {'total': 2, 'used': 0}, ...}
     spells_known: list[str] = Field(default_factory=list)   # entity ids
+    feats_known: list[str] = Field(default_factory=list)    # entity ids
     skill_proficiencies: list[str] = Field(default_factory=list)
     save_proficiencies: list[str] = Field(default_factory=list)
     conditions: list[str] = Field(default_factory=list)

@@ -421,7 +421,8 @@ export default function CharacterSheet() {
       <section className="card optional">
         <h2>Conjuros</h2>
         <SpellPicker onPick={(sid) =>
-          op('character.spell.learn', { spell_id: sid })} />
+          op('character.spell.learn', { spell_id: sid })}
+          placeholder="Aprender conjuro — buscar en todas las fuentes" />
         {(d.spells_known || []).length > 0 && (
           <SpellList ids={d.spells_known} onCast={(sid) =>
             op('character.spell.cast', { spell_id: sid, level: 0 })}
@@ -452,6 +453,17 @@ export default function CharacterSheet() {
           ))}
         </section>
       )}
+
+      <section className="card optional">
+        <h2>Dotes</h2>
+        <SpellPicker entityType="feat" verb="Añadir"
+          placeholder="Buscar dote en todas las fuentes"
+          onPick={(fid) =>
+            op('character.feat.learn', { feat_id: fid })} />
+        {(d.feats_known || []).length > 0 && (
+          <FeatList ids={d.feats_known} onForget={(fid) =>
+            op('character.feat.forget', { feat_id: fid })} />)}
+      </section>
 
       {(d.skill_proficiencies?.length > 0 || d.save_proficiencies?.length > 0) && (
         <section className="card optional">
@@ -524,20 +536,22 @@ function ItemPicker({ onPick }) {
 }
 
 
-function SpellPicker({ onPick }) {
+function SpellPicker({ onPick, entityType = 'spell',
+                      verb = 'Aprender',
+                      placeholder = 'Buscar en todas las fuentes' }) {
   const [q, setQ] = useState('')
   const [hits, setHits] = useState([])
   const go = async (e) => {
     e.preventDefault()
     if (!q.trim()) return
-    const r = await api.search(q.trim(), 'spell')
+    const r = await api.search(q.trim(), entityType)
     setHits(r.results.slice(0, 12))
   }
   return (
     <div>
       <form onSubmit={go} className="row">
         <input value={q} onChange={(e) => setQ(e.target.value)}
-               placeholder="Aprender conjuro — buscar en todas las fuentes" />
+               placeholder={placeholder} />
         <button type="submit">Buscar</button>
       </form>
       {hits.length > 0 && (
@@ -547,7 +561,7 @@ function SpellPicker({ onPick }) {
               <span style={{ flex: 1 }}>{h.name}
                 <span className="muted"> · {h.source_id}</span></span>
               <button onClick={() => { onPick(h.id); setHits([]) }}>
-                Aprender</button>
+                {verb}</button>
             </li>))}
         </ul>)}
     </div>
@@ -574,6 +588,28 @@ function SpellList({ ids, onCast, onForget }) {
           <button className="ghost" onClick={() => onForget(sid)}>×</button>
         </li>
       ))}
+    </ul>
+  )
+}
+
+
+function FeatList({ ids, onForget }) {
+  const [names, setNames] = useState({})
+  useEffect(() => {
+    for (const fid of ids) {
+      if (names[fid]) continue
+      api.getEntity(fid)
+        .then((e) => setNames((n) => ({ ...n, [fid]: e.name || fid })))
+        .catch(() => setNames((n) => ({ ...n, [fid]: fid })))
+    }
+  }, [ids])
+  return (
+    <ul>
+      {ids.map((fid) => (
+        <li key={fid} className="row">
+          <span style={{ flex: 1 }}>{names[fid] || fid}</span>
+          <button className="ghost" onClick={() => onForget(fid)}>×</button>
+        </li>))}
     </ul>
   )
 }

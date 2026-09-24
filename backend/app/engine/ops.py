@@ -682,6 +682,28 @@ def spell_forget(char: Character, p: dict, ctx):
             "payload": {"spell_id": sid}}, []
 
 
+@op("character.feat.learn")
+def feat_learn(char: Character, p: dict, ctx):
+    fid = p["feat_id"]
+    if fid in char.feats_known:
+        raise ValueError("dote ya conocida")
+    char.feats_known.append(fid)
+    return {"operation_type": "character.feat.forget",
+            "payload": {"feat_id": fid}}, [
+        {"type": "resource.usage.changed",
+         "payload": {"feat_learned": fid}}]
+
+
+@op("character.feat.forget")
+def feat_forget(char: Character, p: dict, ctx):
+    fid = p["feat_id"]
+    if fid not in char.feats_known:
+        raise ValueError("dote no conocida")
+    char.feats_known.remove(fid)
+    return {"operation_type": "character.feat.learn",
+            "payload": {"feat_id": fid}}, []
+
+
 @op("character.proficiency.add")
 def proficiency_add(char: Character, p: dict, ctx):
     """Añade competencia: kind = skill|save (usa las listas

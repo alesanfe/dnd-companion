@@ -320,7 +320,9 @@ def combatant_initiative_roll(combat: Combat, p: dict, ctx):
     c = _find(combat, p["combatant_id"])
     dex = 10
     if c.stat_block:
-        dex = c.stat_block.get("dexterity", 10)
+        # bloque canónico (abilities.dex) o crudo legacy (dexterity)
+        dex = (c.stat_block.get("abilities", {}).get("dex")
+               or c.stat_block.get("dexterity") or 10)
     elif c.kind == "character" and c.ref_id:
         try:
             row = ctx.state_db().execute(
@@ -385,6 +387,41 @@ def combatant_save(combat: Combat, p: dict, ctx):
         {"type": "dice.roll.created",
          "payload": {"combatant": c.name, "save": ability,
                      "roll": r.total, "total": total}}]
+
+
+@op("combatant.action.roll")
+def combatant_action_roll(combat: Combat, p: dict, ctx):
+    """Rueda una acción del stat block del combatiente: parsea el texto
+    normalizado buscando 'to hit' (+N) y dados de daño (NdM±K), y tira
+    ambos. Acciones de salvación emiten la CD detectada."""
+    import re
+    c = _find(combat, p["combatant_id"])
+    actions = (c.stat_block or {}).get("actions") or []
+    idx = int(p.get("action_index", -1))
+    if not (0 <= idx < len(actions)):
+        raise ValueError("acción fuera de rango")
+    action = actions[idx]
+    text = action.get("text", "")
+
+    m_hit = re.search(r"([+-]?\d+)\s*to hit", text)
+    m_dc = re.search(r"DC\s*(\d+)", text, re.IGNORECASE)
+    m_dmg = re.search(r"(\d+d\d+(?:\s*[+-]\s*\d+)?)", text)
+
+    ev = {"type": "dice.roll.created", "payload": {
+        "combatant": c.name, "action": action.get("name", "?")}}
+    if m_hit:
+        mod = int(m_hit.group(1))
+        r = roll("1d20")
+        ev["payload"].update(
+            attack_roll=r.total, attack_total=r.total + mod,
+            attack_mod=mod)
+    if m_dmg:
+        expr = m_dmg.group(1).replace(" ", "")
+        ev["payload"].update(
+            damage_expr=expr, damage_total=roll(expr).total)
+    if m_dc:
+        ev["payload"]["save_dc"] = int(m_dc.group(1))
+    return {"operation_type": "noop", "payload": {}}, [ev]
 
 
 @op("noop")

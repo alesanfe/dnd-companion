@@ -385,6 +385,27 @@ export default function DmBoard() {
               </div>
             ))}
           </section>
+
+          {/* Acciones del stat block: ataque/daño/CD parseados del texto */}
+          {ordered.some((c) => c.stat_block?.actions?.length > 0) && (
+            <section className="card">
+              <h2>Acciones de monstruos</h2>
+              {ordered.filter((c) => c.stat_block?.actions?.length)
+                .map((c) => (
+                  <div key={c.id} className="monster-actions">
+                    <h3 className="muted">{c.name}</h3>
+                    {c.stat_block.actions.map((a, ai) => (
+                      <div key={ai} className="row">
+                        <button onClick={() =>
+                          cop('combatant.action.roll',
+                              { combatant_id: c.id,
+                                action_index: ai })}>{a.name}</button>
+                        <span className="muted" style={{ fontSize: '0.8em' }}>
+                          {a.text?.slice(0, 90)}{(a.text?.length > 90) ? '…' : ''}
+                        </span>
+                      </div>))}
+                  </div>))}
+            </section>)}
         </>
       )}
     </main>

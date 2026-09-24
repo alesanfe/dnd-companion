@@ -365,9 +365,12 @@ export default function CharacterSheet() {
 
       <section className="card optional">
         <h2>Inventario</h2>
+        <ItemPicker onPick={(it) =>
+          op('character.inventory.add',
+             { name: it.name, source_id: it.id })} />
         <div className="row">
           <input value={newItem} onChange={(e) => setNewItem(e.target.value)}
-                 placeholder="Objeto nuevo" />
+                 placeholder="Objeto manual" />
           <button disabled={!newItem.trim()} onClick={() => {
             op('character.inventory.add', { name: newItem.trim() })
             setNewItem('')
@@ -483,6 +486,40 @@ export default function CharacterSheet() {
         <ul>{(d.narrative?.journal || []).map((j, i) => <li key={i}>{j}</li>)}</ul>
       </section>
     </main>
+  )
+}
+
+
+function ItemPicker({ onPick }) {
+  const [q, setQ] = useState('')
+  const [hits, setHits] = useState([])
+  const go = async (e) => {
+    e.preventDefault()
+    if (!q.trim()) return
+    const r = await api.search(q.trim())
+    setHits(r.results
+      .filter((h) => ['item', 'magic-item', 'equipment']
+        .includes(h.entity_type))
+      .slice(0, 12))
+  }
+  return (
+    <div>
+      <form onSubmit={go} className="row">
+        <input value={q} onChange={(e) => setQ(e.target.value)}
+               placeholder="Buscar objeto en el corpus (daga, potion…)" />
+        <button type="submit">Buscar</button>
+      </form>
+      {hits.length > 0 && (
+        <ul>
+          {hits.map((h) => (
+            <li key={h.id} className="row">
+              <span style={{ flex: 1 }}>{h.name}
+                <span className="muted"> · {h.source_id}</span></span>
+              <button onClick={() => { onPick(h); setHits([]) }}>
+                Añadir</button>
+            </li>))}
+        </ul>)}
+    </div>
   )
 }
 

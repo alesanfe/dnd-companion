@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api } from '../api.js'
 
 export default function Search() {
@@ -93,7 +94,8 @@ export default function Search() {
       <ul className="results">
         {results.map((r) => (
           <li key={r.id}>
-            <strong>{r.name}</strong>{' '}
+            <Link to={`/content/${encodeURIComponent(r.id)}`}>
+              <strong>{r.name}</strong></Link>{' '}
             <span className="muted">
               {r.entity_type} · {r.ruleset} · {r.source_id}
               {!r.is_redistributable && ' · contenido privado'}

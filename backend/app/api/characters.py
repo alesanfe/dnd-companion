@@ -113,6 +113,43 @@ def _save_profs(cls: dict) -> list[str]:
     return out
 
 
+_ABILITY_SHORT = {v: k for k, v in _SAVE_KEYS.items()}
+
+
+def _species_asi(sp: dict) -> dict[str, int]:
+    """Mejoras fijas de característica de la especie — ignora 'choose'.
+
+    5e-bits: ability_bonuses:[{bonus,ability_score:{index}}]
+    5etools: ability:[{str:2,cha:1}] · codexMUNDI: similar."""
+    out: dict[str, int] = {}
+    for b in sp.get("ability_bonuses") or []:          # 5e-bits 2014
+        if isinstance(b, dict):
+            ab = (b.get("ability_score") or {}).get("index")
+            if ab in _SAVE_KEYS.values() and isinstance(
+                    b.get("bonus"), int):
+                out[ab] = out.get(ab, 0) + b["bonus"]
+    for grp in sp.get("ability") or []:                # 5etools
+        if isinstance(grp, dict):
+            for k, v in grp.items():
+                if k in _SAVE_KEYS.values() and isinstance(v, int):
+                    out[k] = out.get(k, 0) + v
+    return out
+
+
+def _background_skills(bg: dict) -> list[str]:
+    """Competencias de habilidad del trasfondo — multi-schema."""
+    out: list[str] = []
+    for pr in bg.get("starting_proficiencies") or []:   # 5e-bits
+        name = (pr.get("name") or "") if isinstance(pr, dict) else str(pr)
+        if name.lower().startswith("skill:"):
+            out.append(name.split(":", 1)[1].strip().lower())
+    for grp in bg.get("skillProficiencies") or []:      # 5etools
+        if isinstance(grp, dict):
+            out.extend(k for k, v in grp.items()
+                       if v is True and k != "choose")
+    return out
+
+
 @router.post("/create-from-options", status_code=201)
 def create_from_options(body: WizardCreate):
     """Construye un Character nivel 1 desde la content DB:
@@ -122,6 +159,17 @@ def create_from_options(body: WizardCreate):
         raise HTTPException(400, "class not found in content DB")
 
     abilities = AbilityScores(**(body.abilities or {}))
+
+    # traits de especie: ASI fijas aplicadas a las puntuaciones base
+    if body.species_id:
+        sp = _content_row(body.species_id) or {}
+        for ab, bonus in _species_asi(sp).items():
+            attr = {"str": "strength", "dex": "dexterity",
+                    "con": "constitution", "int": "intelligence",
+                    "wis": "wisdom", "cha": "charisma"}[ab]
+            setattr(abilities, attr,
+                    getattr(abilities, attr) + bonus)
+
     hit_die = _hit_die(cls)
     hp_max = max(1, hit_die + abilities.modifier("con"))
 
@@ -150,6 +198,9 @@ def create_from_options(body: WizardCreate):
         spell_slots=spell_slots,
         proficiency_bonus=prof_bonus,
         save_proficiencies=_save_profs(cls),
+        skill_proficiencies=_background_skills(
+            _content_row(body.background_id) or {}
+            if body.background_id else {}),
     )
 
     conn = state_db()

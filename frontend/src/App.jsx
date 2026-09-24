@@ -1,4 +1,7 @@
 import { Routes, Route, Link } from 'react-router-dom'
+import CharacterList from './pages/CharacterList.jsx'
+import CharacterSheet from './pages/CharacterSheet.jsx'
+import Search from './pages/Search.jsx'
 
 export default function App() {
   return (
@@ -9,22 +12,11 @@ export default function App() {
         <Link to="/dm">Mesa DM</Link>
       </nav>
       <Routes>
-        <Route path="/" element={<Home />} />
+        <Route path="/" element={<CharacterList />} />
+        <Route path="/character/:id" element={<CharacterSheet />} />
         <Route path="/search" element={<Search />} />
-        <Route path="/dm" element={<DmBoard />} />
+        <Route path="/dm" element={<main><h1>Mesa del DM</h1><p>Próximamente.</p></main>} />
       </Routes>
     </div>
   )
-}
-
-function Home() {
-  return <main><h1>Mis personajes</h1><p>Hojas de personaje — próximamente.</p></main>
-}
-
-function Search() {
-  return <main><h1>Buscador de reglas</h1><p>FTS5 + comandos (/spell, /monster, /rule) — próximamente.</p></main>
-}
-
-function DmBoard() {
-  return <main><h1>Mesa del DM</h1><p>Tracker de combate, campañas, escenas — próximamente.</p></main>
 }

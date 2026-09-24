@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from ..domain.effects import Effect, Operation, StackingRule
+from ..domain.effects import Effect, EffectCondition, Operation, StackingRule, Trigger
 
 # operation -> stat alias handled uniformly by 'target'
 _OP_ALIASES = {Operation.MODIFY_ARMOR_CLASS: "armor_class"}
@@ -106,3 +106,51 @@ def resolve_stat(stat: str, base: float, effects: list[Effect]) -> StatBreakdown
             reason=f"{val:+g} (no apilable)"))
     out.entries = entries
     return out
+
+
+def check_conditions(conditions: list[EffectCondition],
+                     ctx: dict) -> bool:
+    """Evalúa condiciones declarativas contra un contexto (p.ej. campos
+    del personaje o del ataque). Sin condiciones = siempre aplica."""
+    for c in conditions:
+        val = ctx.get(c.field)
+        if c.eq is not None and val != c.eq:
+            return False
+        if c.ne is not None and val == c.ne:
+            return False
+        if c.in_ is not None and val not in c.in_:
+            return False
+        if c.gt is not None and not (isinstance(val, (int, float)) and val > c.gt):
+            return False
+        if c.lt is not None and not (isinstance(val, (int, float)) and val < c.lt):
+            return False
+    return True
+
+
+def apply_triggered(char, trigger: Trigger, ctx: dict | None = None) -> None:
+    """Ejecuta los effects del personaje cuyo trigger coincide.
+    Subconjunto de ops que mutan estado: recursos y condiciones."""
+    ctx = {**char.model_dump(), **(ctx or {})}
+    for eff in char.effects:
+        if eff.trigger != trigger:
+            continue
+        if not check_conditions(eff.conditions, ctx):
+            continue
+        for o in eff.operations:
+            if o.op == Operation.RESTORE_RESOURCE:
+                for r in char.resources:
+                    if r.id == o.target:
+                        r.current = r.max if o.value is None else min(
+                            r.max, r.current + int(o.value))
+            elif o.op == Operation.CONSUME_RESOURCE:
+                for r in char.resources:
+                    if r.id == o.target:
+                        r.current = max(0, r.current - int(o.value or 1))
+            elif o.op == Operation.APPLY_CONDITION:
+                c = str(o.value)
+                if c not in char.conditions:
+                    char.conditions.append(c)
+            elif o.op == Operation.REMOVE_CONDITION:
+                c = str(o.value)
+                if c in char.conditions:
+                    char.conditions.remove(c)

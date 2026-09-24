@@ -10,7 +10,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..db.connections import state_db
+from ..domain.character import Character
 from ..domain.ruleset import Ruleset
+from ..engine.engine import resolve_stat
 
 router = APIRouter(prefix="/api/characters", tags=["characters"])
 
@@ -37,6 +39,32 @@ def create_character(body: CharacterCreate):
     )
     conn.commit()
     return {"id": cid, "version": 1}
+
+
+@router.get("")
+def list_characters(campaign_id: str | None = None):
+    conn = state_db()
+    sql = "SELECT id, name, ruleset, version, campaign_id FROM characters"
+    params: list = []
+    if campaign_id:
+        sql += " WHERE campaign_id = ?"
+        params.append(campaign_id)
+    rows = conn.execute(sql, params).fetchall()
+    return {"characters": [dict(r) for r in rows]}
+
+
+@router.get("/{character_id}/derived/{stat}")
+def derived_stat(character_id: str, stat: str, base: float = 10):
+    """Stat resuelto por el motor de efectos, con trazabilidad:
+    'CA 18 = 10 base +3 armadura +2 escudo'."""
+    conn = state_db()
+    row = conn.execute(
+        "SELECT data FROM characters WHERE id = ?", (character_id,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "character not found")
+    char = Character(**json.loads(row["data"]))
+    return resolve_stat(stat, base, char.effects).model_dump()
 
 
 @router.get("/{character_id}")

@@ -3,6 +3,8 @@
   --bg: #1a1a2e;
   --fg: #e8e6e3;
   --accent: #c0392b;
+  --card: #23233a;
+  --muted: #8a8a9a;
 }
 
 * { box-sizing: border-box; }
@@ -24,7 +26,68 @@ body {
 .nav a { color: var(--fg); text-decoration: none; font-size: 1.1rem; }
 .nav a:hover { color: var(--accent); }
 
-main { padding: 1rem; }
+main { padding: 1rem; max-width: 720px; margin: 0 auto; }
+
+.card {
+  background: var(--card);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.card h2 { margin-top: 0; font-size: 1.1rem; }
+
+.row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.5rem 0;
+}
+
+input {
+  flex: 1;
+  padding: 0.6rem;
+  font-size: 1rem;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid #444;
+  border-radius: 6px;
+}
+
+input[type="number"] { max-width: 90px; }
 
 /* objetivos táctiles grandes: mesa de juego, dedos, poca luz */
-button, a { min-height: 44px; }
+button {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 1rem;
+  font-size: 1rem;
+  border: none;
+  border-radius: 6px;
+  background: #3a3a5c;
+  color: var(--fg);
+  cursor: pointer;
+}
+button:disabled { opacity: 0.4; cursor: default; }
+button.dmg { background: var(--accent); }
+button.heal { background: #2d7a3a; }
+
+.hp-big { font-size: 2.4rem; font-weight: 700; }
+.hp-big .temp { color: #6db3f2; font-size: 1.4rem; }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: #4a2a2a;
+  border-radius: 999px;
+  padding: 0.3rem 0.4rem 0.3rem 0.8rem;
+  margin: 0.2rem;
+}
+.chip button { min-height: 32px; min-width: 32px; padding: 0; border-radius: 50%; }
+
+.muted { color: var(--muted); font-size: 0.85rem; }
+.error { color: #ff7b72; }
+.excerpt { color: var(--muted); font-size: 0.85rem; margin: 0.2rem 0; }
+.log { font-family: ui-monospace, monospace; }
+.char-list a { font-size: 1.15rem; }

@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import campaigns, characters, content
+from .api import campaigns, characters, content, dice, operations
 from .ws.rooms import manager
 
 app = FastAPI(title="D&D Companion", version="0.1.0")
@@ -20,6 +20,8 @@ app.add_middleware(
 app.include_router(content.router)
 app.include_router(characters.router)
 app.include_router(campaigns.router)
+app.include_router(operations.router)
+app.include_router(dice.router)
 
 
 @app.get("/api/health")

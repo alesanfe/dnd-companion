@@ -71,10 +71,26 @@ objetivos táctiles ≥44px, PWA instalable.
 ## Quickstart
 
 ```bash
-# Content DB (SRD 2014 desde 5e-bits)
+# Content DB — fuentes disponibles:
 cd data-pipeline
 pip install -e .
+
+# SRD oficial 5e-bits (CC-BY-4.0, redistribuible)
 python -m pipeline.cli import-srd --edition 2014
+python -m pipeline.cli import-srd --edition 2024
+
+# Open5e API: documentos OGL/CC — Tome of Beasts 1-3 (+2023),
+# Creature Codex, Deep Magic, Vault of Magic, Menagerie, Black Flag,
+# Tal'Dorei, Tome of Heroes, A5E… (~5.600 entidades)
+python -m pipeline.cli import-open5e --document tob   # o sin --document: todo
+
+# 5etools — TODO el catálogo WotC pero NON-FREE: solo local, nunca
+# se redistribuye (is_redistributable=False en toda la fuente)
+#   git clone https://github.com/5etools-mirror-3/5etools-src
+python -m pipeline.cli import-5etools --path 5etools-src/data
+
+# JSON privado/homebrew
+python -m pipeline.cli import-file --path <json> --license <lic> --type <tipo>
 
 # Backend
 cd ../backend

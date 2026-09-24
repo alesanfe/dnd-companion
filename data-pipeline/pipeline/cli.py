@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 
 from . import db
-from .importers import five_e_bits
+from .importers import five_e_bits, fiveetools, open5e
 
 DEFAULT_DB = Path(__file__).resolve().parents[2] / "data" / "content.sqlite3"
 
@@ -38,6 +38,21 @@ def main() -> None:
                    choices=["dnd5e-2014", "dnd5e-2024", "mixed"])
     f.add_argument("--redistributable", action="store_true",
                    help="assert you hold redistribution rights")
+
+    o = sub.add_parser("import-open5e", help="Import Open5e API docs")
+    o.add_argument("--document", default=None,
+                   help="document slug (wotc-srd, tob, cc…) — all if omitted")
+    o.add_argument("--base-url", default=open5e.BASE_URL)
+    o.add_argument("--ruleset", default=None,
+                   choices=["dnd5e-2014", "dnd5e-2024", "mixed"],
+                   help="override ruleset for all entities")
+
+    t = sub.add_parser("import-5etools",
+                       help="Import a local 5etools-src clone (non-free)")
+    t.add_argument("--path", type=Path, required=True,
+                   help="path to the clone's data/ directory")
+    t.add_argument("--ruleset", default="mixed",
+                   choices=["dnd5e-2014", "dnd5e-2024", "mixed"])
 
     args = p.parse_args()
     Path(args.db).parent.mkdir(parents=True, exist_ok=True)
@@ -68,6 +83,15 @@ def main() -> None:
         db.rebuild_fts(conn)
         conn.commit()
         print(f"Done: {len(rows)} entities -> {args.db}")
+    elif args.cmd == "import-open5e":
+        n = open5e.import_open5e(conn, args.document,
+                                 base_url=args.base_url,
+                                 ruleset=args.ruleset)
+        print(f"Done: {n} entities -> {args.db}")
+    elif args.cmd == "import-5etools":
+        n = fiveetools.import_5etools(conn, args.path,
+                                      ruleset=args.ruleset)
+        print(f"Done: {n} entities (non-redistributable) -> {args.db}")
 
 
 if __name__ == "__main__":

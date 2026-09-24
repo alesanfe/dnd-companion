@@ -103,6 +103,17 @@ python -m pipeline.cli import-file --path monsters.json \
 #   git clone https://github.com/5etools-mirror-3/5etools-src
 python -m pipeline.cli import-5etools --path 5etools-src/data
 
+# TheGiddyLimit/homebrew — ~95.000 entidades de homebrew comunitario
+# (mismo formato 5etools; derechos de cada autor — solo local)
+#   git clone https://github.com/TheGiddyLimit/homebrew data/hb
+python -m pipeline.cli import-5etools --path data/hb \
+    --source-id 5etools-homebrew \
+    --license "community homebrew (rights belong to authors)"
+
+# TheGiddyLimit/unearthed-arcana — playtests UA de WotC (non-free)
+python -m pipeline.cli import-5etools --path data/ua \
+    --source-id 5etools-ua --license "WotC UA playtest (non-free)"
+
 # JSON privado/homebrew
 python -m pipeline.cli import-file --path <json> --license <lic> --type <tipo>
 

@@ -59,6 +59,11 @@ def main() -> None:
                    help="path to the clone's data/ directory")
     t.add_argument("--ruleset", default="mixed",
                    choices=["dnd5e-2014", "dnd5e-2024", "mixed"])
+    t.add_argument("--source-id", default="5etools",
+                   help="e.g. '5etools-homebrew' or '5etools-ua' for "
+                        "TheGiddyLimit/homebrew or unearthed-arcana clones")
+    t.add_argument("--license", default=fiveetools.LICENSE)
+    t.add_argument("--redistributable", action="store_true")
 
     fo = sub.add_parser("import-foundry",
                         help="Import a local foundryvtt/dnd5e clone "
@@ -110,8 +115,10 @@ def main() -> None:
         n = fn(conn, args.document, base_url=base, ruleset=args.ruleset)
         print(f"Done: {n} entities -> {args.db}")
     elif args.cmd == "import-5etools":
-        n = fiveetools.import_5etools(conn, args.path,
-                                      ruleset=args.ruleset)
+        n = fiveetools.import_5etools(
+            conn, args.path, ruleset=args.ruleset,
+            source_id=args.source_id, license=args.license,
+            distribution_allowed=args.redistributable)
         print(f"Done: {n} entities (non-redistributable) -> {args.db}")
     elif args.cmd == "import-foundry":
         n = foundry.import_foundry(conn, args.path, ruleset=args.ruleset)

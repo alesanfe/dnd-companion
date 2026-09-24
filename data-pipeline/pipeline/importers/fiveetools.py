@@ -23,34 +23,20 @@ SOURCE_ID = "5etools"
 LICENSE = "non-free (WotC fan content — local use only)"
 ORIGIN = "https://github.com/5etools-mirror-3/5etools-src"
 
-# filename prefix -> (json key, entity_type). Files under data/.
-FILE_MAP = {
-    "bestiary-": ("monster", "monster"),
-    "spells-": ("spell", "spell"),
-    "class-": ("class", "class"),
-    "subclass-": ("subclass", "subclass"),
-    "race": ("race", "race"),
-}
-# top-level files: (filename, json key, entity_type)
-SINGLE_FILES = {
-    "items.json": ("item", "magic-item"),
-    "items-base.json": ("baseitem", "equipment"),
-    "conditionsdiseases.json": ("condition", "condition"),
-    "actions.json": ("action", "action"),
-    "backgrounds.json": ("background", "background"),
-    "feats.json": ("feat", "feat"),
-    "optionalfeatures.json": ("optionalfeature", "feature"),
-    "rewards.json": ("reward", "reward"),
-    "boons.json": ("boon", "feat"),
-    "deities.json": ("deity", "deity"),
-    "traps.json": ("trap", "hazard"),
-    "hazards.json": ("hazard", "hazard"),
-    "objects.json": ("object", "object"),
-    "variantrules.json": ("variantrule", "rule"),
-    "tables.json": ("table", "table"),
-    "languages.json": ("language", "language"),
-    "skills.json": ("skill", "skill"),
-    "senses.json": ("sense", "rule"),
+# Homebrew/UA files ("Author; Title.json") hold arbitrary mixes of keys —
+# scan every known top-level key per file.
+KEY_TYPES = {
+    "monster": "monster", "spell": "spell", "item": "magic-item",
+    "baseitem": "equipment", "magicvariant": "magic-item",
+    "feat": "feat", "race": "race", "subrace": "subrace",
+    "class": "class", "subclass": "subclass",
+    "background": "background", "condition": "condition",
+    "disease": "condition", "action": "action", "table": "table",
+    "variantrule": "rule", "reward": "reward", "boon": "feat",
+    "deity": "deity", "optionalfeature": "feature", "hazard": "hazard",
+    "trap": "hazard", "object": "object", "language": "language",
+    "vehicle": "vehicle", "charoption": "feature", "psionic": "spell",
+    "card": "object", "deck": "table", "cult": "feature",
 }
 
 
@@ -62,70 +48,71 @@ def _index_of(row: dict) -> str | None:
     return f"{str(name).lower()}|{str(src).lower()}".replace(" ", "-")
 
 
-def _rows_from_file(path: Path, key: str) -> list[dict]:
+def _pairs_from_file(path: Path) -> list[tuple[str, dict]]:
+    """Return [(entity_type, row), ...] scanning all known keys."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         print(f"  skip {path.name}: {exc}")
         return []
-    rows = data.get(key)
-    if not isinstance(rows, list):
-        # some files nest under _copy-friendly wrappers; try any list
-        rows = next((v for v in data.values()
-                     if isinstance(v, list) and v
-                     and isinstance(v[0], dict) and "name" in v[0]), [])
-    return [r for r in rows if isinstance(r, dict)]
+    if not isinstance(data, dict):
+        return []
+    out: list[tuple[str, dict]] = []
+    for key, etype in KEY_TYPES.items():
+        rows = data.get(key)
+        if isinstance(rows, list):
+            out.extend((etype, r) for r in rows if isinstance(r, dict))
+    return out
 
 
 def import_5etools(
     conn: sqlite3.Connection,
     data_dir: Path,
     ruleset: str = "mixed",
+    source_id: str = SOURCE_ID,
+    license: str = LICENSE,
+    distribution_allowed: bool = False,
 ) -> int:
-    """Import every recognized file under <clone>/data. Returns count."""
+    """Import every recognized file under a 5etools-format dir tree.
+
+    Works for the main data repo (data/bestiary-*.json etc.) and for
+    homebrew/UA repos where each file mixes keys ("Author; Title.json").
+    """
     data_dir = Path(data_dir)
     if not data_dir.is_dir():
         raise FileNotFoundError(data_dir)
 
     db.upsert_source(
-        conn, source_id=SOURCE_ID, name="5etools dataset (local clone)",
-        version=None, license=LICENSE,
+        conn, source_id=source_id,
+        name=f"5etools-format dataset: {source_id} (local clone)",
+        version=None, license=license,
         attribution_text=(
-            "Unofficial fan dataset — content © Wizards of the Coast. "
-            "For personal use only; do not redistribute."),
+            "5etools-format JSON. Content rights belong to the original "
+            "authors/publishers. For personal use only."),
         original_url=ORIGIN,
-        distribution_allowed=False,
+        distribution_allowed=distribution_allowed,
     )
 
     count = 0
     for path in sorted(data_dir.rglob("*.json")):
         # skip generated/schema/meta dirs
-        if any(part in ("generated", "schema", "zips")
+        if any(part in ("generated", "schema", "zips", ".git")
                for part in path.parts):
             continue
-        key = etype = None
-        for prefix, (k, t) in FILE_MAP.items():
-            if path.name.startswith(prefix):
-                key, etype = k, t
-                break
-        if key is None and path.name in SINGLE_FILES:
-            key, etype = SINGLE_FILES[path.name]
-        if key is None:
-            continue
-        rows = _rows_from_file(path, key)
+        pairs = _pairs_from_file(path)
         ep = 0
-        for row in rows:
+        for etype, row in pairs:
             index = _index_of(row)
             name = row.get("name")
             if not index or not name:
                 continue
             db.insert_entity(
-                conn, source_id=SOURCE_ID,
+                conn, source_id=source_id,
                 index=f"{etype}:{index}",
                 entity_type=etype, name=str(name),
-                ruleset=ruleset, license=LICENSE, data=row,
+                ruleset=ruleset, license=license, data=row,
                 source_document=str(row.get("source") or path.stem),
-                is_redistributable=False)
+                is_redistributable=distribution_allowed)
             count += 1
             ep += 1
         if ep:

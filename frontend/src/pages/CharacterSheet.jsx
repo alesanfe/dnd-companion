@@ -400,6 +400,16 @@ export default function CharacterSheet() {
         <ul className="log">{rollLog.map((l, i) => <li key={i}>{l}</li>)}</ul>
       </section>
 
+      {(d.spells_known || []).length > 0 && (
+        <section className="card optional">
+          <h2>Conjuros</h2>
+          <SpellList ids={d.spells_known} onCast={(sid) =>
+            op('character.spell.cast', { spell_id: sid, level: 0 })}
+            onForget={(sid) =>
+              op('character.spell.forget', { spell_id: sid })} />
+        </section>
+      )}
+
       {shops.length > 0 && (
         <section className="card optional">
           <h2>Tienda</h2>
@@ -436,5 +446,29 @@ export default function CharacterSheet() {
         <ul>{(d.narrative?.journal || []).map((j, i) => <li key={i}>{j}</li>)}</ul>
       </section>
     </main>
+  )
+}
+
+
+function SpellList({ ids, onCast, onForget }) {
+  const [names, setNames] = useState({})
+  useEffect(() => {
+    for (const sid of ids) {
+      if (names[sid]) continue
+      api.getEntity(sid)
+        .then((e) => setNames((n) => ({ ...n, [sid]: e.name || sid })))
+        .catch(() => setNames((n) => ({ ...n, [sid]: sid })))
+    }
+  }, [ids])
+  return (
+    <ul>
+      {ids.map((sid) => (
+        <li key={sid} className="row">
+          <span style={{ flex: 1 }}>{names[sid] || sid}</span>
+          <button onClick={() => onCast(sid)}>Lanzar</button>
+          <button className="ghost" onClick={() => onForget(sid)}>×</button>
+        </li>
+      ))}
+    </ul>
   )
 }

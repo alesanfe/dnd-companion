@@ -34,11 +34,29 @@ def _set_inverse(char: Character) -> dict:
 def hp_damage(char: Character, p: dict, ctx):
     inv = _set_inverse(char)
     amount = max(0, int(p["amount"]))
+    # resistencia/vulnerabilidad/inmunidad declarativas por tipo de daño
+    dtype = str(p.get("type", "")).lower()
+    mult, applied = 1.0, []
+    for eff in char.effects:
+        for o in eff.operations:
+            tgt = (o.target or "").lower()
+            if dtype and tgt not in (dtype, "*"):
+                continue
+            if o.op.value == "grant_immunity":
+                mult = 0.0; applied.append(f"{eff.name}: inmunidad")
+            elif o.op.value == "grant_resistance" and mult > 0.5:
+                mult = 0.5; applied.append(f"{eff.name}: resistencia")
+            elif o.op.value == "grant_vulnerability":
+                mult *= 2.0; applied.append(f"{eff.name}: vulnerabilidad")
+    amount = int(amount * mult)
     absorbed = min(char.hp.temp, amount)
     char.hp.temp -= absorbed
     char.hp.current = max(0, char.hp.current - (amount - absorbed))
     payload = {"amount": amount, "temp_absorbed": absorbed,
                "current": char.hp.current}
+    if applied:
+        payload["damage_effects"] = applied
+        payload["damage_type"] = dtype
     if char.concentrating_on:
         # recibir daño exige tirada de CON: CD máx(10, daño/2)
         payload["concentration_check"] = True

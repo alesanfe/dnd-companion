@@ -35,8 +35,10 @@ class Combat(BaseModel):
     combatants: list[Combatant] = Field(default_factory=list)
 
     def ordered(self) -> list[Combatant]:
-        return sorted(self.combatants,
-                      key=lambda c: -c.initiative)
+        """Iniciativa descendente; los muertos no toman turno."""
+        alive = [c for c in self.combatants
+                 if "muerto" not in c.conditions]
+        return sorted(alive, key=lambda c: -c.initiative)
 
     @property
     def active(self) -> Combatant | None:

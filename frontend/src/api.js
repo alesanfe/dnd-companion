@@ -78,6 +78,7 @@ export const api = {
   contentOptions: (entityType, ruleset = 'dnd5e-2014') =>
     req(`/api/content/options?entity_type=${entityType}&ruleset=${ruleset}`),
   derivedAll: (id) => req(`/api/characters/${id}/derived`),
+  getEntity: (id) => req(`/api/content/${encodeURIComponent(id)}`),
   campaignEvents: (campaignId, limit = 100) =>
     req(`/api/campaigns/${campaignId}/events?limit=${limit}`),
   exportCampaign: (campaignId) =>

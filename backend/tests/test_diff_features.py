@@ -85,16 +85,17 @@ def test_compare_fireball_2014_vs_2024():
 
 
 def test_homebrew_entity_searchable():
+    tag = uuid.uuid4().hex[:6]
     r = client.post("/api/content/homebrew", json={
-        "entity_type": "monster", "name": "Dragón de Café",
+        "entity_type": "monster", "name": f"Dragón de Café {tag}",
         "data": {"challenge_rating": "99"}})
     assert r.status_code == 201
     eid = r.json()["id"]
     ent = client.get(f"/api/content/{eid}").json()
-    assert ent["name"] == "Dragón de Café"
+    assert ent["name"] == f"Dragón de Café {tag}"
     assert ent["source_id"] == "homebrew"
-    # aparece en búsqueda FTS (término distintivo: 'dragon' matchea 168)
-    s = client.get("/api/content/search?q=café").json()
+    # búsqueda por token único — la DB de tests acumula entidades
+    s = client.get(f"/api/content/search?q={tag}").json()
     assert any(x["id"] == eid for x in s["results"])
 
 
@@ -731,7 +732,8 @@ def test_condition_duration_expires_on_round():
     combat = client.post("/api/combat", json={"name": "E"}).json()
     _combat_op(combat["id"], combat["version"], "combatant.add",
                {"name": "A", "initiative": 20})
-    _combat_op(combat["id"], 1, "combatant.add",
+    v = client.get(f"/api/combat/{combat['id']}").json()["version"]
+    _combat_op(combat["id"], v, "combatant.add",
                {"name": "B", "initiative": 10})
     cdata = client.get(f"/api/combat/{combat['id']}").json()["combat"]
     aid = cdata["combatants"][0]["id"]
@@ -757,6 +759,57 @@ def test_session_patch_status():
     r = client.patch(f"/api/campaigns/{camp}/sessions/{sid}",
                      json={"status": "bogus"})
     assert r.status_code == 400
+
+
+def test_damage_resistance_and_vulnerability():
+    cid = _mkchar()
+    import json as _j
+    from app.db.connections import state_db
+    conn = state_db()
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    d["hp"]["current"] = 20
+    d["hp"]["max"] = 20
+    d["effects"] = [{"id": "piedra", "name": "Piel de piedra",
+                     "trigger": None,
+                     "operations": [{"op": "grant_resistance",
+                                     "target": "bludgeoning"}]}]
+    conn.execute("UPDATE characters SET data = ? WHERE id = ?",
+                 (_j.dumps(d), cid))
+    conn.commit()
+    _op(cid, _version(cid), "character.hp.damage",
+        {"amount": 10, "type": "bludgeoning"})
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert d["hp"]["current"] == 15          # mitad por resistencia
+    r = _op(cid, _version(cid), "character.hp.damage",
+            {"amount": 10, "type": "fire"})
+    ev = r.json()["events"][0]["payload"]
+    assert ev["amount"] == 10              # sin resistencia al fuego
+
+
+def test_dead_combatants_skip_turn():
+    combat = client.post("/api/combat", json={"name": "M"}).json()
+    _combat_op(combat["id"], combat["version"], "combatant.add",
+               {"name": "Rapido", "initiative": 30})
+    v = client.get(f"/api/combat/{combat['id']}").json()["version"]
+    _combat_op(combat["id"], v, "combatant.add",
+               {"name": "Lento", "initiative": 1})
+    cdata = client.get(f"/api/combat/{combat['id']}").json()["combat"]
+    rid = cdata["combatants"][0]["id"]
+    v = client.get(f"/api/combat/{combat['id']}").json()["version"]
+    _combat_op(combat["id"], v, "combatant.damage",
+               {"combatant_id": rid, "amount": 999})
+    v = client.get(f"/api/combat/{combat['id']}").json()["version"]
+    for _ in range(3):
+        r = _combat_op(combat["id"], v, "combatant.death_save",
+                       {"combatant_id": rid, "success": False})
+        v = r.json()["version"]
+    c = client.get(f"/api/combat/{combat['id']}").json()["combat"]
+    assert "muerto" in c["combatants"][0]["conditions"]
+    # el orden excluye al muerto: solo queda "Lento"
+    _combat_op(combat["id"], v, "combat.next_turn", {})
+    c = client.get(f"/api/combat/{combat['id']}").json()["combat"]
+    assert c["combatants"][1]["name"] == "Lento"
+    assert c["turn_index"] >= 0
 
 
 def test_patch_and_delete_character():

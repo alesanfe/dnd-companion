@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import MapBoard from '../components/MapBoard.jsx'
 
@@ -13,7 +13,7 @@ export default function DmBoard() {
   const [dmg, setDmg] = useState({})
   const [err, setErr] = useState(null)
   const [entities, setEntities] = useState([])
-  const [entForm, setEntForm] = useState({ kind: 'npc', name: '', notes: '' })
+  const [entForm, setEntForm] = useState({ kind: 'npc', name: '', notes: '', monsters: '' })
   const [partyLevels, setPartyLevels] = useState('3,3,3,3')
   const [crs, setCrs] = useState('')
   const [difficulty, setDifficulty] = useState(null)
@@ -21,6 +21,23 @@ export default function DmBoard() {
   const [sessions, setSessions] = useState([])
   const [sessTitle, setSessTitle] = useState('')
   const [timeline, setTimeline] = useState(null)
+  const [rollFeed, setRollFeed] = useState([])
+  const [eventFeed, setEventFeed] = useState(null)
+
+  // feed en vivo: tiradas de los jugadores en la sala
+  useEffect(() => {
+    if (!campaign) return undefined
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+    const ws = new WebSocket(
+      `${proto}://${location.host}/ws/campaign/${campaign.id}`)
+    ws.onmessage = (m) => {
+      const msg = JSON.parse(m.data)
+      const ev = msg.event
+      if (ev?.type === 'dice.roll.created')
+        setRollFeed((f) => [ev.payload, ...f].slice(0, 20))
+    }
+    return () => ws.close()
+  }, [campaign?.id])
 
   const refresh = (id, version) =>
     api.getCombat(id).then((r) => setCombat(r)).catch((e) => setErr(e.message))
@@ -62,10 +79,46 @@ export default function DmBoard() {
             <button type="submit">Crear</button>
           </form>
         ) : (
-          <p>{campName || 'Campaña'} — código invitación:
-            <strong> {campaign.invite_code}</strong></p>
+          <>
+            <p>{campName || 'Campaña'} — código invitación:
+              <strong> {campaign.invite_code}</strong></p>
+            <div className="row">
+              <button className="ghost" onClick={async () => {
+                const ex = await api.exportCampaign(campaign.id)
+                const blob = new Blob([JSON.stringify(ex, null, 2)],
+                                      { type: 'application/json' })
+                const a = document.createElement('a')
+                a.href = URL.createObjectURL(blob)
+                a.download = 'campania.json'
+                a.click()
+              }}>Exportar backup</button>
+              <button className="ghost" onClick={async () =>
+                setEventFeed(eventFeed ? null
+                  : (await api.campaignEvents(campaign.id)).events)
+              }>Auditoría</button>
+            </div>
+            {eventFeed && eventFeed.map((e) => (
+              <div key={e.event_id} className="row">
+                <span className="muted">{e.occurred_at.slice(11, 19)}</span>
+                <span>{e.type}</span>
+              </div>
+            ))}
+          </>
         )}
       </section>
+
+      {campaign && rollFeed.length > 0 && (
+        <section className="card">
+          <h2>Tiradas de la mesa</h2>
+          {rollFeed.map((r, i) => (
+            <div key={i} className="row">
+              <span>{r.character}</span>
+              <span className="muted">{r.roll_type} · {r.expression}</span>
+              <strong>{r.total}</strong>
+            </div>
+          ))}
+        </section>
+      )}
 
       {campaign && (
         <section className="card">
@@ -82,12 +135,27 @@ export default function DmBoard() {
             </select>
             <input value={entForm.name} placeholder="Nombre"
                    onChange={(e) => setEntForm({ ...entForm, name: e.target.value })} />
+            {entForm.kind === 'scene' && (
+              <input value={entForm.monsters}
+                     placeholder="monstruos: goblin, orc"
+                     onChange={(e) => setEntForm({ ...entForm, monsters: e.target.value })} />
+            )}
             <button disabled={!entForm.name} onClick={async () => {
+              const data = { notes: entForm.notes }
+              if (entForm.kind === 'scene' && entForm.monsters.trim()) {
+                // resuelve nombres a ids de contenido (primer resultado)
+                const ids = []
+                for (const term of entForm.monsters.split(',')) {
+                  const s = await api.search(term.trim(), 'monster')
+                  if (s.results[0]) ids.push(s.results[0].id)
+                }
+                data.monsters = ids
+              }
               await api.createEntity(campaign.id, {
                 kind: entForm.kind, name: entForm.name,
-                data: { notes: entForm.notes }, visibility: 'dm',
+                data, visibility: 'dm',
               })
-              setEntForm({ ...entForm, name: '', notes: '' })
+              setEntForm({ ...entForm, name: '', notes: '', monsters: '' })
               api.listEntities(campaign.id).then((r) => setEntities(r.entities))
             }}>Crear (privado)</button>
           </div>
@@ -98,6 +166,12 @@ export default function DmBoard() {
             <div key={e.id} className="row">
               <span className="muted">{e.kind}</span>
               <span style={{ flex: 1 }}>{e.name}</span>
+              {e.kind === 'scene' && (e.data.monsters || []).length > 0 && (
+                <button style={{ minHeight: 32 }} onClick={async () => {
+                  const r = await api.startScene(campaign.id, e.id)
+                  refresh(r.combat_id)
+                }}>▶ combate</button>
+              )}
               {e.visibility === 'dm' && (
                 <button onClick={async () => {
                   await api.revealEntity(campaign.id, e.id)
@@ -160,7 +234,16 @@ export default function DmBoard() {
               <span className="muted"> · {s.status}</span>
               <ul>
                 {s.scenes.map((sc) => (
-                  <li key={sc.id}>{sc.data.order}. {sc.name}</li>
+                  <li key={sc.id} className="row">
+                    {sc.data.order}. {sc.name}
+                    {(sc.data.monsters || []).length > 0 && (
+                      <button style={{ minHeight: 32 }}
+                              onClick={async () => {
+                        const r = await api.startScene(campaign.id, sc.id)
+                        refresh(r.combat_id)
+                      }}>▶ combate</button>
+                    )}
+                  </li>
                 ))}
               </ul>
             </div>

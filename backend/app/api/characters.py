@@ -307,6 +307,75 @@ def derived_stat(character_id: str, stat: str, base: float = 10):
     return resolve_stat(stat, base, char.effects).model_dump()
 
 
+@router.get("/{character_id}/derived")
+def derived_all(character_id: str):
+    """Resumen derivado de la ficha: CA (armadura equipada + DES +
+    escudo + efectos), iniciativa, percepción pasiva, CD/ataque de
+    conjuro. Todo calculado — nada se guarda."""
+    conn = state_db()
+    row = conn.execute(
+        "SELECT data FROM characters WHERE id = ?", (character_id,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "character not found")
+    char = Character(**json.loads(row["data"]))
+    content = content_db()
+    dex_mod = char.abilities.modifier("dex")
+    wis_mod = char.abilities.modifier("wis")
+
+    # CA: armadura equipada del inventario (por source_id → equipo SRD)
+    ac_base, ac_dex_max, ac_parts = 10, None, [("base", 10)]
+    for it in char.inventory:
+        if not it.equipped or not it.source_id:
+            continue
+        r = content.execute(
+            "SELECT data FROM content_entities WHERE id = ?",
+            (it.source_id,)).fetchone()
+        eq = json.loads(r["data"]) if r else {}
+        cat = (eq.get("equipment_category") or {}).get("index", "")
+        if cat == "armor":
+            base = (eq.get("armor_class") or {}).get("base", 10)
+            ac_base = base
+            ac_parts = [(it.name, base)]
+            ac_dex_max = ((eq.get("armor_class") or {}).get("max_bonus")
+                          if (eq.get("armor_class") or {}).get("dex_bonus")
+                          else 0)
+        elif cat == "shield" or "shield" in it.name.lower():
+            bonus = (eq.get("armor_class") or {}).get("base", 2)
+            ac_base += bonus
+            ac_parts.append((it.name, bonus))
+    dex_applied = dex_mod if ac_dex_max is None else min(dex_mod,
+                                                         ac_dex_max)
+    if dex_applied:
+        ac_parts.append(("DES", dex_applied))
+    for eff in char.effects:
+        for o in eff.operations:
+            if o.op.value == "add_modifier" and o.target == "armor_class":
+                ac_base += int(o.value or 0)
+                ac_parts.append((eff.name, int(o.value or 0)))
+
+    # conjuros: característica de lanzamiento según la clase
+    cast_ability = "int"
+    if char.classes:
+        cls = _content_row(char.classes[0].class_id) or {}
+        cast_ability = ((cls.get("spellcasting") or {})
+                        .get("spellcasting_ability") or {}
+                        ).get("index", "int")
+    cast_mod = char.abilities.modifier(cast_ability)
+    pp = 10 + wis_mod + (char.proficiency_bonus
+                         if "perception" in char.skill_proficiencies else 0)
+    return {
+        "armor_class": {"total": ac_base + dex_applied,
+                        "breakdown": ac_parts},
+        "initiative": dex_mod,
+        "passive_perception": pp,
+        "spell_save_dc": 8 + char.proficiency_bonus + cast_mod,
+        "spell_attack": char.proficiency_bonus + cast_mod,
+        "spellcasting_ability": cast_ability,
+        "proficiency_bonus": char.proficiency_bonus,
+    }
+
+
 @router.get("/{character_id}")
 def get_character(character_id: str):
     conn = state_db()

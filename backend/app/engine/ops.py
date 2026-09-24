@@ -518,6 +518,92 @@ def journal_pop(char: Character, p: dict, ctx):
             "payload": {"entry": entry}}, []
 
 
+@op("character.ability.set")
+def ability_set(char: Character, p: dict, ctx):
+    """Edita una puntuación de característica (mejora de nivel, etc.)."""
+    ability = p["ability"].lower()
+    inv = {"operation_type": "character.ability.set",
+           "payload": {"ability": ability,
+                       "value": getattr(char.abilities, {
+                           "str": "strength", "dex": "dexterity",
+                           "con": "constitution", "int": "intelligence",
+                           "wis": "wisdom", "cha": "charisma",
+                       }.get(ability, ability))}}
+    setattr(char.abilities,
+            {"str": "strength", "dex": "dexterity", "con": "constitution",
+             "int": "intelligence", "wis": "wisdom",
+             "cha": "charisma"}.get(ability, ability),
+            int(p["value"]))
+    return inv, [{"type": "resource.usage.changed",
+                  "payload": {"ability": ability, "value": p["value"]}}]
+
+
+@op("character.resource.add")
+def resource_add(char: Character, p: dict, ctx):
+    """Define un recurso nuevo (homebrew: furia, ki, p. de hechicería)."""
+    import uuid as _uuid
+    from ..domain.character import Resource
+    res = Resource(id=p.get("id") or _uuid.uuid4().hex, name=p["name"],
+                   current=int(p.get("max", p.get("current", 0))),
+                   max=int(p.get("max", 0)),
+                   reset_on=p.get("reset_on", "long"))
+    if any(r.name == res.name for r in char.resources):
+        raise ValueError(f"recurso duplicado: {res.name}")
+    char.resources.append(res)
+    return {"operation_type": "character.resource.remove",
+            "payload": {"resource_id": res.id}}, [
+        {"type": "resource.usage.changed",
+         "payload": {"resource_added": res.name}}]
+
+
+@op("character.resource.remove")
+def resource_remove(char: Character, p: dict, ctx):
+    res = _resource(char, p["resource_id"])
+    char.resources.remove(res)
+    return {"operation_type": "character.resource.add",
+            "payload": res.model_dump()}, [
+        {"type": "resource.usage.changed",
+         "payload": {"resource_removed": res.name}}]
+
+
+@op("character.item.attune")
+def item_attune(char: Character, p: dict, ctx):
+    """Sintoniza un objeto mágico — máximo 3 (SRD)."""
+    item = next((i for i in char.inventory if i.id == p["item_id"]), None)
+    if item is None:
+        raise ValueError("objeto no encontrado")
+    inv = {"operation_type": "character.item.unattune",
+           "payload": {"item_id": item.id}}
+    if not item.attuned:
+        attuned = sum(1 for i in char.inventory if i.attuned)
+        if attuned >= 3:
+            raise ValueError("máximo 3 objetos sintonizados")
+        item.attuned = True
+    return inv, [{"type": "inventory.item.transferred",
+                  "payload": {"attuned": item.name}}]
+
+
+@op("character.item.unattune")
+def item_unattune(char: Character, p: dict, ctx):
+    item = next((i for i in char.inventory if i.id == p["item_id"]), None)
+    if item is None:
+        raise ValueError("objeto no encontrado")
+    item.attuned = False
+    return {"operation_type": "character.item.attune",
+            "payload": {"item_id": item.id}}, [
+        {"type": "inventory.item.transferred",
+         "payload": {"unattuned": item.name}}]
+
+
+@op("character.inspiration.set")
+def inspiration_set(char: Character, p: dict, ctx):
+    inv = {"operation_type": "character.inspiration.set",
+           "payload": {"value": char.inspiration}}
+    char.inspiration = bool(p.get("value", True))
+    return inv, [{"type": "resource.usage.changed",
+                  "payload": {"inspiration": char.inspiration}}]
+
+
 @op("character.craft")
 def craft(char: Character, p: dict, ctx):
     """Fabricación/downtime: consume ingredientes del inventario y

@@ -105,6 +105,7 @@ class Character(BaseModel):
     proficiency_bonus: int = 2
     xp: int = 0                             # puntos de experiencia
     concentrating_on: str | None = None     # conjuro en concentración
+    inspiration: bool = False               # inspiración del DM
 
     @property
     def total_level(self) -> int:

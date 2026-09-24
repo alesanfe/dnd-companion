@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from .auth import member_role, optional_user
-from ..db.connections import state_db
+from ..db.connections import content_db, state_db
 from ..domain.ruleset import Ruleset
 from ..ws.rooms import manager
 
@@ -345,6 +345,94 @@ def timeline(campaign_id: str):
     ]
     items.sort(key=lambda x: x["world_date"] or "")
     return {"timeline": items}
+
+
+@router.post("/{campaign_id}/scenes/{scene_id}/start", status_code=201)
+def start_scene_combat(campaign_id: str, scene_id: str):
+    """Inicia el combate preparado en una escena: crea el Combat con el
+    nombre de la escena y añade los monstruos de data.monsters
+    (content entity ids) como combatientes."""
+    from ..domain.combat import Combat, Combatant
+    conn = state_db()
+    row = conn.execute(
+        "SELECT data FROM campaign_entities WHERE id = ? AND campaign_id = ? "
+        "AND kind = 'scene'", (scene_id, campaign_id)).fetchone()
+    if row is None:
+        raise HTTPException(404, "scene not found")
+    scene = json.loads(row["data"])
+    name = conn.execute(
+        "SELECT name FROM campaign_entities WHERE id = ?",
+        (scene_id,)).fetchone()["name"]
+    combat = Combat(name=f"Escena: {name}", campaign_id=campaign_id)
+    content = content_db()
+    for mid in scene.get("monsters", []):
+        crow = content.execute(
+            "SELECT data FROM content_entities WHERE id = ?",
+            (mid,)).fetchone()
+        data = json.loads(crow["data"]) if crow else {}
+        dex = data.get("dexterity", 10)
+        acs = data.get("armor_class") or []
+        combat.combatants.append(Combatant(
+            id=uuid.uuid4().hex, kind="monster",
+            name=data.get("name", "?"), ref_id=mid,
+            initiative=(dex - 10) // 2 + 10,
+            hp_current=data.get("hit_points", 1),
+            hp_max=data.get("hit_points", 1),
+            ac=acs[0].get("value", 10) if acs else 10,
+            stat_block=data or None))
+    cid = uuid.uuid4().hex
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """INSERT INTO combats (id, campaign_id, name, ruleset, version,
+                                data, updated_at)
+           VALUES (?,?,?,?,1,?,?)""",
+        (cid, campaign_id, combat.name, "dnd5e-2014",
+         json.dumps(combat.model_dump()), now))
+    conn.commit()
+    return {"combat_id": cid, "scene": name,
+            "combatants": len(combat.combatants)}
+
+
+@router.get("/{campaign_id}/events")
+def campaign_events(campaign_id: str, limit: int = 100):
+    """Feed de auditoría: todos los eventos de la campaña (tiradas,
+    cambios de estado, revelaciones)."""
+    conn = state_db()
+    rows = conn.execute(
+        """SELECT event_id, type, aggregate_id, actor_id, occurred_at,
+                  payload FROM events WHERE campaign_id = ?
+           ORDER BY occurred_at DESC LIMIT ?""",
+        (campaign_id, limit)).fetchall()
+    return {"events": [
+        {**dict(r), "payload": json.loads(r["payload"])} for r in rows]}
+
+
+@router.get("/{campaign_id}/export")
+def export_campaign(campaign_id: str):
+    """Backup completo de la campaña en JSON: entidades, miembros,
+    sesiones, combates, personajes y eventos."""
+    conn = state_db()
+    def rows(table, where="campaign_id = ?"):
+        return [dict(r) for r in conn.execute(
+            f"SELECT * FROM {table} WHERE {where}",
+            (campaign_id,)).fetchall()]
+    camp = conn.execute("SELECT * FROM campaigns WHERE id = ?",
+                        (campaign_id,)).fetchone()
+    if camp is None:
+        raise HTTPException(404, "campaign not found")
+    return {
+        "format": "dnd-companion-campaign",
+        "format_version": 1,
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "campaign": dict(camp),
+        "members": rows("members"),
+        "entities": rows("campaign_entities"),
+        "relationships": rows("relationships"),
+        "sessions": rows("sessions"),
+        "combats": rows("combats"),
+        "characters": rows("characters"),
+        "events": rows("events"),
+    }
 
 
 # --- Solicitud de tirada (DM -> jugador) -----------------------------

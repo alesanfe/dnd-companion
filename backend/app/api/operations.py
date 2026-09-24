@@ -91,15 +91,16 @@ def _condition_mods(char: Character, roll_type: str):
 
 
 @router.post("/character/{character_id}/roll")
-def character_roll(character_id: str, expression: str = "1d20",
-                   roll_type: str = "check"):
+async def character_roll(character_id: str, expression: str = "1d20",
+                         roll_type: str = "check",
+                         use_inspiration: bool = False):
     """Tirada a través del motor de efectos: ventaja/desventaja y mods
     declarativos (efectos pasivos o before_roll) + reglas de condición.
     roll_type: attack|check|save|damage|save:dex|skill:x."""
     conn = state_db()
     row = conn.execute(
-        "SELECT data FROM characters WHERE id = ?", (character_id,)
-    ).fetchone()
+        "SELECT data, campaign_id FROM characters WHERE id = ?",
+        (character_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "character not found")
     char = Character(**json.loads(row["data"]))
@@ -108,6 +109,10 @@ def character_roll(character_id: str, expression: str = "1d20",
     adv = dis = False
     extra_mod = 0
     applied = []
+    if use_inspiration and char.inspiration:
+        adv = True
+        applied.append("inspiración: ventaja")   # el cliente la consume
+        # via la op inspiration.set{value:false} tras la tirada
 
     # modificador automático según tipo: check:dex, save:wis, skill:x
     base_type, _, detail = roll_type.partition(":")
@@ -160,9 +165,36 @@ def character_roll(character_id: str, expression: str = "1d20",
         r = dice_roll(expr)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {"expression": r.expression, "rolls": r.rolls, "kept": r.kept,
-            "total": r.total, "auto_fail": False,
-            "effects_applied": applied}
+    result = {"expression": r.expression, "rolls": r.rolls,
+              "kept": r.kept, "total": r.total, "auto_fail": False,
+              "effects_applied": applied}
+    # si el PJ está en campaña, la tirada se anuncia a la sala WS
+    if row["campaign_id"]:
+        await _broadcast_roll(conn, row["campaign_id"], character_id,
+                              char.name, roll_type, result)
+    return result
+
+
+async def _broadcast_roll(conn, campaign_id: str, character_id: str,
+                          char_name: str, roll_type: str,
+                          result: dict) -> None:
+    now = datetime.now(timezone.utc)
+    ev = Event(event_id=uuid.uuid4().hex, type=EventType.DICE_ROLL_CREATED,
+               campaign_id=campaign_id, aggregate_id=character_id,
+               aggregate_version=0, actor_id=character_id,
+               occurred_at=now,
+               payload={"character": char_name, "roll_type": roll_type,
+                        "expression": result["expression"],
+                        "total": result["total"]})
+    conn.execute(
+        """INSERT INTO events
+           (event_id, campaign_id, aggregate_id, aggregate_version,
+            actor_id, occurred_at, type, payload)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (ev.event_id, campaign_id, character_id, 0, character_id,
+         now.isoformat(), ev.type.value, json.dumps(ev.payload)))
+    conn.commit()
+    await manager.broadcast(campaign_id, ev)
 
 
 # SRD 2014: habilidad → característica (nombre de habilidad en inglés)

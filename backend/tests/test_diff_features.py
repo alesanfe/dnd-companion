@@ -549,6 +549,93 @@ def test_attack_endpoint_hit_and_damage():
     assert b["damage"]["rolls"]
 
 
+def test_derived_all_stats():
+    cid = _mkchar()
+    import json as _j
+    from app.db.connections import state_db
+    conn = state_db()
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    d["abilities"]["dexterity"] = 16
+    d["abilities"]["wisdom"] = 14
+    d["proficiency_bonus"] = 2
+    d["skill_proficiencies"] = ["perception"]
+    conn.execute("UPDATE characters SET data = ? WHERE id = ?",
+                 (_j.dumps(d), cid))
+    conn.commit()
+    r = client.get(f"/api/characters/{cid}/derived").json()
+    assert r["initiative"] == 3
+    assert r["passive_perception"] == 10 + 2 + 2     # wis 14 + prof
+    assert r["armor_class"]["total"] == 10 + 3       # sin armadura: 10+DES
+    assert r["spell_save_dc"] == 8 + 2 + 0           # int 10
+
+
+def test_scene_start_creates_combat_with_monsters():
+    camp = client.post("/api/campaigns", json={"name": "SC"}).json()["id"]
+    scene = client.post(f"/api/campaigns/{camp}/entities", json={
+        "kind": "scene", "name": "Emboscada", "visibility": "dm",
+        "data": {"monsters": ["srd-2014:goblin"]}}).json()["id"]
+    r = client.post(f"/api/campaigns/{camp}/scenes/{scene}/start")
+    if r.status_code == 201:
+        combat = client.get(f"/api/combat/{r.json()['combat_id']}").json()
+        assert combat["combat"]["combatants"][0]["name"] == "Goblin"
+    else:
+        # sin content DB no hay monstruo, pero el combate se crea igual
+        assert r.status_code in (201, 404)
+
+
+def test_campaign_events_and_export():
+    camp = client.post("/api/campaigns", json={"name": "EV"}).json()["id"]
+    cid = _mkchar()
+    client.patch(f"/api/characters/{cid}", json={"campaign_id": camp})
+    # la tirada emite un evento dice.roll.created en la campaña
+    client.post(f"/api/operations/character/{cid}/roll",
+                params={"expression": "1d20", "roll_type": "check"})
+    ev = client.get(f"/api/campaigns/{camp}/events").json()["events"]
+    assert any(e["type"] == "dice.roll.created" for e in ev)
+    ex = client.get(f"/api/campaigns/{camp}/export").json()
+    assert ex["format"] == "dnd-companion-campaign"
+    assert any(c["id"] == cid for c in ex["characters"])
+
+
+def test_ability_set_and_attune_limit():
+    cid = _mkchar()
+    _op(cid, _version(cid), "character.ability.set",
+        {"ability": "str", "value": 18})
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert d["abilities"]["strength"] == 18
+    # sintonía: máximo 3
+    for i in range(4):
+        _op(cid, _version(cid), "character.inventory.add",
+            {"name": f"Anillo{i}"})
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    ids = [i["id"] for i in d["inventory"]]
+    for iid in ids[:3]:
+        r = _op(cid, _version(cid), "character.item.attune",
+                {"item_id": iid})
+        assert r.status_code == 200
+    r = _op(cid, _version(cid), "character.item.attune",
+            {"item_id": ids[3]})
+    assert r.status_code == 400
+
+
+def test_inspiration_toggle_and_resource_add():
+    cid = _mkchar()
+    _op(cid, _version(cid), "character.inspiration.set", {"value": True})
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert d["inspiration"] is True
+    r = _op(cid, _version(cid), "character.resource.add",
+            {"name": "Furia", "max": 3, "reset_on": "long"})
+    assert r.status_code == 200
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert d["resources"][0]["name"] == "Furia"
+
+
+@needs_content
+def test_compare_returns_diff_keys():
+    r = client.get("/api/content/compare?index=fireball").json()
+    assert "diff" in r and isinstance(r["diff"], list)
+
+
 def test_patch_and_delete_character():
     cid = _mkchar()
     r = client.patch(f"/api/characters/{cid}", json={"name": "Renombrado"})

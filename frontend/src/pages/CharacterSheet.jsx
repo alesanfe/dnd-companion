@@ -18,6 +18,22 @@ export default function CharacterSheet() {
   const [focus, setFocus] = useState(false)   // modo concentración
   const [notice, setNotice] = useState(null)  // aviso de concentración
   const [journalEntry, setJournalEntry] = useState('')
+  const [derived, setDerived] = useState(null)
+  const [shops, setShops] = useState([])
+  const [condOptions, setCondOptions] = useState([])
+
+  const loadMeta = () => {
+    api.derivedAll(id).then(setDerived).catch(() => {})
+    api.contentOptions('condition').then((r) =>
+      setCondOptions((r.options || []).map((o) =>
+        o.id.split(':').pop()))).catch(() => {})
+  }
+  useEffect(() => { loadMeta() }, [id])
+  useEffect(() => {
+    if (!char?.campaign_id) return
+    api.listEntities(char.campaign_id, 'shop', 'player')
+      .then((r) => setShops(r.entities)).catch(() => {})
+  }, [char?.campaign_id])
 
   const load = () => api.getCharacter(id).then(setChar).catch((e) => setErr(e.message))
   useEffect(() => { load() }, [id])
@@ -139,6 +155,19 @@ export default function CharacterSheet() {
         <button disabled={!xpAdd} onClick={() => {
           op('character.xp.add', { amount: xpAdd }); setXpAdd(0)
         }}>+XP</button>
+        {d.inspiration
+          ? <span className="chip">✦ Inspiración
+              <button aria-label="Gastar inspiración" onClick={async () => {
+                const r = await api.characterRoll(id, expr, rollType, true)
+                setRollLog((l) => [`${r.expression} → ${r.kept.join('+')} = ${r.total} [inspiración]`, ...l].slice(0, 10))
+                await op('character.inspiration.set', { value: false })
+              }}>usar</button>
+              <button aria-label="Quitar inspiración" onClick={() =>
+                op('character.inspiration.set', { value: false })}>×</button>
+            </span>
+          : <button className="ghost" onClick={() =>
+              op('character.inspiration.set', { value: true })}>
+              ✦ Sin inspiración</button>}
         {d.concentrating_on && (
           <span className="chip">
             ⭑ {d.concentrating_on}
@@ -164,6 +193,24 @@ export default function CharacterSheet() {
               ) : <span className="muted">—</span>}
             </div>
           ))}
+        </section>
+      )}
+
+      {derived && (
+        <section className="card">
+          <h2>Calculado</h2>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <span className="coin">CA {derived.armor_class.total}</span>
+            <span className="coin">Init {derived.initiative >= 0 ? '+' : ''}{derived.initiative}</span>
+            <span className="coin">Perc. pasiva {derived.passive_perception}</span>
+            {d.spells_known?.length > 0 && <>
+              <span className="coin">CD {derived.spell_save_dc}</span>
+              <span className="coin">Ataque {derived.spell_attack >= 0 ? '+' : ''}{derived.spell_attack}</span>
+            </>}
+            <span className="coin">Prof +{derived.proficiency_bonus}</span>
+          </div>
+          <p className="muted">CA = {derived.armor_class.breakdown
+            .map(([n, v]) => `${n} ${v > 0 ? '+' : ''}${v}`).join(' ')}</p>
         </section>
       )}
 
@@ -277,7 +324,10 @@ export default function CharacterSheet() {
         <h2>Condiciones</h2>
         <div className="row">
           <input value={newCond} onChange={(e) => setNewCond(e.target.value)}
-                 placeholder="poisoned, stunned…" />
+                 placeholder="poisoned, stunned…" list="cond-list" />
+          <datalist id="cond-list">
+            {condOptions.map((c) => <option key={c} value={c} />)}
+          </datalist>
           <button disabled={!newCond.trim()} onClick={() => {
             op('character.condition.apply', { condition: newCond.trim() })
             setNewCond('')
@@ -333,6 +383,29 @@ export default function CharacterSheet() {
         </form>
         <ul className="log">{rollLog.map((l, i) => <li key={i}>{l}</li>)}</ul>
       </section>
+
+      {shops.length > 0 && (
+        <section className="card optional">
+          <h2>Tienda</h2>
+          {shops.map((s) => (
+            <div key={s.id}>
+              <h3 className="muted">{s.name}</h3>
+              {(s.data.stock || []).filter((x) => x.quantity > 0).map((it) => (
+                <div key={it.name} className="row">
+                  <span style={{ flex: 1 }}>{it.name} ×{it.quantity}</span>
+                  <span className="muted">{it.price_cp}cp</span>
+                  <button onClick={async () => {
+                    await op('character.shop.buy',
+                             { shop_id: s.id, item: it.name })
+                    api.listEntities(char.campaign_id, 'shop', 'player')
+                      .then((r) => setShops(r.entities))
+                  }}>Comprar</button>
+                </div>
+              ))}
+            </div>
+          ))}
+        </section>
+      )}
 
       <section className="card optional">
         <h2>Diario</h2>

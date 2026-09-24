@@ -192,7 +192,16 @@ def compare(index: str):
             "entity_type": r["entity_type"], "source_id": r["source_id"],
             "data": json.loads(r["data"]),
         }
-    return {"index": index, "versions": versions}
+    # diff de primer nivel: claves que difieren entre ediciones
+    diff = []
+    if len(versions) > 1:
+        datas = [v["data"] for v in versions.values()]
+        for key in set().union(*(d.keys() for d in datas)):
+            vals = {json.dumps(v["data"].get(key), sort_keys=True)
+                    for v in versions.values()}
+            if len(vals) > 1:
+                diff.append(key)
+    return {"index": index, "versions": versions, "diff": sorted(diff)}
 
 
 class HomebrewIn(BaseModel):

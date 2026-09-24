@@ -77,12 +77,22 @@ export const api = {
         (entityType ? `&entity_type=${entityType}` : '')),
   contentOptions: (entityType, ruleset = 'dnd5e-2014') =>
     req(`/api/content/options?entity_type=${entityType}&ruleset=${ruleset}`),
+  derivedAll: (id) => req(`/api/characters/${id}/derived`),
+  campaignEvents: (campaignId, limit = 100) =>
+    req(`/api/campaigns/${campaignId}/events?limit=${limit}`),
+  exportCampaign: (campaignId) =>
+    req(`/api/campaigns/${campaignId}/export`),
+  startScene: (campaignId, sceneId) =>
+    req(`/api/campaigns/${campaignId}/scenes/${sceneId}/start`,
+        { method: 'POST' }),
   characterAttack: (characterId, itemName) =>
     req(`/api/operations/character/${characterId}/attack` +
         `?item_name=${encodeURIComponent(itemName)}`, { method: 'POST' }),
-  characterRoll: (characterId, expression, rollType = 'check') =>
+  characterRoll: (characterId, expression, rollType = 'check',
+                  useInspiration = false) =>
     req(`/api/operations/character/${characterId}/roll` +
-        `?expression=${encodeURIComponent(expression)}&roll_type=${rollType}`,
+        `?expression=${encodeURIComponent(expression)}&roll_type=${rollType}` +
+        `&use_inspiration=${useInspiration}`,
         { method: 'POST' }),
   roll: (expression) =>
     req('/api/dice/roll', {

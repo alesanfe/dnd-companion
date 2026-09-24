@@ -75,6 +75,13 @@
 [data-font="lg"] body { font-size: 1.125rem; }
 [data-font="xl"] body { font-size: 1.25rem; }
 
+/* densidad — compacta para DM en escritorio; objetivos táctiles
+   nunca bajan de 44px */
+[data-density="comfortable"] .card { padding: 1.4rem; }
+[data-density="compact"] .card { padding: 0.6rem; margin-bottom: 0.6rem; }
+[data-density="compact"] .row { margin: 0.25rem 0; }
+[data-density="compact"] body { font-size: 0.925rem; }
+
 /* movimiento reducido */
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }

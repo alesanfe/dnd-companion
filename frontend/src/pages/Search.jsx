@@ -11,6 +11,7 @@ export default function Search() {
   const [results, setResults] = useState([])
   const [parsed, setParsed] = useState(null)
   const [asked, setAsked] = useState(null)
+  const [compare, setCompare] = useState([])   // ids a comparar (máx 2)
   const [err, setErr] = useState(null)
 
   useEffect(() => {
@@ -99,9 +100,20 @@ export default function Search() {
             ` · filtros: ${JSON.stringify(parsed.filters)}`}
         </p>
       )}
+      {compare.length === 2 && <Compare ids={compare} />}
+
       <ul className="results">
         {results.map((r) => (
           <li key={r.id}>
+            <label className="muted" style={{ fontSize: '.8em' }}>
+              <input type="checkbox"
+                     checked={compare.includes(r.id)}
+                     onChange={(e) => setCompare((prev) =>
+                       e.target.checked
+                         ? [...prev, r.id].slice(-2)
+                         : prev.filter((x) => x !== r.id))} />
+              cmp
+            </label>{' '}
             <Link to={`/content/${encodeURIComponent(r.id)}`}>
               <strong>{r.name}</strong></Link>{' '}
             <span className="muted">
@@ -120,6 +132,43 @@ export default function Search() {
         ))}
       </ul>
     </main>
+  )
+}
+
+
+/** Comparación lado a lado: campos renderizados de ambas entidades. */
+function Compare({ ids }) {
+  const [views, setViews] = useState([])
+  useEffect(() => {
+    setViews([])
+    Promise.all(ids.map((i) => api.entityRender(i)))
+      .then((rs) => setViews(rs)).catch(() => {})
+  }, [ids.join(',')])
+  if (views.length !== 2) return null
+  const keys = [...new Set(
+    views.flatMap((v) => (v.render?.fields || []).map((f) => f.label)))]
+  return (
+    <section className="card">
+      <h2>Comparar</h2>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead><tr>
+          <th />
+          {views.map((v) => <th key={v.id} style={{ textAlign: 'left' }}>
+            <Link to={`/content/${encodeURIComponent(v.id)}`}>
+              {v.name}</Link></th>)}
+        </tr></thead>
+        <tbody>
+          {keys.map((k) => (
+            <tr key={k}>
+              <td className="muted" style={{ paddingRight: '1rem' }}>{k}</td>
+              {views.map((v) => {
+                const f = (v.render?.fields || [])
+                  .find((x) => x.label === k)
+                return <td key={v.id}>{f ? f.value : '—'}</td>})}
+            </tr>))}
+        </tbody>
+      </table>
+    </section>
   )
 }
 

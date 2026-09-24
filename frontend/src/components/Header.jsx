@@ -112,6 +112,14 @@ export default function Header() {
               <option value="xl">Muy grande</option>
             </select>
           </label>
+          <label>Densidad
+            <select value={prefs.density}
+                    onChange={(e) => pref('density', e.target.value)}>
+              <option value="comfortable">Cómoda</option>
+              <option value="normal">Normal</option>
+              <option value="compact">Compacta</option>
+            </select>
+          </label>
           <label>
             <input type="checkbox" checked={prefs.motion === 'off'}
                    onChange={(e) => pref('motion', e.target.checked ? 'off' : 'on')} />

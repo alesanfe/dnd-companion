@@ -604,6 +604,88 @@ def inspiration_set(char: Character, p: dict, ctx):
                   "payload": {"inspiration": char.inspiration}}]
 
 
+@op("character.item.equip")
+def item_equip(char: Character, p: dict, ctx):
+    """Equipa un objeto (armadura/escudo/arma) — la CA derivada lo
+    refleja automáticamente."""
+    item = next((i for i in char.inventory if i.id == p["item_id"]), None)
+    if item is None:
+        raise ValueError("objeto no encontrado")
+    item.equipped = True
+    if p.get("restore_attuned"):            # deshacer un unequip
+        item.attuned = True
+    return {"operation_type": "character.item.unequip",
+            "payload": {"item_id": item.id}}, [
+        {"type": "inventory.item.transferred",
+         "payload": {"equipped": item.name}}]
+
+
+@op("character.item.unequip")
+def item_unequip(char: Character, p: dict, ctx):
+    item = next((i for i in char.inventory if i.id == p["item_id"]), None)
+    if item is None:
+        raise ValueError("objeto no encontrado")
+    was_attuned = item.attuned
+    item.equipped = False
+    item.attuned = False       # desequipar rompe la sintonía
+    return {"operation_type": "character.item.equip",
+            "payload": {"item_id": item.id, "restore_attuned":
+                        was_attuned}}, [
+        {"type": "inventory.item.transferred",
+         "payload": {"unequipped": item.name}}]
+
+
+@op("character.spell.learn")
+def spell_learn(char: Character, p: dict, ctx):
+    sid = p["spell_id"]
+    if sid in char.spells_known:
+        raise ValueError("conjuro ya conocido")
+    char.spells_known.append(sid)
+    return {"operation_type": "character.spell.forget",
+            "payload": {"spell_id": sid}}, [
+        {"type": "resource.usage.changed",
+         "payload": {"spell_learned": sid}}]
+
+
+@op("character.spell.forget")
+def spell_forget(char: Character, p: dict, ctx):
+    sid = p["spell_id"]
+    if sid not in char.spells_known:
+        raise ValueError("conjuro no conocido")
+    char.spells_known.remove(sid)
+    return {"operation_type": "character.spell.learn",
+            "payload": {"spell_id": sid}}, []
+
+
+@op("character.proficiency.add")
+def proficiency_add(char: Character, p: dict, ctx):
+    """Añade competencia: kind = skill|save (usa las listas
+    especializadas que alimentan las tiradas automáticas)."""
+    kind, name = p["kind"], p["name"].lower()
+    lst = {"skill": char.skill_proficiencies,
+           "save": char.save_proficiencies}.get(kind)
+    if lst is None:
+        raise ValueError("kind debe ser skill|save")
+    if name in lst:
+        raise ValueError("ya competente")
+    lst.append(name)
+    return {"operation_type": "character.proficiency.remove",
+            "payload": p}, [{"type": "resource.usage.changed",
+                             "payload": {"proficiency": f"{kind}:{name}"}}]
+
+
+@op("character.proficiency.remove")
+def proficiency_remove(char: Character, p: dict, ctx):
+    kind, name = p["kind"], p["name"].lower()
+    lst = {"skill": char.skill_proficiencies,
+           "save": char.save_proficiencies}.get(kind)
+    if lst is None or name not in lst:
+        raise ValueError("competencia no encontrada")
+    lst.remove(name)
+    return {"operation_type": "character.proficiency.add",
+            "payload": p}, []
+
+
 @op("character.craft")
 def craft(char: Character, p: dict, ctx):
     """Fabricación/downtime: consume ingredientes del inventario y

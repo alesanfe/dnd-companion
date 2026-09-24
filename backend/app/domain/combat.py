@@ -21,6 +21,8 @@ class Combatant(BaseModel):
     hidden_hp: bool = True               # jugadores ven estado, no número
     death_saves: dict = Field(
         default_factory=lambda: {"success": 0, "fail": 0})
+    condition_durations: dict[str, int] = Field(default_factory=dict)
+    # {'stunned': 2} → expira tras 2 rondas
 
 
 class Combat(BaseModel):

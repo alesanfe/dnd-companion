@@ -340,6 +340,33 @@ def list_sessions(campaign_id: str):
     return {"sessions": out}
 
 
+class SessionPatch(BaseModel):
+    status: str | None = None        # prep|active|done
+    title: str | None = None
+
+
+@router.patch("/{campaign_id}/sessions/{session_id}")
+def patch_session(campaign_id: str, session_id: str, body: SessionPatch):
+    conn = state_db()
+    if body.status and body.status not in ("prep", "active", "done"):
+        raise HTTPException(400, "status inválido")
+    sets, params = [], []
+    if body.status:
+        sets.append("status = ?"); params.append(body.status)
+    if body.title:
+        sets.append("title = ?"); params.append(body.title)
+    if not sets:
+        return {"id": session_id, "changed": []}
+    cur = conn.execute(
+        f"UPDATE sessions SET {', '.join(sets)} "
+        "WHERE id = ? AND campaign_id = ?",
+        (*params, session_id, campaign_id))
+    conn.commit()
+    if cur.rowcount == 0:
+        raise HTTPException(404, "session not found")
+    return {"id": session_id, "changed": sets}
+
+
 @router.get("/{campaign_id}/timeline")
 def timeline(campaign_id: str):
     """Cronología del mundo: eventos + relaciones fechadas, ordenadas."""

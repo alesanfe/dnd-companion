@@ -230,8 +230,21 @@ export default function DmBoard() {
           </div>
           {sessions.map((s) => (
             <div key={s.id}>
-              <strong>#{s.number} {s.title}</strong>
-              <span className="muted"> · {s.status}</span>
+              <div className="row">
+                <strong>#{s.number} {s.title}</strong>
+                <span className="muted">· {s.status}</span>
+                {s.status !== 'done' && (
+                  <button style={{ minHeight: 32 }} onClick={async () => {
+                    await fetch(
+                      `/api/campaigns/${campaign.id}/sessions/${s.id}`,
+                      { method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          status: s.status === 'prep' ? 'active' : 'done' }) })
+                    api.listSessions(campaign.id).then((r) => setSessions(r.sessions))
+                  }}>{s.status === 'prep' ? 'Iniciar' : 'Cerrar'}</button>
+                )}
+              </div>
               <ul>
                 {s.scenes.map((sc) => (
                   <li key={sc.id} className="row">

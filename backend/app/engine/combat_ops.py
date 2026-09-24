@@ -69,13 +69,25 @@ def next_turn(combat: Combat, p: dict, ctx):
         raise ValueError("no hay combatientes")
     inv = {"operation_type": "combat.prev_turn", "payload": {}}
     combat.turn_index += 1
+    expired: list[str] = []
     if combat.turn_index >= len(order):
         combat.turn_index = 0
         combat.round += 1
+        # al cerrar la ronda, decrementan las duraciones de condiciones
+        for c in combat.combatants:
+            for cond in list(c.condition_durations):
+                c.condition_durations[cond] -= 1
+                if c.condition_durations[cond] <= 0:
+                    del c.condition_durations[cond]
+                    if cond in c.conditions:
+                        c.conditions.remove(cond)
+                        expired.append(f"{c.name}:{cond}")
     active = combat.active
-    return inv, [{"type": "combat.turn.advanced",
-                  "payload": {"round": combat.round,
-                              "active": active.name if active else None}}]
+    payload = {"round": combat.round,
+               "active": active.name if active else None}
+    if expired:
+        payload["conditions_expired"] = expired
+    return inv, [{"type": "combat.turn.advanced", "payload": payload}]
 
 
 @op("combat.prev_turn")
@@ -149,7 +161,7 @@ def combatant_add(combat: Combat, p: dict, ctx):
                 or data.get("hit_points", 1)),
         hp_temp=(char_hp or {}).get("temp", 0),
         ac=p.get("ac") or (acs[0].get("value", 10) if acs else 10),
-        stat_block=data or None,
+        stat_block=data or p.get("stat_block") or None,
     )
     combat.combatants.append(c)
     inv = {"operation_type": "combatant.remove",
@@ -335,14 +347,42 @@ def combatant_initiative(combat: Combat, p: dict, ctx):
 
 @op("combatant.condition.apply")
 def combatant_cond_apply(combat: Combat, p: dict, ctx):
+    """`rounds` (opcional) fija duración: expira al cerrar esa ronda."""
     c = _find(combat, p["combatant_id"])
     inv = {"operation_type": "combatant.condition.remove",
            "payload": {"combatant_id": c.id, "condition": p["condition"]}}
     if p["condition"] not in c.conditions:
         c.conditions.append(p["condition"])
+    if p.get("rounds"):
+        c.condition_durations[p["condition"]] = int(p["rounds"])
     return inv, [{"type": "character.condition.applied",
                   "payload": {"combatant": c.name,
-                              "condition": p["condition"]}}]
+                              "condition": p["condition"],
+                              "rounds": p.get("rounds")}}]
+
+
+@op("combatant.save")
+def combatant_save(combat: Combat, p: dict, ctx):
+    """El servidor tira la salvación de un combatiente: 1d20 + mod de la
+    característica del stat block. El total va en el evento."""
+    c = _find(combat, p["combatant_id"])
+    ability = p["ability"]
+    score = (c.stat_block or {}).get(
+        {"str": "strength", "dex": "dexterity", "con": "constitution",
+         "int": "intelligence", "wis": "wisdom", "cha": "charisma"
+         }.get(ability, ability), 10)
+    r = roll("1d20")
+    total = r.total + (score - 10) // 2
+    return {"operation_type": "noop", "payload": {}}, [
+        {"type": "dice.roll.created",
+         "payload": {"combatant": c.name, "save": ability,
+                     "roll": r.total, "total": total}}]
+
+
+@op("noop")
+def noop(entity, p: dict, ctx):
+    """Inversa de operaciones sin estado (tiradas puras)."""
+    return {"operation_type": "noop", "payload": {}}, []
 
 
 @op("combatant.condition.remove")

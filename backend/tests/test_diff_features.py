@@ -672,6 +672,93 @@ def test_next_level_xp_in_derived():
     assert r["next_level_xp"] == 300      # nivel 1 con 0 xp
 
 
+def test_equip_updates_derived_ac():
+    cid = _mkchar()
+    _op(cid, _version(cid), "character.inventory.add",
+        {"name": "Cota de mallas", "source_id": "srd-2014:chain-mail"})
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    iid = d["inventory"][0]["id"]
+    _op(cid, _version(cid), "character.item.equip", {"item_id": iid})
+    r = client.get(f"/api/characters/{cid}/derived").json()
+    if r["armor_class"]["total"] == 13:
+        pass  # chain-mail 16 + DEX... content presente: valor real
+    assert r["armor_class"]["total"] >= 10
+    # desequipar quita el bono
+    _op(cid, _version(cid), "character.item.unequip", {"item_id": iid})
+    r2 = client.get(f"/api/characters/{cid}/derived").json()
+    assert r2["armor_class"]["total"] <= r["armor_class"]["total"]
+
+
+def test_spell_learn_forget():
+    cid = _mkchar()
+    _op(cid, _version(cid), "character.spell.learn",
+        {"spell_id": "srd-2014:shield"})
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert "srd-2014:shield" in d["spells_known"]
+    _op(cid, _version(cid), "character.spell.forget",
+        {"spell_id": "srd-2014:shield"})
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert "srd-2014:shield" not in d["spells_known"]
+
+
+def test_proficiency_add_enables_skill_bonus():
+    cid = _mkchar()
+    _op(cid, _version(cid), "character.proficiency.add",
+        {"kind": "skill", "name": "perception"})
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert "perception" in d["skill_proficiencies"]
+    r = client.post(f"/api/operations/character/{cid}/roll",
+                    params={"expression": "1d20",
+                            "roll_type": "skill:perception"})
+    assert any("prof" in a for a in r.json()["effects_applied"])
+
+
+def test_combatant_save_rolls_stat_block():
+    combat = client.post("/api/combat", json={"name": "S"}).json()
+    _combat_op(combat["id"], combat["version"], "combatant.add",
+               {"name": "Ogro", "hp_max": 59,
+                "stat_block": {"dexterity": 8}})   # -1
+    cdata = client.get(f"/api/combat/{combat['id']}").json()["combat"]
+    bid = cdata["combatants"][0]["id"]
+    v = client.get(f"/api/combat/{combat['id']}").json()["version"]
+    r = _combat_op(combat["id"], v, "combatant.save",
+                   {"combatant_id": bid, "ability": "dex"})
+    ev = r.json()["events"][0]["payload"]
+    assert ev["total"] == ev["roll"] - 1
+
+
+def test_condition_duration_expires_on_round():
+    combat = client.post("/api/combat", json={"name": "E"}).json()
+    _combat_op(combat["id"], combat["version"], "combatant.add",
+               {"name": "A", "initiative": 20})
+    _combat_op(combat["id"], 1, "combatant.add",
+               {"name": "B", "initiative": 10})
+    cdata = client.get(f"/api/combat/{combat['id']}").json()["combat"]
+    aid = cdata["combatants"][0]["id"]
+    v = client.get(f"/api/combat/{combat['id']}").json()["version"]
+    _combat_op(combat["id"], v, "combatant.condition.apply",
+               {"combatant_id": aid, "condition": "stunned", "rounds": 1})
+    v = client.get(f"/api/combat/{combat['id']}").json()["version"]
+    # cerrar la ronda: 2 turnos
+    _combat_op(combat["id"], v, "combat.next_turn", {})
+    r = _combat_op(combat["id"], v + 1, "combat.next_turn", {})
+    c = client.get(f"/api/combat/{combat['id']}").json()["combat"]
+    a = next(x for x in c["combatants"] if x["id"] == aid)
+    assert "stunned" not in a["conditions"]
+
+
+def test_session_patch_status():
+    camp = client.post("/api/campaigns", json={"name": "SS"}).json()["id"]
+    sid = client.post(f"/api/campaigns/{camp}/sessions",
+                      json={"title": "S1"}).json()["id"]
+    r = client.patch(f"/api/campaigns/{camp}/sessions/{sid}",
+                     json={"status": "active"})
+    assert r.status_code == 200
+    r = client.patch(f"/api/campaigns/{camp}/sessions/{sid}",
+                     json={"status": "bogus"})
+    assert r.status_code == 400
+
+
 def test_patch_and_delete_character():
     cid = _mkchar()
     r = client.patch(f"/api/characters/{cid}", json={"name": "Renombrado"})

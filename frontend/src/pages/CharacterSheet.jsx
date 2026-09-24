@@ -360,7 +360,16 @@ export default function CharacterSheet() {
         </div>
         {(d.inventory || []).map((it) => (
           <div key={it.id} className="row">
-            <span style={{ flex: 1 }}>{it.name} ×{it.quantity}</span>
+            <span style={{ flex: 1 }}>
+              {it.name} ×{it.quantity}
+              {it.equipped && <span className="muted"> · equipado</span>}
+              {it.attuned && <span className="muted"> · sintonizado</span>}
+            </span>
+            <button onClick={() =>
+              op(it.equipped ? 'character.item.unequip'
+                             : 'character.item.equip',
+                 { item_id: it.id })
+            }>{it.equipped ? 'Quitar' : 'Equipar'}</button>
             <button onClick={() => op('character.inventory.remove',
                                       { item_id: it.id, quantity: 1 })}>-</button>
           </div>

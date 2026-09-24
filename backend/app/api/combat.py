@@ -39,6 +39,16 @@ def create_combat(body: CombatCreate):
     return {"id": cid, "version": 1}
 
 
+@router.delete("/{combat_id}")
+def delete_combat(combat_id: str):
+    conn = state_db()
+    cur = conn.execute("DELETE FROM combats WHERE id = ?", (combat_id,))
+    conn.commit()
+    if cur.rowcount == 0:
+        raise HTTPException(404, "combat not found")
+    return {"deleted": combat_id}
+
+
 @router.post("/{combat_id}/add-party")
 def add_party(combat_id: str):
     """Añade todos los personajes de la campaña del combate como

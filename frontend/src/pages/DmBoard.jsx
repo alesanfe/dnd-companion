@@ -166,6 +166,14 @@ export default function DmBoard() {
             <div key={e.id} className="row">
               <span className="muted">{e.kind}</span>
               <span style={{ flex: 1 }}>{e.name}</span>
+              <button className="ghost" aria-label={`Borrar ${e.name}`}
+                      onClick={async () => {
+                if (!confirm(`¿Borrar "${e.name}"?`)) return
+                await fetch(
+                  `/api/campaigns/${campaign.id}/entities/${e.id}`,
+                  { method: 'DELETE' })
+                api.listEntities(campaign.id).then((r) => setEntities(r.entities))
+              }}>×</button>
               {e.kind === 'scene' && (e.data.monsters || []).length > 0 && (
                 <button style={{ minHeight: 32 }} onClick={async () => {
                   const r = await api.startScene(campaign.id, e.id)

@@ -433,6 +433,26 @@ export default function CharacterSheet() {
         </section>
       )}
 
+      {(d.skill_proficiencies?.length > 0 || d.save_proficiencies?.length > 0) && (
+        <section className="card optional">
+          <h2>Competencias</h2>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            {d.save_proficiencies?.map((s) => (
+              <span key={s} className="chip">save:{s}
+                <button aria-label={`Quitar competencia ${s}`} onClick={() =>
+                  op('character.proficiency.remove',
+                     { kind: 'save', name: s })}>×</button>
+              </span>))}
+            {d.skill_proficiencies?.map((s) => (
+              <span key={s} className="chip">{s}
+                <button aria-label={`Quitar competencia ${s}`} onClick={() =>
+                  op('character.proficiency.remove',
+                     { kind: 'skill', name: s })}>×</button>
+              </span>))}
+          </div>
+        </section>
+      )}
+
       <section className="card optional">
         <h2>Diario</h2>
         <div className="row">

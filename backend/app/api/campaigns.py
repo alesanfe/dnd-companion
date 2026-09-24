@@ -75,6 +75,101 @@ def join_campaign(body: JoinIn,
     return {"id": row["id"], "name": row["name"], "ruleset": row["ruleset"]}
 
 
+@router.delete("/{campaign_id}/entities/{entity_id}")
+def delete_entity(campaign_id: str, entity_id: str):
+    """Borra una entidad de campaña (y sus relaciones)."""
+    conn = state_db()
+    cur = conn.execute(
+        "DELETE FROM campaign_entities WHERE id = ? AND campaign_id = ?",
+        (entity_id, campaign_id))
+    conn.execute(
+        "DELETE FROM relationships WHERE campaign_id = ? "
+        "AND (from_id = ? OR to_id = ?)",
+        (campaign_id, entity_id, entity_id))
+    conn.commit()
+    if cur.rowcount == 0:
+        raise HTTPException(404, "entity not found")
+    return {"deleted": entity_id}
+
+
+@router.delete("/{campaign_id}/sessions/{session_id}")
+def delete_session(campaign_id: str, session_id: str):
+    conn = state_db()
+    cur = conn.execute(
+        "DELETE FROM sessions WHERE id = ? AND campaign_id = ?",
+        (session_id, campaign_id))
+    conn.commit()
+    if cur.rowcount == 0:
+        raise HTTPException(404, "session not found")
+    return {"deleted": session_id}
+
+
+@router.post("/import", status_code=201)
+def import_campaign(body: dict):
+    """Restaura un backup de `GET /{id}/export`. Conserva los ids
+    originales; los que ya existen se ignoran (restaurar ≠ duplicar)."""
+    conn = state_db()
+    camp = body.get("campaign") or {}
+    if not camp.get("id"):
+        raise HTTPException(400, "formato inválido")
+    now = datetime.now(timezone.utc).isoformat()
+    if conn.execute("SELECT 1 FROM campaigns WHERE id = ?",
+                    (camp["id"],)).fetchone():
+        raise HTTPException(409, "la campaña ya existe (usa otro id)")
+    invite = camp.get("invite_code") or uuid.uuid4().hex[:8]
+    if conn.execute("SELECT 1 FROM campaigns WHERE invite_code = ?",
+                    (invite,)).fetchone():
+        invite = uuid.uuid4().hex[:8]       # código ya en uso → nuevo
+    conn.execute(
+        "INSERT INTO campaigns (id, name, ruleset, invite_code, "
+        "created_at, updated_at, owner_id) VALUES (?,?,?,?,?,?,?)",
+        (camp["id"], camp["name"], camp.get("ruleset", "dnd5e-2014"),
+         invite, camp.get("created_at", now), camp.get("updated_at", now),
+         camp.get("owner_id")))
+    for e in body.get("entities", []):
+        conn.execute(
+            "INSERT OR IGNORE INTO campaign_entities "
+            "(id, campaign_id, kind, name, visibility, known_to, data, "
+            " revealed_at, created_at, updated_at, version) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (e["id"], camp["id"], e["kind"], e["name"], e["visibility"],
+             e.get("known_to", "[]"), e.get("data", "{}"),
+             e.get("revealed_at"), e.get("created_at", now),
+             e.get("updated_at", now), e.get("version", 1)))
+    for m in body.get("members", []):
+        conn.execute(
+            "INSERT OR IGNORE INTO members (id, campaign_id, user_id, "
+            "role, joined_at) VALUES (?,?,?,?,?)",
+            (m["id"], camp["id"], m["user_id"], m["role"],
+             m.get("joined_at", now)))
+    for s in body.get("sessions", []):
+        conn.execute(
+            "INSERT OR IGNORE INTO sessions (id, campaign_id, number, "
+            "title, status, data, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (s["id"], camp["id"], s.get("number"), s["title"],
+             s.get("status", "prep"), s.get("data", "{}"),
+             s.get("created_at", now), s.get("updated_at", now)))
+    for c in body.get("combats", []):
+        conn.execute(
+            "INSERT OR IGNORE INTO combats (id, campaign_id, name, "
+            "ruleset, version, data, updated_at) VALUES (?,?,?,?,?,?,?)",
+            (c["id"], camp["id"], c["name"], c.get("ruleset"),
+             c.get("version", 1), c.get("data", "{}"),
+             c.get("updated_at", now)))
+    for ch in body.get("characters", []):
+        conn.execute(
+            "INSERT OR IGNORE INTO characters (id, name, player_id, "
+            "campaign_id, ruleset, version, data, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (ch["id"], ch["name"], ch.get("player_id"), camp["id"],
+             ch.get("ruleset", "dnd5e-2014"), ch.get("version", 1),
+             ch.get("data", "{}"), ch.get("updated_at", now)))
+    conn.commit()
+    return {"id": camp["id"], "entities": len(body.get("entities", [])),
+            "characters": len(body.get("characters", []))}
+
+
 @router.get("/{campaign_id}/members")
 def list_members(campaign_id: str):
     conn = state_db()

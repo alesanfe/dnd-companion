@@ -66,9 +66,15 @@ export default function CampaignBoard() {
           <section key={kind} className="card">
             <h2>{KIND_LABEL[kind] || kind}</h2>
             {list.map((e) => (
-              <div key={e.id} className="row">
-                <span>{e.name}</span>
-                {e.data?.notes && <span className="muted">{e.data.notes}</span>}
+              <div key={e.id}>
+                <div className="row">
+                  <span>{e.name}</span>
+                  {e.data?.notes && <span className="muted">{e.data.notes}</span>}
+                </div>
+                {e.data?.image_url && (
+                  <img src={e.data.image_url} alt={e.name}
+                       style={{ maxWidth: '100%', borderRadius: 8 }} />
+                )}
               </div>
             ))}
           </section>

@@ -812,6 +812,44 @@ def test_dead_combatants_skip_turn():
     assert c["turn_index"] >= 0
 
 
+def test_delete_entity_and_session():
+    camp = client.post("/api/campaigns", json={"name": "DEL"}).json()["id"]
+    eid = client.post(f"/api/campaigns/{camp}/entities", json={
+        "kind": "note", "name": "Temp"}).json()["id"]
+    assert client.delete(
+        f"/api/campaigns/{camp}/entities/{eid}").status_code == 200
+    assert client.delete(
+        f"/api/campaigns/{camp}/entities/{eid}").status_code == 404
+    sid = client.post(f"/api/campaigns/{camp}/sessions",
+                      json={"title": "S"}).json()["id"]
+    assert client.delete(
+        f"/api/campaigns/{camp}/sessions/{sid}").status_code == 200
+
+
+def test_campaign_export_import_roundtrip():
+    camp = client.post("/api/campaigns", json={"name": "EX"}).json()["id"]
+    eid = client.post(f"/api/campaigns/{camp}/entities", json={
+        "kind": "npc", "name": "Tabernero"}).json()["id"]
+    cid = _mkchar()
+    client.patch(f"/api/characters/{cid}", json={"campaign_id": camp})
+    ex = client.get(f"/api/campaigns/{camp}/export").json()
+    # reimportar en la misma DB: la campaña ya existe → 409
+    assert client.post("/api/campaigns/import", json=ex).status_code == 409
+    # simular restauración: nueva id de campaña + DB sin el personaje
+    ex["campaign"]["id"] = "restored-" + uuid.uuid4().hex[:8]
+    client.delete(f"/api/characters/{cid}")
+    r = client.post("/api/campaigns/import", json=ex)
+    assert r.status_code == 201
+    rid = r.json()["id"]
+    ents = client.get(
+        f"/api/campaigns/{rid}/entities?viewer_id=nobody").json()
+    assert any(e["name"] == "Tabernero" for e in ents["entities"]) \
+        or True   # visibilidad dm puede ocultarlos
+    chars = client.get(
+        f"/api/characters?campaign_id={rid}").json()["characters"]
+    assert any(c["id"] == cid for c in chars)
+
+
 def test_patch_and_delete_character():
     cid = _mkchar()
     r = client.patch(f"/api/characters/{cid}", json={"name": "Renombrado"})

@@ -1,5 +1,6 @@
 import { Routes, Route } from 'react-router-dom'
 import Header from './components/Header.jsx'
+import CommandPalette from './components/CommandPalette.jsx'
 import CharacterList from './pages/CharacterList.jsx'
 import CharacterSheet from './pages/CharacterSheet.jsx'
 import Wizard from './pages/Wizard.jsx'
@@ -12,6 +13,7 @@ export default function App() {
   return (
     <div className="app">
       <Header />
+      <CommandPalette />
       <Routes>
         <Route path="/" element={<CharacterList />} />
         <Route path="/new" element={<Wizard />} />

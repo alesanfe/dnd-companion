@@ -22,9 +22,16 @@ export default function Header() {
     }
     tick()
     const t = setInterval(tick, 5000)
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        setShowSettings(false); setShowLogin(false); setShowSync(false)
+      }
+    }
+    window.addEventListener('keydown', onKey)
     window.addEventListener('online', tick)
     window.addEventListener('offline', tick)
     return () => { clearInterval(t)
+      window.removeEventListener('keydown', onKey)
       window.removeEventListener('online', tick)
       window.removeEventListener('offline', tick) }
   }, [])

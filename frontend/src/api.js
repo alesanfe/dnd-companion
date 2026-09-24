@@ -72,10 +72,11 @@ export const api = {
     }),
   derivedStat: (id, stat, base = 10) =>
     req(`/api/characters/${id}/derived/${stat}?base=${base}`),
-  search: (q, entityType, source) =>
+  search: (q, entityType, source, forClass) =>
     req(`/api/content/search?q=${encodeURIComponent(q)}` +
         (entityType ? `&entity_type=${entityType}` : '') +
-        (source ? `&source=${encodeURIComponent(source)}` : '')),
+        (source ? `&source=${encodeURIComponent(source)}` : '') +
+        (forClass ? `&for_class=${encodeURIComponent(forClass)}` : '')),
   contentSources: () => req('/api/content/sources'),
   statblockPreview: (id) =>
     req(`/api/content/${encodeURIComponent(id)}/statblock`),

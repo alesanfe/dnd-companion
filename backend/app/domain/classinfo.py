@@ -69,6 +69,22 @@ def species_asi(sp: dict) -> dict[str, int]:
     return out
 
 
+def spellcasting_ability(cls: dict) -> str | None:
+    """Habilidad de lanzamiento: 5e-bits spellcasting.spellcasting_
+    ability.index · 5etools spellcastingAbility · open5e str."""
+    v = (cls.get("spellcasting") or {}).get("spellcasting_ability") \
+        or cls.get("spellcasting_ability") or cls.get("casting_ability")
+    if isinstance(v, dict):
+        v = v.get("index") or v.get("name")
+    if v:
+        key = str(v).strip().lower()[:3]
+        return key if key in _SHORT_2_LONG else None
+    v = cls.get("spellcastingAbility")
+    if isinstance(v, str) and v[:3] in _SHORT_2_LONG:
+        return v[:3]
+    return None
+
+
 def species_traits(sp: dict) -> list[str]:
     """Nombres de rasgos raciales: 5e-bits traits[] · 5etools
     entries[].name."""

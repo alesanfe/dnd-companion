@@ -80,8 +80,23 @@ def _spell(d: dict) -> dict:
             _f("Ritual", "sí" if d.get("ritual") in (True, "yes")
                else None),
         ]),
-        "desc": _entries(d),
+        "desc": _entries(d) + _higher(d),
     }
+
+
+def _higher(d: dict) -> str:
+    """Texto 'a niveles superiores' (upcast) — higher_level list/str
+    · entriesHigherLevel[0].entries (5etools)."""
+    for k in ("higher_level",):
+        v = d.get(k)
+        if isinstance(v, list):
+            return " " + " ".join(clean(x) for x in v)
+        if v:
+            return " " + clean(v)
+    for g in d.get("entriesHigherLevel") or []:
+        if isinstance(g, dict) and g.get("entries"):
+            return " " + " ".join(clean(x) for x in g["entries"])
+    return ""
 
 
 def _item(d: dict) -> dict:

@@ -564,11 +564,50 @@ def spell_cast(char: Character, p: dict, ctx):
         if isinstance(d, dict))
     if needs_conc:
         char.concentrating_on = sp.get("name", spell_id)
+
+    # Datos de juego del conjuro desde su entidad: CD de salvación
+    # (8 + prof + mod de lanzamiento de la clase), tirada de ataque de
+    # conjuro y daño escalado al nivel del espacio consumido.
+    payload = {"spell_cast": sp.get("name", spell_id),
+               "level": level,
+               "concentration": char.concentrating_on}
+    cast_ability = None
+    if char.classes:
+        cls_data = _content(ctx, char.classes[0].class_id) or {}
+        from ..domain.classinfo import spellcasting_ability
+        cast_ability = spellcasting_ability(cls_data)
+    spell_dc = None
+    if cast_ability:
+        spell_dc = 8 + char.proficiency_bonus + \
+            char.abilities.modifier(cast_ability)
+    if spell_dc and (sp.get("savingThrow") or sp.get("saves")
+                     or sp.get("saving_throws") or sp.get("dc")):
+        payload["spell_dc"] = spell_dc
+    needs_attack = sp.get("attack") or sp.get("spellAttack") \
+        or (sp.get("meta") or {}).get("attack") \
+        or "spell attack" in str(sp.get("desc")
+                                 or sp.get("entries") or "")
+    if needs_attack and cast_ability:
+        atk = roll("1d20")
+        atk_mod = char.proficiency_bonus + char.abilities.modifier(
+            cast_ability)
+        payload.update(spell_attack_roll=atk.total,
+                       spell_attack_total=atk.total + atk_mod,
+                       spell_attack_mod=atk_mod)
+    # daño escalado por espacio: damage_at_slot_level{slot:dice}
+    dmg_map = {}
+    for d in sp.get("damage") or []:
+        if isinstance(d, dict) and d.get("damage_at_slot_level"):
+            dmg_map.update(d["damage_at_slot_level"])
+        elif isinstance(d, dict) and d.get("damage_at_character_level"):
+            dmg_map.update(d["damage_at_character_level"])
+    expr = dmg_map.get(str(level)) or dmg_map.get(
+        str(spell_level)) or sp.get("dmg1")
+    if expr:
+        payload.update(damage_expr=str(expr),
+                       damage_total=roll(str(expr)).total)
     return _restore_inverse(before), [
-        {"type": "resource.usage.changed",
-         "payload": {"spell_cast": sp.get("name", spell_id),
-                     "level": level,
-                     "concentration": char.concentrating_on}}]
+        {"type": "resource.usage.changed", "payload": payload}]
 
 
 @op("character.concentration.break")

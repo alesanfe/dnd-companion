@@ -40,6 +40,12 @@ export default function Entity() {
             <span className="chip">PG {block.hp}</span>
             <span className="chip">CR {block.cr}</span>
             <span className="chip">Vel {block.speed || '—'}</span>
+            {block.type && <span className="chip">{block.type}</span>}
+            {block.size && <span className="chip">{block.size}</span>}
+            {block.alignment &&
+              <span className="chip">{block.alignment}</span>}
+            {block.environment &&
+              <span className="chip">⛰ {block.environment}</span>}
           </div>
           {[
             ['Resistencias', block.resistances],

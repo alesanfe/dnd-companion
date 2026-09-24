@@ -426,7 +426,9 @@ export default function CharacterSheet() {
         <h2>Conjuros</h2>
         <SpellPicker onPick={(sid) =>
           op('character.spell.learn', { spell_id: sid })}
-          placeholder="Aprender conjuro — buscar en todas las fuentes" />
+          placeholder="Aprender conjuro — buscar en todas las fuentes"
+          forClass={d.classes?.[0]?.class_id?.split(/[:|]/).pop()
+                    .replace(/-/g, ' ')} />
         {(d.spells_known || []).length > 0 && (
           <SpellList ids={d.spells_known} onCast={(sid) =>
             op('character.spell.cast', { spell_id: sid, level: 0 })}
@@ -605,13 +607,16 @@ function ItemPicker({ onPick }) {
 
 function SpellPicker({ onPick, entityType = 'spell',
                       verb = 'Aprender',
-                      placeholder = 'Buscar en todas las fuentes' }) {
+                      placeholder = 'Buscar en todas las fuentes',
+                      forClass }) {
   const [q, setQ] = useState('')
   const [hits, setHits] = useState([])
+  const [onlyClass, setOnlyClass] = useState(Boolean(forClass))
   const go = async (e) => {
     e.preventDefault()
     if (!q.trim()) return
-    const r = await api.search(q.trim(), entityType)
+    const r = await api.search(q.trim(), entityType, undefined,
+                               onlyClass ? forClass : undefined)
     setHits(r.results.slice(0, 12))
   }
   return (
@@ -621,6 +626,12 @@ function SpellPicker({ onPick, entityType = 'spell',
                placeholder={placeholder} />
         <button type="submit">Buscar</button>
       </form>
+      {forClass && (
+        <label className="row muted" style={{ fontSize: '.85em' }}>
+          <input type="checkbox" checked={onlyClass}
+                 onChange={(e) => setOnlyClass(e.target.checked)} />
+          solo lista de {forClass}
+        </label>)}
       {hits.length > 0 && (
         <ul>
           {hits.map((h) => (

@@ -11,18 +11,46 @@ from ..db.connections import content_db
 router = APIRouter(prefix="/api/content", tags=["content"])
 
 
+def _spell_for_class(data: dict, cls_name: str) -> bool:
+    """¿Este conjuro está en la lista de la clase? Multi-schema:
+    5e-bits classes[].index · 5etools classes.fromClassList[].name ·
+    open5e2 classes[].name · codexMUNDI 'Sorcerer, Wizard'."""
+    cls = data.get("classes")
+    want = cls_name.lower()
+    if isinstance(cls, str):
+        return want in cls.lower()
+    names: list[str] = []
+    if isinstance(cls, list):
+        names = [(c.get("index") or c.get("name") or "")
+                 for c in cls if isinstance(c, dict)]
+    elif isinstance(cls, dict):
+        for grp in ("fromClassList", "fromSubclass"):
+            for c in cls.get(grp) or []:
+                if isinstance(c, dict):
+                    n = c.get("name") or (c.get("class") or {}).get("name")
+                    if n:
+                        names.append(n)
+    if not names:
+        # schema sin lista (dnd-data): match suelto por texto
+        blob = json.dumps(data.get("desc") or data.get("entries")
+                          or "", ensure_ascii=False).lower()
+        return want in blob
+    return any(want == str(n).lower() for n in names)
+
+
 @router.get("/search")
 def search(
     q: str = Query(..., min_length=1),
     entity_type: str | None = None,
     ruleset: str | None = None,
     source: str | None = None,
+    for_class: str | None = None,
     limit: int = Query(20, le=100),
 ):
     conn = content_db()
     sql = """
         SELECT e.id, e.entity_type, e.name, e.ruleset, e.license,
-               e.is_redistributable, e.source_id,
+               e.is_redistributable, e.source_id, e.data,
                snippet(content_fts, 2, '[', ']', '…', 12) AS excerpt
         FROM content_fts f
         JOIN content_entities e ON e.id = f.entity_id
@@ -38,10 +66,24 @@ def search(
     if source:
         sql += " AND e.source_id = ?"
         params.append(source)
+    # con for_class pedimos de más y filtramos en Python (las listas
+    # de clases viven dentro del JSON, no en columnas)
     sql += " ORDER BY bm25(content_fts) LIMIT ?"
-    params.append(limit)
+    params.append(limit * 4 if for_class else limit)
     rows = conn.execute(sql, params).fetchall()
-    return {"results": [dict(r) for r in rows]}
+    out = []
+    for r in rows:
+        r = dict(r)
+        if for_class and entity_type == "spell":
+            if not _spell_for_class(json.loads(r.pop("data")),
+                                    for_class):
+                continue
+        else:
+            r.pop("data", None)
+        out.append(r)
+        if len(out) >= limit:
+            break
+    return {"results": out}
 
 
 @router.get("/sources")

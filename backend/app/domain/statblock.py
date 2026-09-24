@@ -252,6 +252,16 @@ def normalize(data: dict | None) -> dict | None:
         "saves": _saves(data, abilities),
         "initiative_mod": _mod(abilities["dex"]),
         "speed": _speed(data),
+        "type": (lambda t: t.get("type") if isinstance(t, dict)
+                 else ", ".join(t) if isinstance(t, list)
+                 else str(t or ""))(data.get("type")),
+        "size": (lambda s: ", ".join(s) if isinstance(s, list)
+                 else str(s or ""))(data.get("size")),
+        "environment": (lambda e: ", ".join(e) if isinstance(e, list)
+                        else str(e or ""))(data.get("environment")
+                                           or data.get("environments")),
+        "alignment": (lambda a: ", ".join(a) if isinstance(a, list)
+                      else str(a or ""))(data.get("alignment")),
         "actions": _actions(data),
         "resistances": _pick(data, "damage_resistances", "resist"),
         "immunities": _pick(data, "damage_immunities", "immune"),

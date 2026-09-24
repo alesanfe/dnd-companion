@@ -460,6 +460,14 @@ def combatant_action_roll(combat: Combat, p: dict, ctx):
             damage_expr=expr, damage_total=roll(expr).total)
     if m_dc:
         ev["payload"]["save_dc"] = int(m_dc.group(1))
+    # "Recharge 5–6"/"Recharge 6": tira 1d6, la acción vuelve si ≥X
+    m_rech = re.search(r"[Rr]echarge\s*(\d+)", text)
+    if m_rech:
+        threshold = int(m_rech.group(1))
+        rr = roll("1d6")
+        ev["payload"].update(recharge_roll=rr.total,
+                             recharge_needed=threshold,
+                             recharges=rr.total >= threshold)
     return {"operation_type": "noop", "payload": {}}, [ev]
 
 

@@ -51,12 +51,28 @@ def canon(condition: str) -> str:
 
 
 def mods_for(conditions: list[str], roll_type: str):
-    """(adv, dis, fail, notes) para una tirada dadas las condiciones."""
+    """(adv, dis, fail, notes) para una tirada dadas las condiciones.
+    'exhaustion N' escala: nivel 3+ también da desventaja en ataques
+    y salvaciones (regla SRD de niveles de agotamiento)."""
     adv = dis = fail = False
     notes: list[str] = []
     base = roll_type.split(":")[0]
     for cond in conditions or []:
-        rule = CONDITION_ROLLS.get(canon(cond))
+        c = canon(cond)
+        level = 0
+        if c.startswith("exhaustion"):
+            try:
+                level = int(c.rsplit(" ", 1)[1])
+            except (IndexError, ValueError):
+                level = 1
+        rule = dict(CONDITION_ROLLS.get(c, {}))
+        if level >= 3:
+            rule["dis"] = set(rule.get("dis", ())) | {"attack", "save"}
+            if base in ("attack", "save") or ":" in roll_type:
+                notes.append(f"{cond}: desventaja (agotamiento 3+)")
+                dis = True
+        if not rule:
+            continue
         if not rule:
             continue
         if any(roll_type == t or base == t for t in rule.get("adv", ())):

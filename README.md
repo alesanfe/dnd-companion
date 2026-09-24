@@ -114,6 +114,16 @@ python -m pipeline.cli import-5etools --path data/hb \
 python -m pipeline.cli import-5etools --path data/ua \
     --source-id 5etools-ua --license "WotC UA playtest (non-free)"
 
+# codexMUNDI — PHB/DMG/MM/Volo/XGtE/SCAG/MTF transcritos (non-free).
+# Usa el mismo formato de claves 5etools: mismo importador.
+#   git clone https://github.com/MasterGrimoire/codexMUNDI
+python -m pipeline.cli import-5etools --path codexMUNDI \
+    --source-id codexmundi --license "non-free (WotC books)"
+
+# nick-aschenbach/dnd-data — ~26k entidades (monstruos, items,
+# conjuros, especies, clases, trasfondos; scrape D&D Beyond → non-free)
+python -m pipeline.cli import-dnddata
+
 # JSON privado/homebrew
 python -m pipeline.cli import-file --path <json> --license <lic> --type <tipo>
 

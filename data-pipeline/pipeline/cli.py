@@ -13,6 +13,7 @@ from pathlib import Path
 
 from . import db
 from .importers import five_e_bits, fiveetools, foundry, open5e
+from .importers import dnddata
 
 DEFAULT_DB = Path(__file__).resolve().parents[2] / "data" / "content.sqlite3"
 
@@ -73,6 +74,13 @@ def main() -> None:
     fo.add_argument("--ruleset", default="mixed",
                     choices=["dnd5e-2014", "dnd5e-2024", "mixed"])
 
+    dd = sub.add_parser("import-dnddata",
+                        help="Import nick-aschenbach/dnd-data (non-free)")
+    dd.add_argument("--path", type=Path, default=None,
+                    help="local clone's data/ dir (default: fetch raw)")
+    dd.add_argument("--ruleset", default="dnd5e-2014",
+                    choices=["dnd5e-2014", "dnd5e-2024", "mixed"])
+
     args = p.parse_args()
     Path(args.db).parent.mkdir(parents=True, exist_ok=True)
     conn = db.connect(args.db)
@@ -123,6 +131,10 @@ def main() -> None:
     elif args.cmd == "import-foundry":
         n = foundry.import_foundry(conn, args.path, ruleset=args.ruleset)
         print(f"Done: {n} entities -> {args.db}")
+    elif args.cmd == "import-dnddata":
+        n = dnddata.import_dnddata(conn, args.path,
+                                   ruleset=args.ruleset)
+        print(f"Done: {n} entities (non-redistributable) -> {args.db}")
 
 
 if __name__ == "__main__":

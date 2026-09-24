@@ -180,19 +180,30 @@ def _summarize(data: dict) -> dict:
 
 @router.get("/compare")
 def compare(index: str):
-    """Comparador de reglas: la misma entidad en 2014 vs 2024."""
+    """Comparador de reglas: la misma entidad en 2014 vs 2024.
+
+    El representante de cada ruleset es preferentemente la fuente
+    redistribuible (SRD/Open5e); fuentes alternativas se listan en
+    `alternates` para no mezclar schemas distintos en el diff."""
     conn = content_db()
     rows = conn.execute(
-        "SELECT id, entity_type, name, ruleset, data, source_id "
-        "FROM content_entities WHERE id LIKE ? ORDER BY ruleset",
+        "SELECT id, entity_type, name, ruleset, data, source_id, "
+        "is_redistributable FROM content_entities WHERE id LIKE ? "
+        "ORDER BY is_redistributable DESC, ruleset",
         (f"%:{index}",)).fetchall()
     versions = {}
+    alternates = []
     for r in rows:
-        versions[r["ruleset"]] = {
+        entry = {
             "id": r["id"], "name": r["name"],
             "entity_type": r["entity_type"], "source_id": r["source_id"],
             "data": json.loads(r["data"]),
         }
+        if r["ruleset"] not in versions:
+            versions[r["ruleset"]] = entry
+        else:
+            alternates.append({k: entry[k] for k in
+                               ("id", "name", "entity_type", "source_id")})
     # diff de primer nivel: claves que difieren entre ediciones
     diff = []
     if len(versions) > 1:
@@ -202,7 +213,8 @@ def compare(index: str):
                     for v in versions.values()}
             if len(vals) > 1:
                 diff.append(key)
-    return {"index": index, "versions": versions, "diff": sorted(diff)}
+    return {"index": index, "versions": versions,
+            "alternates": alternates, "diff": sorted(diff)}
 
 
 class HomebrewIn(BaseModel):

@@ -373,7 +373,20 @@ def derived_all(character_id: str):
         "spell_attack": char.proficiency_bonus + cast_mod,
         "spellcasting_ability": cast_ability,
         "proficiency_bonus": char.proficiency_bonus,
+        "next_level_xp": _next_level_xp(char.total_level, char.xp),
     }
+
+
+# SRD 2014: XP acumulado necesario por nivel (índice = nivel actual)
+_XP_TABLE = [0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000,
+             85000, 100000, 120000, 140000, 165000, 195000, 225000,
+             265000, 305000, 355000]
+
+
+def _next_level_xp(level: int, xp: int) -> int | None:
+    if level >= 20:
+        return None
+    return _XP_TABLE[level] - xp
 
 
 @router.get("/{character_id}")

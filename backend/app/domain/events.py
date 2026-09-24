@@ -40,6 +40,7 @@ class EventType(str, Enum):
     INVENTORY_ITEM_TRANSFERRED = "inventory.item.transferred"
     RESOURCE_USAGE_CHANGED = "resource.usage.changed"
     ROLL_REQUESTED = "dice.roll.requested"          # DM pide tirada a jugador
+    ENTITY_REVEALED = "campaign.entity.revealed"    # DM revela entidad
 
 
 class Event(BaseModel):

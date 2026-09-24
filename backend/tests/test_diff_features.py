@@ -636,6 +636,42 @@ def test_compare_returns_diff_keys():
     assert "diff" in r and isinstance(r["diff"], list)
 
 
+def test_initiative_roll_and_add_party():
+    camp = client.post("/api/campaigns", json={"name": "P"}).json()["id"]
+    for i in range(2):
+        cid = _mkchar()
+        client.patch(f"/api/characters/{cid}",
+                     json={"campaign_id": camp})
+    combat = client.post("/api/combat", json={
+        "name": "X", "campaign_id": camp}).json()
+    r = client.post(f"/api/combat/{combat['id']}/add-party")
+    assert r.json()["added"] == 2
+    cdata = client.get(f"/api/combat/{combat['id']}").json()["combat"]
+    bid = cdata["combatants"][0]["id"]
+    v = client.get(f"/api/combat/{combat['id']}").json()["version"]
+    r = _combat_op(combat["id"], v, "combatant.initiative.roll",
+                   {"combatant_id": bid})
+    assert r.status_code == 200
+    c = client.get(f"/api/combat/{combat['id']}").json()["combat"]
+    assert 1 <= c["combatants"][0]["initiative"] <= 21
+
+
+def test_reveal_broadcasts_event():
+    camp = client.post("/api/campaigns", json={"name": "R"}).json()["id"]
+    eid = client.post(f"/api/campaigns/{camp}/entities", json={
+        "kind": "note", "name": "Secreto", "visibility": "dm"
+    }).json()["id"]
+    client.post(f"/api/campaigns/{camp}/entities/{eid}/reveal")
+    ev = client.get(f"/api/campaigns/{camp}/events").json()["events"]
+    assert any(e["type"] == "campaign.entity.revealed" for e in ev)
+
+
+def test_next_level_xp_in_derived():
+    cid = _mkchar()
+    r = client.get(f"/api/characters/{cid}/derived").json()
+    assert r["next_level_xp"] == 300      # nivel 1 con 0 xp
+
+
 def test_patch_and_delete_character():
     cid = _mkchar()
     r = client.patch(f"/api/characters/{cid}", json={"name": "Renombrado"})

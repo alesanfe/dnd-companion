@@ -176,8 +176,8 @@ def list_entities(campaign_id: str, kind: str | None = None,
 
 
 @router.post("/{campaign_id}/entities/{entity_id}/reveal")
-def reveal_entity(campaign_id: str, entity_id: str):
-    """El DM revela la entidad a todos los jugadores."""
+async def reveal_entity(campaign_id: str, entity_id: str):
+    """El DM revela la entidad a todos los jugadores — evento WS."""
     conn = state_db()
     now = datetime.now(timezone.utc).isoformat()
     cur = conn.execute(
@@ -189,6 +189,25 @@ def reveal_entity(campaign_id: str, entity_id: str):
     conn.commit()
     if cur.rowcount == 0:
         raise HTTPException(404, "entity not found")
+    name = conn.execute("SELECT name FROM campaign_entities WHERE id = ?",
+                        (entity_id,)).fetchone()["name"]
+    from ..domain.events import Event, EventType
+    ev = Event(event_id=uuid.uuid4().hex,
+               type=EventType.ENTITY_REVEALED,
+               campaign_id=campaign_id, aggregate_id=entity_id,
+               aggregate_version=0, actor_id="dm",
+               occurred_at=datetime.now(timezone.utc),
+               payload={"name": name})
+    conn.execute(
+        """INSERT INTO events
+           (event_id, campaign_id, aggregate_id, aggregate_version,
+            actor_id, occurred_at, type, payload)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (ev.event_id, campaign_id, entity_id, 0, "dm",
+         ev.occurred_at.isoformat(), ev.type.value,
+         json.dumps(ev.payload)))
+    conn.commit()
+    await manager.broadcast(campaign_id, ev)
     return {"id": entity_id, "visibility": "public"}
 
 

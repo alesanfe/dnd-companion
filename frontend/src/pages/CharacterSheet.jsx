@@ -314,6 +314,13 @@ export default function CharacterSheet() {
                     setRollLog((l) => [`${w}: impacto ${r.hit.total} · daño ${r.damage.total}`, ...l].slice(0, 10))
                   }}>⚔</button>
                 )}
+                {a.name.startsWith('Conjuro:') && (
+                  <button style={{ minHeight: 32, marginLeft: 8 }}
+                          onClick={async () => {
+                    await op('character.spell.cast',
+                             { spell_id: a.source, level: 0 })
+                  }}>✦</button>
+                )}
               </li>))}
             </ul>
           </div>

@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..db.connections import state_db
-from ..domain.combat import Combat, hp_state
+from ..domain.combat import Combat, Combatant, hp_state
 from ..domain.ruleset import Ruleset
 
 router = APIRouter(prefix="/api/combat", tags=["combat"])
@@ -37,6 +37,43 @@ def create_combat(body: CombatCreate):
          json.dumps(combat.model_dump()), now))
     conn.commit()
     return {"id": cid, "version": 1}
+
+
+@router.post("/{combat_id}/add-party")
+def add_party(combat_id: str):
+    """Añade todos los personajes de la campaña del combate como
+    combatientes (con su HP real de ficha)."""
+    conn = state_db()
+    row = conn.execute("SELECT data, campaign_id FROM combats WHERE id = ?",
+                       (combat_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "combat not found")
+    combat = Combat(**json.loads(row["data"]))
+    if not row["campaign_id"]:
+        raise HTTPException(400, "el combate no pertenece a una campaña")
+    chars = conn.execute(
+        "SELECT id, data FROM characters WHERE campaign_id = ?",
+        (row["campaign_id"],)).fetchall()
+    from ..domain.character import Character
+    added = 0
+    existing = {c.ref_id for c in combat.combatants}
+    for cr in chars:
+        if cr["id"] in existing:
+            continue
+        ch = Character(**json.loads(cr["data"]))
+        combat.combatants.append(Combatant(
+            id=uuid.uuid4().hex, kind="character", name=ch.name,
+            ref_id=cr["id"], initiative=ch.abilities.modifier("dex"),
+            hp_current=ch.hp.current, hp_max=ch.hp.max,
+            hp_temp=ch.hp.temp))
+        added += 1
+    conn.execute(
+        "UPDATE combats SET data = ?, version = version + 1, "
+        "updated_at = ? WHERE id = ?",
+        (json.dumps(combat.model_dump()),
+         datetime.now(timezone.utc).isoformat(), combat_id))
+    conn.commit()
+    return {"added": added}
 
 
 @router.get("/{combat_id}")

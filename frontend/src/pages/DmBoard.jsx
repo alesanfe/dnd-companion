@@ -299,6 +299,18 @@ export default function DmBoard() {
             <div className="row">
               <button onClick={() => cop('combat.next_turn', {})}>Siguiente turno</button>
               <button onClick={() => cop('combat.prev_turn', {})}>Anterior</button>
+              <button onClick={async () => {
+                await fetch(`/api/combat/${combat.id}/add-party`,
+                            { method: 'POST' })
+                refresh(combat.id)
+              }}>+ Grupo</button>
+              <button onClick={async () => {
+                for (const c of combat.combat.combatants)
+                  await api.applyOp({ id: combat.id, version: combat.version },
+                                    'combatant.initiative.roll',
+                                    { combatant_id: c.id }, 'combat')
+                refresh(combat.id)
+              }}>Tirar inits</button>
               <button className="dmg" onClick={() => cop('combat.end', {})}>Terminar</button>
             </div>
           </section>

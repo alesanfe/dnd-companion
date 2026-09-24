@@ -298,6 +298,32 @@ def combatant_hp_set(combat: Combat, p: dict, ctx):
     return inv, []
 
 
+@op("combatant.initiative.roll")
+def combatant_initiative_roll(combat: Combat, p: dict, ctx):
+    """El servidor tira iniciativa: 1d20 + mod DES del stat block o
+    de la ficha vinculada."""
+    c = _find(combat, p["combatant_id"])
+    dex = 10
+    if c.stat_block:
+        dex = c.stat_block.get("dexterity", 10)
+    elif c.kind == "character" and c.ref_id:
+        try:
+            row = ctx.state_db().execute(
+                "SELECT data FROM characters WHERE id = ?",
+                (c.ref_id,)).fetchone()
+            if row:
+                dex = json.loads(row["data"])["abilities"]["dexterity"]
+        except Exception:
+            pass
+    inv = {"operation_type": "combatant.initiative",
+           "payload": {"combatant_id": c.id, "value": c.initiative}}
+    mod = (dex - 10) // 2
+    c.initiative = roll("1d20").total + mod
+    return inv, [{"type": "combat.turn.advanced",
+                  "payload": {"initiative_rolled": c.name,
+                              "value": c.initiative}}]
+
+
 @op("combatant.initiative")
 def combatant_initiative(combat: Combat, p: dict, ctx):
     c = _find(combat, p["combatant_id"])

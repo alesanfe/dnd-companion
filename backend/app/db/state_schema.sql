@@ -115,6 +115,23 @@ CREATE INDEX IF NOT EXISTS idx_rel_campaign
 
 -- Sesiones de juego: preparación por escenas enlazadas via
 -- campaign_entities(kind='scene').data.session_id
+-- Auth: cuentas locales + tokens opacos. pbkdf2_hmac, sin deps extra.
+CREATE TABLE IF NOT EXISTS users (
+    id            TEXT PRIMARY KEY,
+    username      TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    salt          TEXT NOT NULL,
+    created_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS auth_tokens (
+    token      TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tokens_user ON auth_tokens(user_id);
+
 CREATE TABLE IF NOT EXISTS sessions (
     id          TEXT PRIMARY KEY,
     campaign_id TEXT NOT NULL REFERENCES campaigns(id),

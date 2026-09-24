@@ -1,4 +1,5 @@
-import { Routes, Route, Link } from 'react-router-dom'
+import { Routes, Route } from 'react-router-dom'
+import Header from './components/Header.jsx'
 import CharacterList from './pages/CharacterList.jsx'
 import CharacterSheet from './pages/CharacterSheet.jsx'
 import Wizard from './pages/Wizard.jsx'
@@ -8,12 +9,7 @@ import Search from './pages/Search.jsx'
 export default function App() {
   return (
     <div className="app">
-      <nav className="nav">
-        <Link to="/">Fichas</Link>
-        <Link to="/new">Crear</Link>
-        <Link to="/search">Buscar</Link>
-        <Link to="/dm">Mesa DM</Link>
-      </nav>
+      <Header />
       <Routes>
         <Route path="/" element={<CharacterList />} />
         <Route path="/new" element={<Wizard />} />

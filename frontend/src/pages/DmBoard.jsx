@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api } from '../api.js'
+import MapBoard from '../components/MapBoard.jsx'
 
 export default function DmBoard() {
   const [campaign, setCampaign] = useState(null)
@@ -172,6 +173,8 @@ export default function DmBoard() {
           ))}
         </section>
       )}
+
+      {campaign && <MapBoard campaign={campaign} />}
 
       {campaign && (
         <section className="card">

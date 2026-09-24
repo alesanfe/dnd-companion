@@ -7,9 +7,10 @@ from datetime import datetime, timezone
 
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from .auth import member_role, optional_user
 from ..db.connections import state_db
 from ..domain.ruleset import Ruleset
 from ..ws.rooms import manager
@@ -24,17 +25,24 @@ class CampaignCreate(BaseModel):
 
 
 @router.post("", status_code=201)
-def create_campaign(body: CampaignCreate):
+def create_campaign(body: CampaignCreate,
+                    user: dict | None = Depends(optional_user)):
     conn = state_db()
     cid = uuid.uuid4().hex
     invite = secrets.token_urlsafe(6)
     now = datetime.now(timezone.utc).isoformat()
+    owner = (user or {}).get("user_id") or body.owner_id
     conn.execute(
         """INSERT INTO campaigns
            (id, name, invite_code, ruleset, owner_id, data, created_at, updated_at)
            VALUES (?,?,?,?,?, '{}', ?, ?)""",
-        (cid, body.name, invite, body.ruleset.value, body.owner_id, now, now),
+        (cid, body.name, invite, body.ruleset.value, owner, now, now),
     )
+    if owner:
+        conn.execute(
+            "INSERT OR IGNORE INTO members "
+            "(campaign_id, user_id, role, joined_at) VALUES (?,?,?,?)",
+            (cid, owner, "owner", now))
     conn.commit()
     return {"id": cid, "invite_code": invite}
 
@@ -46,20 +54,22 @@ class JoinIn(BaseModel):
 
 
 @router.post("/join")
-def join_campaign(body: JoinIn):
-    """Unirse a una campaña por código de invitación. Si llega user_id,
-    queda registrado como miembro con su rol."""
+def join_campaign(body: JoinIn,
+                  user: dict | None = Depends(optional_user)):
+    """Unirse a una campaña por código de invitación. Con token se
+    registra como miembro con su rol (el token manda sobre user_id)."""
     conn = state_db()
     row = conn.execute(
         "SELECT id, name, ruleset FROM campaigns WHERE invite_code = ?",
         (body.invite_code,)).fetchone()
     if row is None:
         raise HTTPException(404, "campaign not found")
-    if body.user_id:
+    uid = (user or {}).get("user_id") or body.user_id
+    if uid:
         conn.execute(
             "INSERT OR IGNORE INTO members "
             "(campaign_id, user_id, role, joined_at) VALUES (?,?,?,?)",
-            (row["id"], body.user_id, body.role,
+            (row["id"], uid, body.role,
              datetime.now(timezone.utc).isoformat()))
         conn.commit()
     return {"id": row["id"], "name": row["name"], "ruleset": row["ruleset"]}
@@ -110,7 +120,13 @@ class EntityIn(BaseModel):
 
 
 @router.post("/{campaign_id}/entities", status_code=201)
-def create_entity(campaign_id: str, body: EntityIn):
+def create_entity(campaign_id: str, body: EntityIn,
+                  user: dict | None = Depends(optional_user)):
+    role = member_role(campaign_id, (user or {}).get("user_id"))
+    if user is not None and role not in ("owner", "co_dm") \
+            and body.visibility == "dm":
+        raise HTTPException(
+            403, "solo el DM puede crear entidades ocultas")
     conn = state_db()
     eid = uuid.uuid4().hex
     now = datetime.now(timezone.utc).isoformat()
@@ -128,9 +144,19 @@ def create_entity(campaign_id: str, body: EntityIn):
 
 @router.get("/{campaign_id}/entities")
 def list_entities(campaign_id: str, kind: str | None = None,
-                  viewer: str = "dm"):
-    """viewer='dm' ve todo; viewer='player' solo public + known_to."""
+                  viewer: str | None = None,
+                  user: dict | None = Depends(optional_user)):
+    """Visibilidad por rol: owner/co_dm ven todo; el resto solo public
+    + entidades donde su user_id está en known_to. Sin token, `viewer`
+    controla la vista (modo local/anónimo)."""
     conn = state_db()
+    uid = (user or {}).get("user_id")
+    if user is not None:
+        is_dm = member_role(campaign_id, uid) in ("owner", "co_dm")
+        viewer_id = uid
+    else:
+        is_dm = (viewer or "dm") == "dm"  # compat modo local
+        viewer_id = viewer or "dm"
     sql = "SELECT * FROM campaign_entities WHERE campaign_id = ?"
     params: list = [campaign_id]
     if kind:
@@ -142,8 +168,8 @@ def list_entities(campaign_id: str, kind: str | None = None,
         e = dict(r)
         e["data"] = json.loads(e["data"])
         e["known_to"] = json.loads(e["known_to"])
-        if viewer != "dm" and e["visibility"] == "dm" \
-                and viewer not in e["known_to"]:
+        if not is_dm and e["visibility"] == "dm" \
+                and viewer_id not in e["known_to"]:
             continue
         out.append(e)
     return {"entities": out}

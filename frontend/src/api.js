@@ -1,10 +1,16 @@
 import { enqueueOp, pendingOps, markOp } from './db.js'
+import { getToken, currentUser } from './session.js'
 
 const CLIENT_ID = crypto.randomUUID()
 
+function authHeaders() {
+  const t = getToken()
+  return t ? { Authorization: `Bearer ${t}` } : {}
+}
+
 async function req(path, opts = {}) {
   const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     ...opts,
   })
   if (!res.ok) {
@@ -36,6 +42,27 @@ if (typeof window !== 'undefined') {
 }
 
 export const api = {
+  register: (username, password) =>
+    req('/api/auth/register', {
+      method: 'POST', body: JSON.stringify({ username, password }),
+    }),
+  login: (username, password) =>
+    req('/api/auth/login', {
+      method: 'POST', body: JSON.stringify({ username, password }),
+    }),
+  me: () => req('/api/auth/me'),
+  patchEntity: (campaignId, entityId, body) =>
+    req(`/api/campaigns/${campaignId}/entities/${entityId}`, {
+      method: 'PATCH', body: JSON.stringify(body),
+    }),
+  listSessions: (campaignId) =>
+    req(`/api/campaigns/${campaignId}/sessions`),
+  createSession: (campaignId, body) =>
+    req(`/api/campaigns/${campaignId}/sessions`, {
+      method: 'POST', body: JSON.stringify(body),
+    }),
+  timeline: (campaignId) =>
+    req(`/api/campaigns/${campaignId}/timeline`),
   listCharacters: () => req('/api/characters'),
   getCharacter: (id) => req(`/api/characters/${id}`),
   createCharacter: (name, ruleset = 'dnd5e-2014') =>
@@ -86,7 +113,7 @@ export const api = {
       entity_id: entity.id,
       entity_version: entity.version,
       client_id: CLIENT_ID,
-      user_id: 'local',
+      user_id: currentUser()?.user_id || 'local',
       operation_type: operationType,
       entity_kind: kind,
       payload,

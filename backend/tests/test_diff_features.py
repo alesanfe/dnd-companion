@@ -271,3 +271,54 @@ def test_character_roll_applies_advantage_effect():
     assert len(body["rolls"]) == 2          # ventaja: tiró 2d20
     assert body["kept"][0] == max(body["rolls"])
     assert body["effects_applied"]
+
+
+# --- auth + enforcement por rol ---------------------------------------
+
+def _auth_headers(username):
+    r = client.post("/api/auth/register", json={
+        "username": username, "password": "pw12345"})
+    if r.status_code == 409:
+        r = client.post("/api/auth/login", json={
+            "username": username, "password": "pw12345"})
+    return {"Authorization": f"Bearer {r.json()['token']}"}
+
+
+def test_register_login_me():
+    h = _auth_headers(f"u{uuid.uuid4().hex[:8]}")
+    me = client.get("/api/auth/me", headers=h)
+    assert me.status_code == 200
+    assert me.json()["user_id"]
+
+
+def test_dm_entities_hidden_from_players():
+    owner = _auth_headers(f"dm{uuid.uuid4().hex[:8]}")
+    player = _auth_headers(f"p{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "Auth"},
+                       headers=owner).json()
+    client.post("/api/campaigns/join",
+                json={"invite_code": camp["invite_code"]},
+                headers=player)
+    cid = camp["id"]
+    # jugador no puede crear entidad oculta
+    r = client.post(f"/api/campaigns/{cid}/entities",
+                    json={"kind": "note", "name": "Secreto",
+                          "visibility": "dm"}, headers=player)
+    assert r.status_code == 403
+    # el owner sí puede
+    r = client.post(f"/api/campaigns/{cid}/entities",
+                    json={"kind": "note", "name": "Secreto",
+                          "visibility": "dm"}, headers=owner)
+    assert r.status_code == 201
+    # el jugador no la ve; el owner sí
+    for h, expected in ((player, False), (owner, True)):
+        ents = client.get(f"/api/campaigns/{cid}/entities",
+                          headers=h).json()["entities"]
+        assert any(e["name"] == "Secreto" for e in ents) is expected
+
+
+def test_wrong_password_rejected():
+    u = f"w{uuid.uuid4().hex[:8]}"
+    client.post("/api/auth/register", json={"username": u, "password": "a"})
+    r = client.post("/api/auth/login", json={"username": u, "password": "b"})
+    assert r.status_code == 401

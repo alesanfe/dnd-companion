@@ -15,6 +15,7 @@ export default function CharacterSheet() {
   const [newCond, setNewCond] = useState('')
   const [coin, setCoin] = useState('gp')
   const [actions, setActions] = useState(null)
+  const [focus, setFocus] = useState(false)   // modo concentración
 
   const load = () => api.getCharacter(id).then(setChar).catch((e) => setErr(e.message))
   useEffect(() => { load() }, [id])
@@ -60,13 +61,18 @@ export default function CharacterSheet() {
   const slots = d.spell_slots || {}
 
   return (
-    <main>
+    <main className={focus ? 'concentration' : ''}>
       <h1>{char.name}
         <span className="muted" style={{ fontSize: '0.9rem' }}>
           {' '}nivel {d.classes?.reduce((s, c) => s + c.level, 0) || 1}
         </span>
       </h1>
       <div className="row">
+        <button className={focus ? '' : 'ghost'}
+                aria-pressed={focus}
+                onClick={() => setFocus(!focus)}>
+          {focus ? 'Salir del modo mesa' : 'Modo mesa'}
+        </button>
         <button onClick={async () => {
           const ex = await api.exportCharacter(id)
           const blob = new Blob([JSON.stringify(ex, null, 2)],
@@ -91,7 +97,7 @@ export default function CharacterSheet() {
       {err && <p className="error">{err}</p>}
 
       {history && (
-        <section className="card">
+        <section className="card optional">
           <h2>Historial <span className="muted">(reversible)</span></h2>
           {history.map((h) => (
             <div key={h.operation_id} className="row">
@@ -170,7 +176,7 @@ export default function CharacterSheet() {
         </section>
       )}
 
-      <section className="card">
+      <section className="card optional">
         <h2>Monedas</h2>
         <div className="row purse">
           {['pp', 'gp', 'ep', 'sp', 'cp'].map((c) => (
@@ -207,7 +213,7 @@ export default function CharacterSheet() {
         ))}
       </section>
 
-      <section className="card">
+      <section className="card optional">
         <h2>Condiciones</h2>
         <div className="row">
           <input value={newCond} onChange={(e) => setNewCond(e.target.value)}
@@ -225,7 +231,7 @@ export default function CharacterSheet() {
         ))}
       </section>
 
-      <section className="card">
+      <section className="card optional">
         <h2>Inventario</h2>
         <div className="row">
           <input value={newItem} onChange={(e) => setNewItem(e.target.value)}

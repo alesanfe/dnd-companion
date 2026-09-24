@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 
 export default function CharacterSheet() {
@@ -17,6 +17,9 @@ export default function CharacterSheet() {
   const [actions, setActions] = useState(null)
   const [focus, setFocus] = useState(false)   // vista rápida (HUD)
   const [tab, setTab] = useState('resumen')   // pestaña de la ficha
+  // HUD: qué grupos quedan visibles en vista rápida
+  const [hud, setHud] = useState(
+    () => new Set(['resumen']))
   const [notice, setNotice] = useState(null)  // aviso de concentración
   const [journalEntry, setJournalEntry] = useState('')
   const [derived, setDerived] = useState(null)
@@ -170,6 +173,22 @@ export default function CharacterSheet() {
           {d.conditions?.length > 0 &&
             <span className="muted">{d.conditions.join(' · ')}</span>}
         </div>
+        {focus && (
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            {[['resumen', 'Resumen'], ['combate', 'Combate'],
+              ['magia', 'Magia'], ['equipo', 'Equipo'],
+              ['personaje', 'Personaje'], ['actividad', 'Actividad']]
+              .map(([k, label]) => (
+                <label key={k} className="muted"
+                       style={{ fontSize: '.85em' }}>
+                  <input type="checkbox" checked={hud.has(k)}
+                    onChange={(e) => setHud((prev) => {
+                      const nx = new Set(prev)
+                      e.target.checked ? nx.add(k) : nx.delete(k)
+                      return nx
+                    })} />
+                  {label}</label>))}
+          </div>)}
         {!focus && (
           <nav className="tabs" role="tablist" aria-label="Secciones">
             {[['resumen', 'Resumen'], ['combate', 'Combate'],
@@ -181,7 +200,7 @@ export default function CharacterSheet() {
           </nav>)}
       </div>
 
-      <div className="row" hidden={!(focus || tab === 'resumen')}>
+      <div className="row" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>
         <span className="muted">PX: {d.xp || 0}</span>
         <input type="number" min="0" style={{ maxWidth: 90 }} value={xpAdd}
                onChange={(e) => setXpAdd(+e.target.value)} />
@@ -211,7 +230,7 @@ export default function CharacterSheet() {
       </div>
 
       {history && (
-        <section className="card optional" hidden={!(focus || tab === 'actividad')}>
+        <section className="card optional" hidden={focus ? !hud.has('actividad') : tab !== 'actividad'}>
           <h2>Historial <span className="muted">(reversible)</span></h2>
           {history.map((h) => (
             <div key={h.operation_id} className="row">
@@ -230,7 +249,7 @@ export default function CharacterSheet() {
       )}
 
       {derived && (
-        <section className="card" hidden={!(focus || tab === 'resumen')}>
+        <section className="card" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>
           <h2>Calculado</h2>
           <div className="row" style={{ flexWrap: 'wrap' }}>
             <span className="coin">CA {derived.armor_class.total}</span>
@@ -247,7 +266,7 @@ export default function CharacterSheet() {
         </section>
       )}
 
-      <section className="card" hidden={!(focus || tab === 'resumen')}>
+      <section className="card" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>
         <h2>Puntos de golpe</h2>
         <div className="hp-big">
           {hp.current} / {hp.max}
@@ -261,7 +280,7 @@ export default function CharacterSheet() {
         </div>
       </section>
 
-      <section className="card" hidden={!(focus || tab === 'resumen')}>
+      <section className="card" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>
         <h2>Descansos</h2>
         <div className="row">
           <button onClick={() => op('character.rest.short', {})}>Descanso corto</button>
@@ -279,7 +298,7 @@ export default function CharacterSheet() {
       </section>
 
       {Object.keys(slots).length > 0 && (
-        <section className="card" hidden={!(focus || tab === 'magia')}>
+        <section className="card" hidden={focus ? !hud.has('magia') : tab !== 'magia'}>
           <h2>Espacios de conjuro</h2>
           {Object.entries(slots).map(([lvl, s]) => (
             <div key={lvl} className="row">
@@ -294,7 +313,7 @@ export default function CharacterSheet() {
       )}
 
       {(d.resources || []).length > 0 && (
-        <section className="card" hidden={!(focus || tab === 'resumen')}>
+        <section className="card" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>
           <h2>Recursos</h2>
           {d.resources.map((r) => (
             <div key={r.id} className="row">
@@ -308,7 +327,7 @@ export default function CharacterSheet() {
         </section>
       )}
 
-      <section className="card optional" hidden={!(focus || tab === 'equipo')}>
+      <section className="card optional" hidden={focus ? !hud.has('equipo') : tab !== 'equipo'}>
         <h2>Monedas</h2>
         <div className="row purse">
           {['pp', 'gp', 'ep', 'sp', 'cp'].map((c) => (
@@ -326,7 +345,7 @@ export default function CharacterSheet() {
         </div>
       </section>
 
-      <section className="card" hidden={!(focus || tab === 'combate')}>
+      <section className="card" hidden={focus ? !hud.has('combate') : tab !== 'combate'}>
         <h2>Acciones</h2>
         <button onClick={async () => {
           if (actions) { setActions(null); return }
@@ -361,7 +380,7 @@ export default function CharacterSheet() {
       </section>
 
       {(d.effects || []).length > 0 && (
-        <section className="card optional" hidden={!(focus || tab === 'combate')}>
+        <section className="card optional" hidden={focus ? !hud.has('combate') : tab !== 'combate'}>
           <h2>Efectos activos</h2>
           <div className="row" style={{ flexWrap: 'wrap' }}>
             {d.effects.map((e) => (
@@ -375,7 +394,7 @@ export default function CharacterSheet() {
         </section>
       )}
 
-      <section className="card optional" hidden={!(focus || tab === 'resumen')}>
+      <section className="card optional" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>
         <h2>Condiciones</h2>
         <div className="row">
           <input value={newCond} onChange={(e) => setNewCond(e.target.value)}
@@ -396,7 +415,7 @@ export default function CharacterSheet() {
         ))}
       </section>
 
-      <section className="card optional" hidden={!(focus || tab === 'equipo')}>
+      <section className="card optional" hidden={focus ? !hud.has('equipo') : tab !== 'equipo'}>
         <h2>Inventario</h2>
         <ItemPicker onPick={(it) =>
           op('character.inventory.add',
@@ -431,7 +450,7 @@ export default function CharacterSheet() {
         ))}
       </section>
 
-      <section className="card" hidden={!(focus || tab === 'combate')}>
+      <section className="card" hidden={focus ? !hud.has('combate') : tab !== 'combate'}>
         <h2>Dados</h2>
         <form onSubmit={doRoll} className="row">
           <input value={expr} onChange={(e) => setExpr(e.target.value)}
@@ -455,7 +474,7 @@ export default function CharacterSheet() {
         <ul className="log">{rollLog.map((l, i) => <li key={i}>{l}</li>)}</ul>
       </section>
 
-      <section className="card optional" hidden={!(focus || tab === 'magia')}>
+      <section className="card optional" hidden={focus ? !hud.has('magia') : tab !== 'magia'}>
         <h2>Conjuros</h2>
         <SpellPicker onPick={(sid) =>
           op('character.spell.learn', { spell_id: sid })}
@@ -471,7 +490,7 @@ export default function CharacterSheet() {
       </section>
 
       {shops.length > 0 && (
-        <section className="card optional" hidden={!(focus || tab === 'equipo')}>
+        <section className="card optional" hidden={focus ? !hud.has('equipo') : tab !== 'equipo'}>
           <h2>Tienda</h2>
           {shops.map((s) => (
             <div key={s.id}>
@@ -493,7 +512,7 @@ export default function CharacterSheet() {
         </section>
       )}
 
-      <section className="card optional" hidden={!(focus || tab === 'personaje')}>
+      <section className="card optional" hidden={focus ? !hud.has('personaje') : tab !== 'personaje'}>
         <h2>Rasgos</h2>
         <SpellPicker entityType="feature" verb="Añadir"
           placeholder="Rasgo opcional (invocación, infusión, maniobra…)"
@@ -509,7 +528,7 @@ export default function CharacterSheet() {
           </div>)}
       </section>
 
-      <section className="card optional" hidden={!(focus || tab === 'personaje')}>
+      <section className="card optional" hidden={focus ? !hud.has('personaje') : tab !== 'personaje'}>
         <h2>Dotes y dones</h2>
         <SpellPicker entityType="feat" verb="Añadir"
           placeholder="Buscar dote en todas las fuentes"
@@ -527,7 +546,7 @@ export default function CharacterSheet() {
             op('character.reward.remove', { reward_id: rid })} />)}
       </section>
 
-      <section className="card optional" hidden={!(focus || tab === 'personaje')}>
+      <section className="card optional" hidden={focus ? !hud.has('personaje') : tab !== 'personaje'}>
         <h2>Subclase e idiomas</h2>
         <SpellPicker entityType="subclass" verb="Elegir"
           placeholder="Buscar subclase…"
@@ -553,7 +572,7 @@ export default function CharacterSheet() {
           </div>)}
       </section>
 
-      <section className="card optional" hidden={!(focus || tab === 'personaje')}>
+      <section className="card optional" hidden={focus ? !hud.has('personaje') : tab !== 'personaje'}>
         <h2>Competencias</h2>
         <SpellPicker entityType="skill" verb="Competente"
           placeholder="Habilidad (percepción, sigilo…)"
@@ -587,7 +606,7 @@ export default function CharacterSheet() {
         )}
       </section>
 
-      <section className="card optional" hidden={!(focus || tab === 'personaje')}>
+      <section className="card optional" hidden={focus ? !hud.has('personaje') : tab !== 'personaje'}>
         <h2>Diario</h2>
         <div className="row">
           <input value={journalEntry} placeholder="Anotación de la sesión…"
@@ -682,6 +701,8 @@ function SpellPicker({ onPick, entityType = 'spell',
 
 function SpellList({ ids, onCast, onForget }) {
   const [names, setNames] = useState({})
+  const [menu, setMenu] = useState(null)
+  const navigate = useNavigate()
   useEffect(() => {
     for (const sid of ids) {
       if (names[sid]) continue
@@ -696,7 +717,20 @@ function SpellList({ ids, onCast, onForget }) {
         <li key={sid} className="row">
           <span style={{ flex: 1 }}>{names[sid] || sid}</span>
           <button onClick={() => onCast(sid)}>Lanzar</button>
-          <button className="ghost" onClick={() => onForget(sid)}>×</button>
+          <button className="ghost" aria-label={`Opciones de ${names[sid] || sid}`}
+                  aria-expanded={menu === sid}
+                  onClick={() => setMenu(menu === sid ? null : sid)}>
+            ⋮</button>
+          {menu === sid && (
+            <span className="row" role="menu">
+              <button className="ghost" onClick={() => {
+                setMenu(null)
+                navigate(`/content/${encodeURIComponent(sid)}`)
+              }}>Detalles</button>
+              <button className="ghost" onClick={() => {
+                setMenu(null); onForget(sid)
+              }}>Olvidar</button>
+            </span>)}
         </li>
       ))}
     </ul>

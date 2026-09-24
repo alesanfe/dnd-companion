@@ -20,6 +20,7 @@ export default function DmBoard() {
   const [difficulty, setDifficulty] = useState(null)
   const [rollReq, setRollReq] = useState({ character_id: '', expression: '1d20', reason: '' })
   const [dmgType, setDmgType] = useState('')
+  const [selId, setSelId] = useState(null)
   const [sessions, setSessions] = useState([])
   const [sessTitle, setSessTitle] = useState('')
   const [timeline, setTimeline] = useState(null)
@@ -62,6 +63,8 @@ export default function DmBoard() {
     ? [...combat.combat.combatants].sort((a, b) => b.initiative - a.initiative)
     : []
   const activeIdx = combat ? combat.combat.turn_index % Math.max(1, ordered.length) : 0
+  const sel = ordered.find((c) => c.id === selId)
+    || ordered[activeIdx] || null   // por defecto: el del turno
 
   return (
     <main className="dm">
@@ -409,7 +412,12 @@ export default function DmBoard() {
                    className={`row combatant${isTurn ? ' turn' : ''}`}
                    aria-current={isTurn ? 'true' : undefined}>
                 <span className="init">{c.initiative}</span>
-                <span className="cname">
+                <span className="cname"
+                      role="button" tabIndex={0}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => setSelId(c.id)}
+                      onKeyDown={(e) => e.key === 'Enter' &&
+                        setSelId(c.id)}>
                   {isTurn && <span className="turn-tag">turno </span>}
                   {c.name}
                   {c.conditions.map((x) => <em key={x} className="chip">{x}</em>)}
@@ -429,25 +437,31 @@ export default function DmBoard() {
             )})}
           </section>
 
-          {/* Acciones del stat block: ataque/daño/CD parseados del texto */}
-          {ordered.some((c) => c.stat_block?.actions?.length > 0) && (
-            <section className="card" hidden={dmTab !== 'combate'}>
-              <h2>Acciones de monstruos</h2>
-              {ordered.filter((c) => c.stat_block?.actions?.length)
-                .map((c) => (
-                  <div key={c.id} className="monster-actions">
-                    <h3 className="muted">{c.name}</h3>
-                    {c.stat_block.actions.map((a, ai) => (
-                      <div key={ai} className="row">
-                        <button onClick={() =>
-                          cop('combatant.action.roll',
-                              { combatant_id: c.id,
-                                action_index: ai })}>{a.name}</button>
-                        <span className="muted" style={{ fontSize: '0.8em' }}>
-                          {a.text?.slice(0, 90)}{(a.text?.length > 90) ? '…' : ''}
-                        </span>
-                      </div>))}
-                  </div>))}
+          {/* Panel contextual: click en un combatiente → sus acciones
+             y stat block (ataque/daño/CD/recharge parseados) */}
+          {sel && (sel.stat_block?.actions?.length > 0) && (
+            <section className="card" hidden={dmTab !== 'combate'}
+                     aria-label={`Acciones de ${sel.name}`}>
+              <h2>{sel.name}
+                <span className="muted" style={{ fontSize: '.8em' }}>
+                  {' '}CA {sel.stat_block.ac} · CR {sel.stat_block.cr}
+                  {sel.stat_block.spellcasting?.spells?.length > 0 &&
+                    ` · ${sel.stat_block.spellcasting.spells.length} conjuros`}
+                </span>
+                <button className="ghost" style={{ float: 'right' }}
+                        onClick={() => setSelId(null)}>×</button>
+              </h2>
+              {sel.stat_block.actions.map((a, ai) => (
+                <div key={ai} className="row">
+                  <button onClick={() =>
+                    cop('combatant.action.roll',
+                        { combatant_id: sel.id, action_index: ai })
+                  }>{a.name}</button>
+                  <span className="muted" style={{ fontSize: '0.8em' }}>
+                    {a.category !== 'action' && `[${a.category}] `}
+                    {a.text?.slice(0, 110)}{a.text?.length > 110 && '…'}
+                  </span>
+                </div>))}
             </section>)}
         </>
       )}

@@ -63,91 +63,10 @@ def _content_row(entity_id: str) -> dict | None:
     return json.loads(row["data"]) if row else None
 
 
-def _hit_die(cls: dict) -> int:
-    """Dado de golpe de la clase — cualquier schema de fuente.
-
-    5e-bits: hit_die=12 · 5etools: hd={faces:12} · open5e v1:
-    hit_dice='1d12' · codexMUNDI: hitDie=12 · dnd-data:
-    properties['Hit Dice']."""
-    import re
-    props = cls.get("properties") or {}
-    for cand in (cls.get("hit_die"), (cls.get("hd") or {}).get("faces"),
-                 cls.get("hit_dice"), cls.get("hitDie"),
-                 props.get("Hit Dice")):
-        if cand:
-            s = str(cand)
-            m = re.search(r"d(\d+)", s) or re.search(r"\d+", s)
-            if m:
-                return int(m.group(1) if m.re.pattern.startswith("d")
-                           else m.group())
-    return 8
-
-
-_SAVE_KEYS = {"strength": "str", "dexterity": "dex",
-              "constitution": "con", "intelligence": "int",
-              "wisdom": "wis", "charisma": "cha"}
-
-
-def _save_profs(cls: dict) -> list[str]:
-    """Salvaciones competentes — 5e-bits saving_throws[{index}],
-    5etools proficiency:['str','con'], open5e v1 prof_saving_throws
-    ('Strength, Dexterity'), codexMUNDI saves:'Str, Con'."""
-    out: list[str] = []
-
-    def add(v):
-        key = _SAVE_KEYS.get(str(v).strip().lower(),
-                             str(v).strip().lower()[:3])
-        if key in _SAVE_KEYS.values() and key not in out:
-            out.append(key)
-
-    for s in cls.get("saving_throws") or []:          # 5e-bits
-        if isinstance(s, dict):
-            add(s.get("index") or s.get("name", ""))
-        else:
-            add(s)
-    for s in cls.get("proficiency") or []:            # 5etools
-        add(s)
-    for s in (cls.get("prof_saving_throws")           # open5e v1
-              or cls.get("saves") or "").split(","):  # codexMUNDI
-        add(s)
-    return out
-
-
-_ABILITY_SHORT = {v: k for k, v in _SAVE_KEYS.items()}
-
-
-def _species_asi(sp: dict) -> dict[str, int]:
-    """Mejoras fijas de característica de la especie — ignora 'choose'.
-
-    5e-bits: ability_bonuses:[{bonus,ability_score:{index}}]
-    5etools: ability:[{str:2,cha:1}] · codexMUNDI: similar."""
-    out: dict[str, int] = {}
-    for b in sp.get("ability_bonuses") or []:          # 5e-bits 2014
-        if isinstance(b, dict):
-            ab = (b.get("ability_score") or {}).get("index")
-            if ab in _SAVE_KEYS.values() and isinstance(
-                    b.get("bonus"), int):
-                out[ab] = out.get(ab, 0) + b["bonus"]
-    for grp in sp.get("ability") or []:                # 5etools
-        if isinstance(grp, dict):
-            for k, v in grp.items():
-                if k in _SAVE_KEYS.values() and isinstance(v, int):
-                    out[k] = out.get(k, 0) + v
-    return out
-
-
-def _background_skills(bg: dict) -> list[str]:
-    """Competencias de habilidad del trasfondo — multi-schema."""
-    out: list[str] = []
-    for pr in bg.get("starting_proficiencies") or []:   # 5e-bits
-        name = (pr.get("name") or "") if isinstance(pr, dict) else str(pr)
-        if name.lower().startswith("skill:"):
-            out.append(name.split(":", 1)[1].strip().lower())
-    for grp in bg.get("skillProficiencies") or []:      # 5etools
-        if isinstance(grp, dict):
-            out.extend(k for k, v in grp.items()
-                       if v is True and k != "choose")
-    return out
+from ..domain.classinfo import (background_skills as _background_skills,
+                                hit_die as _hit_die,
+                                save_profs as _save_profs,
+                                species_asi as _species_asi)
 
 
 @router.post("/create-from-options", status_code=201)

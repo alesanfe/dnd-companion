@@ -37,6 +37,12 @@ KEY_TYPES = {
     "trap": "hazard", "object": "object", "language": "language",
     "vehicle": "vehicle", "charoption": "feature", "psionic": "spell",
     "card": "object", "deck": "table", "cult": "feature",
+    "classFeature": "class-feature", "subclassFeature": "class-feature",
+    "recipe": "item", "status": "condition", "itemProperty": "rule",
+    "itemType": "rule", "itemEntry": "rule", "monsterFluff": None,
+    "trait": "trait", "sense": "rule", "skill": "skill",
+    "legendaryGroup": "rule", "optionalfeatureTypes": "rule",
+    "bookData": None, "adventureData": None,
 }
 
 
@@ -61,7 +67,9 @@ def _pairs_from_file(path: Path) -> list[tuple[str, dict]]:
     for key, etype in KEY_TYPES.items():
         rows = data.get(key)
         if isinstance(rows, list):
-            out.extend((etype, r) for r in rows if isinstance(r, dict))
+            for r in rows:
+                if isinstance(r, dict):
+                    out.append((etype or "misc", r))
     return out
 
 

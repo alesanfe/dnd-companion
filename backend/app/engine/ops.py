@@ -226,9 +226,10 @@ def level_up(char: Character, p: dict, ctx):
     before = char.model_dump()
 
     # ¿clase existente o multiclase nueva?
+    from ..domain.classinfo import hit_die as _class_hit_die
     entry = next((c for c in char.classes if c.class_id == class_id), None)
     cls_data = _content(ctx, class_id)
-    hit_die = int((cls_data or {}).get("hit_die", 8))
+    hit_die = _class_hit_die(cls_data or {})
     if entry is None:
         from ..domain.character import ClassLevel, HitDicePool
         char.classes.append(ClassLevel(class_id=class_id, level=1))
@@ -269,11 +270,36 @@ def level_up(char: Character, p: dict, ctx):
             if slots:
                 char.spell_slots[str(n)] = {"total": slots, "used": 0}
 
+    # Rasgos ganados en este nivel — dos vías:
+    #  5e-bits: entidad 'level' con features:[{name}]
+    #  5etools: entidades 'class-feature' con className+level
+    gained: list[str] = []
+    for f in (lvl or {}).get("features") or []:
+        gained.append(f.get("name") if isinstance(f, dict) else str(f))
+    cls_name = (cls_data or {}).get("name")
+    if cls_name and ctx is not None:
+        try:
+            rows = ctx.content_db().execute(
+                """SELECT data FROM content_entities
+                   WHERE entity_type = 'class-feature'
+                   AND json_extract(data, '$.level') = ?
+                   AND lower(json_extract(data, '$.className')) =
+                       lower(?)""",
+                (new_level, cls_name)).fetchall()
+            gained += [json.loads(r["data"]).get("name", "?")
+                       for r in rows]
+        except Exception:      # noqa: BLE001 - features best-effort
+            pass
+    for name in gained:
+        if name and name not in char.features:
+            char.features.append(name)
+
     _run_trigger(char, Trigger.ON_LEVEL_UP)
     return _restore_inverse(before), [
         {"type": "character.hp.changed",
          "payload": {"level_up": class_id, "level": new_level,
-                     "hp_max": char.hp.max}}]
+                     "hp_max": char.hp.max,
+                     "features_gained": gained}}]
 
 
 @op("character.inventory.add")

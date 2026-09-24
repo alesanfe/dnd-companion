@@ -454,6 +454,14 @@ export default function CharacterSheet() {
         </section>
       )}
 
+      {(d.features || []).length > 0 && (
+        <section className="card optional">
+          <h2>Rasgos de clase</h2>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            {d.features.map((f) => <span key={f} className="chip">{f}</span>)}
+          </div>
+        </section>)}
+
       <section className="card optional">
         <h2>Dotes</h2>
         <SpellPicker entityType="feat" verb="Añadir"

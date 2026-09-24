@@ -9,12 +9,15 @@ export default function Entity() {
   const { id } = useParams()
   const [ent, setEnt] = useState(null)
   const [block, setBlock] = useState(null)
+  const [view, setView] = useState(null)
   const [err, setErr] = useState(null)
 
   useEffect(() => {
     api.getEntity(id).then(setEnt).catch((e) => setErr(e.message))
     api.statblockPreview(id).then((r) => setBlock(r.statblock))
       .catch(() => setBlock(null))
+    api.entityRender(id).then((r) => setView(r.render))
+      .catch(() => setView(null))
   }, [id])
 
   if (err) return <main><p className="error">{err}</p></main>
@@ -53,17 +56,15 @@ export default function Entity() {
             <p key={i}><strong>{a.name}.</strong> {a.text}</p>))}
         </section>)}
 
-      {!block && (
+      {!block && view && (
         <section className="card">
-          <h2>Detalle</h2>
-          {d.desc && <p>{Array.isArray(d.desc)
-            ? d.desc.join(' ') : d.desc}</p>}
-          {d.entries && <p>{d.entries.join(' ')}</p>}
-          {d.description && <p>{d.description}</p>}
-          {d.properties && (
-            <p className="muted">
-              {Object.entries(d.properties)
-                .map(([k, v]) => `${k}: ${v}`).join(' · ')}</p>)}
+          {view.fields.length > 0 && (
+            <div className="row" style={{ flexWrap: 'wrap' }}>
+              {view.fields.map((f) => (
+                <span key={f.label} className="chip">
+                  {f.label}: {f.value}</span>))}
+            </div>)}
+          {view.desc && <p>{view.desc}</p>}
         </section>)}
 
       {ent.entity_type === 'table' && <TableView data={d} />}

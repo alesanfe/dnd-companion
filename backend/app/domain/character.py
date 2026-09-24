@@ -95,6 +95,7 @@ class Character(BaseModel):
     # {'1': {'total': 2, 'used': 0}, ...}
     spells_known: list[str] = Field(default_factory=list)   # entity ids
     feats_known: list[str] = Field(default_factory=list)    # entity ids
+    features: list[str] = Field(default_factory=list)  # rasgos de clase
     skill_proficiencies: list[str] = Field(default_factory=list)
     save_proficiencies: list[str] = Field(default_factory=list)
     conditions: list[str] = Field(default_factory=list)

@@ -57,6 +57,23 @@ def list_sources():
     return {"sources": [dict(r) for r in rows]}
 
 
+@router.get("/{entity_id}/render")
+def render_entity(entity_id: str):
+    """Vista canónica por tipo (spell/item/class/feature…) para la UI."""
+    from ..domain import render
+    conn = content_db()
+    row = conn.execute(
+        "SELECT id, name, entity_type, data FROM content_entities "
+        "WHERE id = ?", (entity_id,)).fetchone()
+    if row is None:
+        from fastapi import HTTPException
+        raise HTTPException(404, "entity not found")
+    return {"entity_id": entity_id, "name": row["name"],
+            "entity_type": row["entity_type"],
+            "render": render.render(row["entity_type"],
+                                    json.loads(row["data"]))}
+
+
 @router.get("/{entity_id}/statblock")
 def statblock_preview(entity_id: str):
     """Stat block canónico normalizado — cualquier fuente soportada."""

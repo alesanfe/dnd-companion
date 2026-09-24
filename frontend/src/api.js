@@ -79,6 +79,8 @@ export const api = {
   contentSources: () => req('/api/content/sources'),
   statblockPreview: (id) =>
     req(`/api/content/${encodeURIComponent(id)}/statblock`),
+  entityRender: (id) =>
+    req(`/api/content/${encodeURIComponent(id)}/render`),
   contentOptions: (entityType, ruleset = 'dnd5e-2014',
                    allSources = false) =>
     req(`/api/content/options?entity_type=${entityType}` +

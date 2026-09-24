@@ -175,3 +175,33 @@ Sin JS arbitrario en el MVP — lenguaje declarativo validado.
 | **Grupo** | Campañas + permisos, tiempo real, tracker, solicitud de tiradas, notas/diario, NPC/lugares/misiones/relaciones, constructor de encuentros, botín, historial+deshacer |
 | **Diferenciación** | Motor de efectos completo, homebrew, comparador de reglas, preparación por escenas, revelación selectiva, grafo, cronología, tiendas/fabricación, extensiones, asistente de reglas |
 | **Opcional** | Mapa táctico simple (tokens, FoW, distancias, LoS) — no competir con VTT |
+
+## 14. Estado de implementación
+
+Implementado (verificado con `pytest backend/tests` + `npm run build`):
+
+- SRD 2014 + 2024 con procedencia, FTS5, comandos, comparador, homebrew,
+  paquetes declarativos, asistente de reglas con citas.
+- Hoja: HP/temp, dados de golpe, descansos, espacios de conjuro,
+  lanzamiento con validación de nivel + concentración, recursos,
+  condiciones, inventario/equipo/sintonía, monedas con conversión, XP,
+  inspiración, diario, competencias (skill/save), narrativa, export/import,
+  subida de nivel multiclase.
+- Stats derivadas explicables: CA (armadura equipada + DEX + escudo +
+  efectos), iniciativa, percepción pasiva, CD/ataque de conjuro,
+  XP para próximo nivel.
+- Tiradas con mods automáticos (`check:X`/`save:X`/`skill:X`), ventaja/
+  desventaja por condiciones y efectos, autofallo, ataque arma completo,
+  daño con resistencia/vulnerabilidad/inmunidad por tipo.
+- Combate: iniciativa manual/tirada, sync HP↔ficha, condiciones con
+  duración en rondas, salvaciones de muerte (nat 1/20), muertos sin turno,
+  salvaciones de monstruo, añadir grupo/bestiario, escena a combate.
+- Campaña: entidades con visibilidad + reveal selectivo (WS), relaciones,
+  cronología, sesiones con escenas + estados, tiendas con stock atómico +
+  refund en undo, miembros/roles, feed de eventos, export/import backup.
+- Auth local (register/login/logout, Bearer, throttle), mapa táctico con
+  tokens+FoW+medición, accesibilidad completa, PWA offline con cola.
+
+Pendiente del diseño (no crítico): PDF de ficha, botín repartible,
+constructor de encuentros predictivo, LoS real en el mapa, delegación de
+NPC a jugadores, capacidades declarativas completas de paquetes.

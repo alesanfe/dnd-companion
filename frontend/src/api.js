@@ -159,6 +159,8 @@ export const api = {
   importCharacter: (character) => req('/api/characters/import', {
     method: 'POST', body: JSON.stringify({ character }),
   }),
+  combatDifficulty: (combatId) =>
+    req(`/api/encounters/for-combat/${combatId}`),
   commandSearch: (q) =>
     req(`/api/content/command?q=${encodeURIComponent(q)}`),
   rulesAsk: (question, ruleset) =>

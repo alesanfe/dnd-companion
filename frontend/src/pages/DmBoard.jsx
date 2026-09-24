@@ -12,6 +12,7 @@ export default function DmBoard() {
   const [manual, setManual] = useState({ name: '', hp_max: 10, initiative: 10 })
   const [dmg, setDmg] = useState({})
   const [err, setErr] = useState(null)
+  const [difficulty, setDifficulty] = useState(null)
   const [entities, setEntities] = useState([])
   const [entForm, setEntForm] = useState({ kind: 'npc', name: '', notes: '', monsters: '' })
   const [partyLevels, setPartyLevels] = useState('3,3,3,3')
@@ -332,8 +333,19 @@ export default function DmBoard() {
                                     { combatant_id: c.id }, 'combat')
                 refresh(combat.id)
               }}>Tirar inits</button>
+              <button className="ghost" onClick={async () =>
+                setDifficulty(await api.combatDifficulty(combat.id))
+              }>Dificultad</button>
               <button className="dmg" onClick={() => cop('combat.end', {})}>Terminar</button>
             </div>
+            {difficulty && (
+              <p>
+                <span className="chip">{difficulty.rating}</span>{' '}
+                <span className="muted">
+                  {difficulty.raw_xp} XP brutos · {difficulty.adjusted_xp} ajustados
+                  {difficulty.warnings.map((w) => ` · ${w}`)}
+                </span>
+              </p>)}
           </section>
 
           <section className="card">

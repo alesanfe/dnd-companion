@@ -2,8 +2,16 @@
   color-scheme: dark;
   --bg: #1a1a2e;
   --fg: #e8e6e3;
-  --accent: #c0392b;
+  /* acento de marca (dorado arcano) — separado del color de peligro */
+  --accent: #d6a84b;
+  --accent-2: #8b7cf6;    /* magia / temporal / concentración */
+  --danger: #dc5a5a;
+  --success: #4caf78;
+  --warning: #e5a84b;
+  --info: #5b9bd5;
+  --private: #a06bd4;     /* homebrew / contenido privado */
   --card: #23233a;
+  --card-raised: #2b2b46; /* popovers, paneles contextuales */
   --muted: #8a8a9a;
   --btn: #3a3a5c;
   --border: #444;
@@ -12,8 +20,15 @@
   color-scheme: light;
   --bg: #f5f4f0;
   --fg: #22223a;
-  --accent: #b03527;
+  --accent: #9a6d1f;
+  --accent-2: #6b5bd0;
+  --danger: #b03527;
+  --success: #2d7a4d;
+  --warning: #b57e1e;
+  --info: #35648c;
+  --private: #7a4fa8;
   --card: #ffffff;
+  --card-raised: #efedfa;
   --muted: #666;
   --btn: #d8d4e8;
   --border: #bbb;
@@ -23,7 +38,14 @@
   --bg: #f4ecd8;
   --fg: #433422;
   --accent: #8b4513;
+  --accent-2: #6a5a9e;
+  --danger: #a03420;
+  --success: #3d6b3d;
+  --warning: #9a6b1e;
+  --info: #4a6a86;
+  --private: #6f4a86;
   --card: #efe6cf;
+  --card-raised: #e8dcc0;
   --muted: #8a7355;
   --btn: #ddd0b0;
   --border: #c9b78f;
@@ -33,7 +55,14 @@
   --bg: #000;
   --fg: #fff;
   --accent: #ffd700;
+  --accent-2: #b3a4ff;
+  --danger: #ff8080;
+  --success: #7ddf9f;
+  --warning: #ffd700;
+  --info: #9ecfff;
+  --private: #d8aaff;
   --card: #000;
+  --card-raised: #000;
   --muted: #ccc;
   --btn: #fff;
   --border: #fff;
@@ -73,8 +102,109 @@ body {
 
 .nav a { color: var(--fg); text-decoration: none; font-size: 1.1rem; }
 .nav a:hover { color: var(--accent); }
+.nav .btn-create {
+  background: var(--accent);
+  color: #1a1a2e;
+  border-radius: 6px;
+  padding: 0.3rem 0.8rem;
+  font-weight: 600;
+  align-self: center;
+}
+.nav .btn-create:hover { color: #1a1a2e; filter: brightness(1.1); }
 
-main { padding: 1rem; max-width: 720px; margin: 0 auto; }
+/* anchos por contexto: ficha/forms estrechos, compendio medio,
+   mesa DM amplia */
+main { padding: 1rem; max-width: 760px; margin: 0 auto; }
+main.wide { max-width: 1040px; }
+main.dm { max-width: 1440px; }
+
+/* foco visible — navegación por teclado */
+:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 2px;
+}
+button:focus:not(:focus-visible) { outline: none; }
+
+/* pestañas contextuales (ficha / mesa DM) */
+.tabs {
+  display: flex;
+  gap: 0.2rem;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1rem;
+  scrollbar-width: thin;
+}
+.tabs button {
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  padding: 0.6rem 0.9rem;
+  min-height: 44px;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.tabs button[aria-selected="true"] {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+/* cabecera persistente de personaje / combate */
+.sticky-head {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bg);
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.sticky-head .vital {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: baseline;
+}
+.sticky-head .vital .num {
+  font-family: ui-monospace, monospace;
+  font-weight: 700;
+  font-size: 1.2rem;
+}
+
+/* turno activo: marcador + texto, no solo color */
+.combatant.turn {
+  background: color-mix(in srgb, var(--accent) 14%, var(--card));
+  border-left: 4px solid var(--accent);
+}
+.combatant .turn-tag {
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* estados de interfaz */
+.empty {
+  color: var(--muted);
+  text-align: center;
+  padding: 1.4rem 1rem;
+}
+mark {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* etiquetas de procedencia */
+.tag-private { color: var(--private); }
+
+/* nav inferior móvil (≤640px) */
+@media (max-width: 640px) {
+  main { padding: 0.7rem; }
+  .nav { gap: 0.9rem; flex-wrap: wrap; }
+}
 
 .card {
   background: var(--card);
@@ -117,8 +247,9 @@ button {
   cursor: pointer;
 }
 button:disabled { opacity: 0.4; cursor: default; }
-button.dmg { background: var(--accent); }
-button.heal { background: #2d7a3a; }
+button.dmg { background: var(--danger); }
+button.primary { background: var(--accent); color: #1a1a2e; font-weight: 600; }
+button.heal { background: var(--success); }
 
 .hp-big { font-size: 2.4rem; font-weight: 700; }
 .hp-big .temp { color: #6db3f2; font-size: 1.4rem; }
@@ -144,10 +275,6 @@ button.heal { background: #2d7a3a; }
 .combatant {
   padding: 0.4rem;
   border-radius: 6px;
-}
-.combatant.active {
-  background: #3d2c1e;
-  outline: 1px solid var(--accent);
 }
 .combatant .init {
   font-weight: 700;

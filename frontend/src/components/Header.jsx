@@ -13,6 +13,7 @@ export default function Header() {
   const [prefs, setPrefs] = useState(getPrefs())
   const [showSettings, setShowSettings] = useState(false)
   const [showLogin, setShowLogin] = useState(false)
+  const [showSync, setShowSync] = useState(false)
 
   useEffect(() => {
     const tick = async () => {
@@ -38,16 +39,18 @@ export default function Header() {
 
   return (
     <header className="nav">
-      <Link to="/">Fichas</Link>
-      <Link to="/new">Crear</Link>
-      <Link to="/search">Buscar</Link>
+      <Link to="/">Personajes</Link>
+      <Link to="/search">Compendio</Link>
       <Link to="/dm">Mesa DM</Link>
+      <Link to="/new" className="btn-create">+ Crear</Link>
       <span className="spacer" />
-      <span className={`sync ${online ? 'on' : 'off'}`} role="status"
-            aria-live="polite">
+      <button className={`ghost sync ${online ? 'on' : 'off'}`}
+              role="status" aria-live="polite"
+              aria-label="Estado de sincronización"
+              onClick={() => setShowSync(!showSync)}>
         {online ? 'en línea' : 'offline'}
-        {pending > 0 && ` · ${pending} pendientes`}
-      </span>
+        {pending > 0 && ` · ${pending}`}
+      </button>
       <button className="ghost" aria-label="Ajustes"
               onClick={() => setShowSettings(!showSettings)}>⚙</button>
       {user
@@ -65,6 +68,22 @@ export default function Header() {
             <button onClick={() => auth(api.login)}>Entrar</button>
             <button className="ghost" onClick={() => auth(api.register)}>Registrar</button>
           </div>
+        </div>
+      )}
+
+      {showSync && (
+        <div className="popover" role="dialog" aria-label="Sincronización">
+          <strong>Sincronización</strong>
+          <span className={online ? '' : 'muted'}>
+            {online ? 'En línea' : 'Sin conexión — los cambios se guardan localmente'}
+          </span>
+          {pending > 0
+            ? <span className="muted">
+                {pending} cambio{pending > 1 ? 's' : ''} pendiente{pending > 1 ? 's' : ''}
+                {' '}de subir — se reintentan solos al volver la conexión.</span>
+            : <span className="muted">Todo sincronizado.</span>}
+          <button className="ghost"
+                  onClick={() => setShowSync(false)}>Cerrar</button>
         </div>
       )}
 

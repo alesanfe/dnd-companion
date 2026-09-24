@@ -31,6 +31,14 @@ export default function CharacterList() {
         <button type="submit">Crear</button>
         <Link to="/new"><button type="button">Wizard →</button></Link>
       </form>
+      {chars.length === 0 && !err && (
+        <div className="card empty">
+          <p><strong>Todavía no tienes personajes</strong></p>
+          <p>Crea una ficha guiada con el wizard — usa datos reales
+             de todas las fuentes instaladas.</p>
+          <Link to="/new">
+            <button className="primary">Crear personaje</button></Link>
+        </div>)}
       <ul className="char-list">
         {chars.map((c) => (
           <li key={c.id} className="row">

@@ -32,7 +32,7 @@ export default function Search() {
   }
 
   return (
-    <main>
+    <main className="wide">
       <h1>Buscador de reglas</h1>
       <form onSubmit={go} className="row">
         <input value={q} onChange={(e) => setQ(e.target.value)}
@@ -105,7 +105,9 @@ export default function Search() {
                 {Object.entries(r.summary).map(([k, v]) => `${k}: ${v}`).join(' · ')}
               </p>
             )}
-            {r.excerpt && <p className="excerpt" dangerouslySetInnerHTML={{ __html: r.excerpt }} />}
+            {r.excerpt && <p className="excerpt"
+              dangerouslySetInnerHTML={{ __html: r.excerpt.replace(
+                /\[([^\]]+)\]/g, '<mark>$1</mark>') }} />}
           </li>
         ))}
       </ul>

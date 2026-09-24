@@ -12,6 +12,7 @@ export default function DmBoard() {
   const [manual, setManual] = useState({ name: '', hp_max: 10, initiative: 10 })
   const [dmg, setDmg] = useState({})
   const [err, setErr] = useState(null)
+  const [dmTab, setDmTab] = useState('sesion')
   const [entities, setEntities] = useState([])
   const [entForm, setEntForm] = useState({ kind: 'npc', name: '', notes: '', monsters: '' })
   const [partyLevels, setPartyLevels] = useState('3,3,3,3')
@@ -63,11 +64,17 @@ export default function DmBoard() {
   const activeIdx = combat ? combat.combat.turn_index % Math.max(1, ordered.length) : 0
 
   return (
-    <main>
+    <main className="dm">
       <h1>Mesa del DM</h1>
+      <nav className="tabs" role="tablist" aria-label="Mesa DM">
+        {[['sesion', 'Sesión'], ['combate', 'Combate'],
+          ['campana', 'Campaña']].map(([k, label]) => (
+          <button key={k} role="tab" aria-selected={dmTab === k}
+                  onClick={() => setDmTab(k)}>{label}</button>))}
+      </nav>
       {err && <p className="error">{err}</p>}
 
-      <section className="card">
+      <section className="card" hidden={dmTab !== 'sesion'}>
         <h2>Campaña</h2>
         {!campaign ? (
           <form className="row" onSubmit={async (e) => {
@@ -109,7 +116,7 @@ export default function DmBoard() {
       </section>
 
       {campaign && rollFeed.length > 0 && (
-        <section className="card">
+        <section className="card" hidden={dmTab !== 'sesion'}>
           <h2>Tiradas de la mesa</h2>
           {rollFeed.map((r, i) => (
             <div key={i} className="row">
@@ -122,7 +129,7 @@ export default function DmBoard() {
       )}
 
       {campaign && (
-        <section className="card">
+        <section className="card" hidden={dmTab !== 'campana'}>
           <h2>Entidades de campaña</h2>
           <div className="row">
             <select value={entForm.kind}
@@ -193,7 +200,7 @@ export default function DmBoard() {
       )}
 
       {campaign && (
-        <section className="card">
+        <section className="card" hidden={dmTab !== 'combate'}>
           <h2>Dificultad de encuentro</h2>
           <div className="row">
             <input value={partyLevels} placeholder="niveles: 3,3,4"
@@ -217,7 +224,7 @@ export default function DmBoard() {
       )}
 
       {campaign && (
-        <section className="card">
+        <section className="card" hidden={dmTab !== 'sesion'}>
           <h2>Sesiones y preparación</h2>
           <div className="row">
             <input value={sessTitle} placeholder="Título de sesión"
@@ -282,7 +289,7 @@ export default function DmBoard() {
       {campaign && <MapBoard campaign={campaign} />}
 
       {campaign && (
-        <section className="card">
+        <section className="card" hidden={dmTab !== 'sesion'}>
           <h2>Pedir tirada a un jugador</h2>
           <div className="row">
             <input value={rollReq.character_id} placeholder="character_id"
@@ -300,7 +307,7 @@ export default function DmBoard() {
       )}
 
       {campaign && !combat && (
-        <section className="card">
+        <section className="card" hidden={dmTab !== 'combate'}>
           <h2>Nuevo combate</h2>
           <form className="row" onSubmit={async (e) => {
             e.preventDefault()
@@ -316,7 +323,7 @@ export default function DmBoard() {
 
       {combat && (
         <>
-          <section className="card">
+          <section className="card" hidden={dmTab !== 'combate'}>
             <h2>{combat.combat.name} — ronda {combat.combat.round}</h2>
             <div className="row">
               <button onClick={() => cop('combat.next_turn', {})}>Siguiente turno</button>
@@ -348,7 +355,7 @@ export default function DmBoard() {
               </p>)}
           </section>
 
-          <section className="card">
+          <section className="card" hidden={dmTab !== 'combate'}>
             <h2>Añadir combatiente</h2>
             <form onSubmit={searchMonsters} className="row">
               <input value={query} onChange={(e) => setQuery(e.target.value)}
@@ -377,7 +384,7 @@ export default function DmBoard() {
             </div>
           </section>
 
-          <section className="card">
+          <section className="card" hidden={dmTab !== 'combate'}>
             <h2>Iniciativa</h2>
             <div className="row">
               <select value={dmgType}
@@ -394,10 +401,17 @@ export default function DmBoard() {
                 se aplica resistencia/inmunidad/vulnerabilidad del stat block
               </span>
             </div>
-            {ordered.map((c, i) => (
-              <div key={c.id} className={`row combatant ${i === activeIdx && combat.combat.status === 'active' ? 'active' : ''}`}>
+            {ordered.map((c, i) => {
+              const isTurn = i === activeIdx &&
+                combat.combat.status === 'active'
+              return (
+              <div key={c.id}
+                   className={`row combatant${isTurn ? ' turn' : ''}`}
+                   aria-current={isTurn ? 'true' : undefined}>
                 <span className="init">{c.initiative}</span>
-                <span className="cname">{c.name}
+                <span className="cname">
+                  {isTurn && <span className="turn-tag">turno </span>}
+                  {c.name}
                   {c.conditions.map((x) => <em key={x} className="chip">{x}</em>)}
                 </span>
                 <span className="hp">{c.hp_current}/{c.hp_max}</span>
@@ -412,12 +426,12 @@ export default function DmBoard() {
                         onClick={() => cop('combatant.heal', { combatant_id: c.id, amount: dmg[c.id] })}>+</button>
                 <button onClick={() => cop('combatant.remove', { combatant_id: c.id })}>×</button>
               </div>
-            ))}
+            )})}
           </section>
 
           {/* Acciones del stat block: ataque/daño/CD parseados del texto */}
           {ordered.some((c) => c.stat_block?.actions?.length > 0) && (
-            <section className="card">
+            <section className="card" hidden={dmTab !== 'combate'}>
               <h2>Acciones de monstruos</h2>
               {ordered.filter((c) => c.stat_block?.actions?.length)
                 .map((c) => (

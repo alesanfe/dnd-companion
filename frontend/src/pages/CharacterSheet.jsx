@@ -15,7 +15,8 @@ export default function CharacterSheet() {
   const [newCond, setNewCond] = useState('')
   const [coin, setCoin] = useState('gp')
   const [actions, setActions] = useState(null)
-  const [focus, setFocus] = useState(false)   // modo concentración
+  const [focus, setFocus] = useState(false)   // vista rápida (HUD)
+  const [tab, setTab] = useState('resumen')   // pestaña de la ficha
   const [notice, setNotice] = useState(null)  // aviso de concentración
   const [journalEntry, setJournalEntry] = useState('')
   const [derived, setDerived] = useState(null)
@@ -102,8 +103,13 @@ export default function CharacterSheet() {
         <button className={focus ? '' : 'ghost'}
                 aria-pressed={focus}
                 onClick={() => setFocus(!focus)}>
-          {focus ? 'Salir del modo mesa' : 'Modo mesa'}
+          {focus ? 'Salir de vista rápida' : 'Vista rápida'}
         </button>
+        <button className="ghost" onClick={async () => {
+          const h = await api.opHistory(id)
+          const last = (h.operations || []).find((o) => o.reversible)
+          if (last) { await api.undoOp(last.operation_id); load() }
+        }}>↩ Deshacer</button>
         <button onClick={async () => {
           const ex = await api.exportCharacter(id)
           const blob = new Blob([JSON.stringify(ex, null, 2)],
@@ -148,7 +154,34 @@ export default function CharacterSheet() {
         </section>
       )}
 
-      <div className="row">
+      {/* vitales siempre a mano: cabecera pegajosa sobre las pestañas */}
+      <div className="sticky-head">
+        <div className="vital">
+          <span className="num">{hp.current}/{hp.max}{hp.temp > 0 &&
+            `+${hp.temp}`} PG</span>
+          {derived && <>
+            <span>CA <b>{derived.armor_class.total}</b></span>
+            <span>Init {derived.initiative >= 0 ? '+' : ''}
+              {derived.initiative}</span>
+            <span>Prof +{derived.proficiency_bonus}</span>
+          </>}
+          {d.concentrating_on &&
+            <span className="muted">⭑ {d.concentrating_on}</span>}
+          {d.conditions?.length > 0 &&
+            <span className="muted">{d.conditions.join(' · ')}</span>}
+        </div>
+        {!focus && (
+          <nav className="tabs" role="tablist" aria-label="Secciones">
+            {[['resumen', 'Resumen'], ['combate', 'Combate'],
+              ['magia', 'Magia'], ['equipo', 'Equipo'],
+              ['personaje', 'Personaje'], ['actividad', 'Actividad']]
+              .map(([k, label]) => (
+                <button key={k} role="tab" aria-selected={tab === k}
+                        onClick={() => setTab(k)}>{label}</button>))}
+          </nav>)}
+      </div>
+
+      <div className="row" hidden={!(focus || tab === 'resumen')}>
         <span className="muted">PX: {d.xp || 0}</span>
         <input type="number" min="0" style={{ maxWidth: 90 }} value={xpAdd}
                onChange={(e) => setXpAdd(+e.target.value)} />
@@ -178,7 +211,7 @@ export default function CharacterSheet() {
       </div>
 
       {history && (
-        <section className="card optional">
+        <section className="card optional" hidden={!(focus || tab === 'actividad')}>
           <h2>Historial <span className="muted">(reversible)</span></h2>
           {history.map((h) => (
             <div key={h.operation_id} className="row">
@@ -197,7 +230,7 @@ export default function CharacterSheet() {
       )}
 
       {derived && (
-        <section className="card">
+        <section className="card" hidden={!(focus || tab === 'resumen')}>
           <h2>Calculado</h2>
           <div className="row" style={{ flexWrap: 'wrap' }}>
             <span className="coin">CA {derived.armor_class.total}</span>
@@ -214,7 +247,7 @@ export default function CharacterSheet() {
         </section>
       )}
 
-      <section className="card">
+      <section className="card" hidden={!(focus || tab === 'resumen')}>
         <h2>Puntos de golpe</h2>
         <div className="hp-big">
           {hp.current} / {hp.max}
@@ -228,7 +261,7 @@ export default function CharacterSheet() {
         </div>
       </section>
 
-      <section className="card">
+      <section className="card" hidden={!(focus || tab === 'resumen')}>
         <h2>Descansos</h2>
         <div className="row">
           <button onClick={() => op('character.rest.short', {})}>Descanso corto</button>
@@ -246,7 +279,7 @@ export default function CharacterSheet() {
       </section>
 
       {Object.keys(slots).length > 0 && (
-        <section className="card">
+        <section className="card" hidden={!(focus || tab === 'magia')}>
           <h2>Espacios de conjuro</h2>
           {Object.entries(slots).map(([lvl, s]) => (
             <div key={lvl} className="row">
@@ -261,7 +294,7 @@ export default function CharacterSheet() {
       )}
 
       {(d.resources || []).length > 0 && (
-        <section className="card">
+        <section className="card" hidden={!(focus || tab === 'resumen')}>
           <h2>Recursos</h2>
           {d.resources.map((r) => (
             <div key={r.id} className="row">
@@ -275,7 +308,7 @@ export default function CharacterSheet() {
         </section>
       )}
 
-      <section className="card optional">
+      <section className="card optional" hidden={!(focus || tab === 'equipo')}>
         <h2>Monedas</h2>
         <div className="row purse">
           {['pp', 'gp', 'ep', 'sp', 'cp'].map((c) => (
@@ -293,7 +326,7 @@ export default function CharacterSheet() {
         </div>
       </section>
 
-      <section className="card">
+      <section className="card" hidden={!(focus || tab === 'combate')}>
         <h2>Acciones</h2>
         <button onClick={async () => {
           if (actions) { setActions(null); return }
@@ -328,7 +361,7 @@ export default function CharacterSheet() {
       </section>
 
       {(d.effects || []).length > 0 && (
-        <section className="card optional">
+        <section className="card optional" hidden={!(focus || tab === 'combate')}>
           <h2>Efectos activos</h2>
           <div className="row" style={{ flexWrap: 'wrap' }}>
             {d.effects.map((e) => (
@@ -342,7 +375,7 @@ export default function CharacterSheet() {
         </section>
       )}
 
-      <section className="card optional">
+      <section className="card optional" hidden={!(focus || tab === 'resumen')}>
         <h2>Condiciones</h2>
         <div className="row">
           <input value={newCond} onChange={(e) => setNewCond(e.target.value)}
@@ -363,7 +396,7 @@ export default function CharacterSheet() {
         ))}
       </section>
 
-      <section className="card optional">
+      <section className="card optional" hidden={!(focus || tab === 'equipo')}>
         <h2>Inventario</h2>
         <ItemPicker onPick={(it) =>
           op('character.inventory.add',
@@ -398,7 +431,7 @@ export default function CharacterSheet() {
         ))}
       </section>
 
-      <section className="card">
+      <section className="card" hidden={!(focus || tab === 'combate')}>
         <h2>Dados</h2>
         <form onSubmit={doRoll} className="row">
           <input value={expr} onChange={(e) => setExpr(e.target.value)}
@@ -422,7 +455,7 @@ export default function CharacterSheet() {
         <ul className="log">{rollLog.map((l, i) => <li key={i}>{l}</li>)}</ul>
       </section>
 
-      <section className="card optional">
+      <section className="card optional" hidden={!(focus || tab === 'magia')}>
         <h2>Conjuros</h2>
         <SpellPicker onPick={(sid) =>
           op('character.spell.learn', { spell_id: sid })}
@@ -438,7 +471,7 @@ export default function CharacterSheet() {
       </section>
 
       {shops.length > 0 && (
-        <section className="card optional">
+        <section className="card optional" hidden={!(focus || tab === 'equipo')}>
           <h2>Tienda</h2>
           {shops.map((s) => (
             <div key={s.id}>
@@ -460,7 +493,7 @@ export default function CharacterSheet() {
         </section>
       )}
 
-      <section className="card optional">
+      <section className="card optional" hidden={!(focus || tab === 'personaje')}>
         <h2>Rasgos</h2>
         <SpellPicker entityType="feature" verb="Añadir"
           placeholder="Rasgo opcional (invocación, infusión, maniobra…)"
@@ -476,7 +509,7 @@ export default function CharacterSheet() {
           </div>)}
       </section>
 
-      <section className="card optional">
+      <section className="card optional" hidden={!(focus || tab === 'personaje')}>
         <h2>Dotes y dones</h2>
         <SpellPicker entityType="feat" verb="Añadir"
           placeholder="Buscar dote en todas las fuentes"
@@ -494,7 +527,7 @@ export default function CharacterSheet() {
             op('character.reward.remove', { reward_id: rid })} />)}
       </section>
 
-      <section className="card optional">
+      <section className="card optional" hidden={!(focus || tab === 'personaje')}>
         <h2>Subclase e idiomas</h2>
         <SpellPicker entityType="subclass" verb="Elegir"
           placeholder="Buscar subclase…"
@@ -520,7 +553,7 @@ export default function CharacterSheet() {
           </div>)}
       </section>
 
-      <section className="card optional">
+      <section className="card optional" hidden={!(focus || tab === 'personaje')}>
         <h2>Competencias</h2>
         <SpellPicker entityType="skill" verb="Competente"
           placeholder="Habilidad (percepción, sigilo…)"
@@ -554,7 +587,7 @@ export default function CharacterSheet() {
         )}
       </section>
 
-      <section className="card optional">
+      <section className="card optional" hidden={!(focus || tab === 'personaje')}>
         <h2>Diario</h2>
         <div className="row">
           <input value={journalEntry} placeholder="Anotación de la sesión…"

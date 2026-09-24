@@ -25,7 +25,7 @@ export default function Entity() {
 
   const d = ent.data || {}
   return (
-    <main>
+    <main className="wide">
       <h1>{ent.name}</h1>
       <p className="muted">
         {ent.entity_type} · {ent.ruleset} · {ent.source_id}

@@ -77,18 +77,42 @@ export default function Wizard() {
       <h1>Nuevo personaje</h1>
       {err && <p className="error">{err}</p>}
 
+      <p className="muted" aria-label="Progreso">
+        {['Concepto', 'Clase', 'Origen', 'Características', 'Revisión']
+          .map((s, i) => (
+            <span key={s} style={{ fontWeight: i === step ? 700 : 400,
+                                   color: i <= step ? 'var(--accent)'
+                                                    : undefined }}>
+              {i ? ' ─ ' : ''}{s}</span>))}
+      </p>
+
       {step === 0 && (
         <section className="card">
           <h2>1. Nombre y reglas</h2>
           <input value={name} onChange={(e) => setName(e.target.value)}
                  placeholder="Nombre" />
-          <div className="row">
-            <label><input type="radio" checked={ruleset === 'dnd5e-2014'}
-              onChange={() => setRuleset('dnd5e-2014')} /> 2014</label>
-            <label><input type="radio" checked={ruleset === 'dnd5e-2024'}
-              onChange={() => setRuleset('dnd5e-2024')} /> 2024</label>
-          </div>
-          <button disabled={!name.trim()} onClick={() => setStep(1)}>Siguiente</button>
+          {[
+            ['dnd5e-2024', 'Reglas 2024',
+             'Edición revisada (SRD 5.2). Recomendada.'],
+            ['dnd5e-2014', 'Reglas 2014',
+             'Edición original de 5e (SRD 5.1).'],
+            ['mixed', 'Modo mixto',
+             'Combina 2014 y 2024 — puede mezclar reglas incompatibles.'],
+          ].map(([v, t, d]) => (
+            <button key={v} className="ghost" aria-pressed={ruleset === v}
+              style={{ display: 'block', width: '100%', textAlign: 'left',
+                       marginBottom: '.4rem', padding: '.7rem',
+                       borderColor: ruleset === v
+                         ? 'var(--accent)' : undefined }}
+              onClick={() => setRuleset(v)}>
+              <strong>{t}</strong>{' '}
+              <span className="muted">{d}</span>
+              {v === 'dnd5e-2024' &&
+                <span className="chip" style={{ float: 'right' }}>
+                  recomendado</span>}
+            </button>))}
+          <button className="primary" disabled={!name.trim()}
+                  onClick={() => setStep(1)}>Siguiente</button>
         </section>
       )}
 
@@ -106,8 +130,12 @@ export default function Wizard() {
       {step === 2 && (
         <section className="card">
           <h2>3. Especie y trasfondo</h2>
-          <div className="row">{sel(species, speciesId, setSpeciesId)}</div>
-          <div className="row">{sel(backgrounds, backgroundId, setBackgroundId)}</div>
+          <h3 style={{ marginTop: 0 }}>Especie</h3>
+          {sel(species, speciesId, setSpeciesId)}
+          <h3>Trasfondo</h3>
+          {sel(backgrounds, backgroundId, setBackgroundId)}
+          <GrantPreview speciesId={speciesId}
+                        backgroundId={backgroundId} />
           <div className="row">
             <button onClick={() => setStep(1)}>Atrás</button>
             <button onClick={() => setStep(3)}>Siguiente</button>
@@ -118,24 +146,102 @@ export default function Wizard() {
       {step === 3 && (
         <section className="card">
           <h2>4. Características <span className="muted">(array estándar: {remaining.join(', ') || '—'})</span></h2>
-          {ABILITIES.map((ab) => (
-            <div key={ab} className="row">
-              <span style={{ width: 110 }}>{ABILITY_NAMES[ab]}</span>
-              <select value={abilities[ab] || ''} onChange={(e) => assign(ab, e.target.value)}>
-                <option value="">—</option>
-                {STANDARD_ARRAY.map((v) => <option key={v} value={v}>{v}</option>)}
-              </select>
-              <span className="muted">{abilities[ab] ? `mod ${Math.floor((abilities[ab] - 10) / 2) >= 0 ? '+' : ''}${Math.floor((abilities[ab] - 10) / 2)}` : ''}</span>
-            </div>
-          ))}
+          {ABILITIES.map((ab) => {
+            const others = Object.entries(abilities)
+              .filter(([k]) => k !== ab).map(([, v]) => v)
+            return (
+              <div key={ab} className="row">
+                <span style={{ width: 110 }}>{ABILITY_NAMES[ab]}</span>
+                <select value={abilities[ab] || ''}
+                        onChange={(e) => assign(ab, e.target.value)}>
+                  <option value="">—</option>
+                  {STANDARD_ARRAY.map((v) => (
+                    <option key={v} value={v}
+                            disabled={others.includes(v)}>{v}</option>))}
+                </select>
+                <span className="muted">{abilities[ab] ? `mod ${Math.floor((abilities[ab] - 10) / 2) >= 0 ? '+' : ''}${Math.floor((abilities[ab] - 10) / 2)}` : ''}</span>
+              </div>
+            )})}
+          <div className="row">
+            <button className="ghost" onClick={() => {
+              setAbilities({}); setRemaining([...STANDARD_ARRAY])
+            }}>Restablecer</button>
+          </div>
           <div className="row">
             <button onClick={() => setStep(2)}>Atrás</button>
             <button disabled={ABILITIES.some((a) => !abilities[a])}
+                    onClick={() => setStep(4)}>Revisar</button>
+          </div>
+        </section>
+      )}
+
+      {step === 4 && (
+        <section className="card">
+          <h2>5. Revisión</h2>
+          <p><strong>{name}</strong></p>
+          <p className="muted">
+            {[classId, speciesId, backgroundId]
+              .filter(Boolean).map((x) =>
+                x.split(':').pop().split('|')[0].replace(/-/g, ' '))
+              .join(' · ')}
+            {' · '}
+            {{ 'dnd5e-2014': 'Reglas 2014', 'dnd5e-2024': 'Reglas 2024',
+               mixed: 'Modo mixto' }[ruleset]}
+          </p>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            {ABILITIES.map((ab) => (
+              <span key={ab} className="chip">{ab.toUpperCase()} {abilities[ab]}
+                {' '}({Math.floor((abilities[ab] - 10) / 2) >= 0 ? '+' : ''}
+                  {Math.floor((abilities[ab] - 10) / 2)})</span>))}
+          </div>
+          {[classId, speciesId, backgroundId].some((x) =>
+              x && !/srd-|open5e|5e-bits/.test(x)) && (
+            <p className="notice" role="note">
+              ⚠ Usarás contenido privado/homebrew — procedencia no oficial.
+            </p>)}
+          {ruleset === 'mixed' && (
+            <p className="notice" role="note">
+              ⚠ Modo mixto: puede combinar reglas 2014 y 2024
+              incompatibles entre sí.
+            </p>)}
+          <div className="row">
+            <button onClick={() => setStep(3)}>Atrás</button>
+            <button className="primary"
                     onClick={submit}>Crear personaje</button>
           </div>
         </section>
       )}
     </main>
+  )
+}
+
+
+/** Vista previa acumulada: qué conceden especie + trasfondo. */
+function GrantPreview({ speciesId, backgroundId }) {
+  const [info, setInfo] = useState([])
+  useEffect(() => {
+    setInfo([])
+    for (const id of [speciesId, backgroundId].filter(Boolean)) {
+      api.entityRender(id).then((r) => {
+        const grants = []
+        if (r.render?.fields)
+          grants.push(...r.render.fields.map((f) =>
+            `${f.label}: ${f.value}`))
+        if (r.render?.desc)
+          grants.push(r.render.desc.slice(0, 160))
+        setInfo((prev) => [...prev, { id, name: r.name, grants }])
+      }).catch(() => {})
+    }
+  }, [speciesId, backgroundId])
+  if (!info.length) return null
+  return (
+    <div className="card" style={{ background: 'var(--card-raised)' }}>
+      <h3 style={{ marginTop: 0 }}>Tu personaje recibirá</h3>
+      {info.map((x) => (
+        <p key={x.id} className="muted">
+          <strong>{x.name}</strong>{' '}
+          {x.grants.slice(0, 4).join(' · ')}</p>))}
+    </div>
   )
 }
 

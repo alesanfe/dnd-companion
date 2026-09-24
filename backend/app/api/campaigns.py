@@ -505,22 +505,22 @@ def start_scene_combat(campaign_id: str, scene_id: str):
         "SELECT name FROM campaign_entities WHERE id = ?",
         (scene_id,)).fetchone()["name"]
     combat = Combat(name=f"Escena: {name}", campaign_id=campaign_id)
+    from ..domain import statblock
     content = content_db()
     for mid in scene.get("monsters", []):
         crow = content.execute(
             "SELECT data FROM content_entities WHERE id = ?",
             (mid,)).fetchone()
         data = json.loads(crow["data"]) if crow else {}
-        dex = data.get("dexterity", 10)
-        acs = data.get("armor_class") or []
+        block = statblock.normalize(data)
         combat.combatants.append(Combatant(
             id=uuid.uuid4().hex, kind="monster",
             name=data.get("name", "?"), ref_id=mid,
-            initiative=(dex - 10) // 2 + 10,
-            hp_current=data.get("hit_points", 1),
-            hp_max=data.get("hit_points", 1),
-            ac=acs[0].get("value", 10) if acs else 10,
-            stat_block=data or None))
+            initiative=(block or {}).get("initiative_mod", 0) + 10,
+            hp_current=(block or {}).get("hp", 1),
+            hp_max=(block or {}).get("hp", 1),
+            ac=(block or {}).get("ac", 10),
+            stat_block=block))
     cid = uuid.uuid4().hex
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(

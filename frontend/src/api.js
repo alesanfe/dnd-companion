@@ -72,9 +72,13 @@ export const api = {
     }),
   derivedStat: (id, stat, base = 10) =>
     req(`/api/characters/${id}/derived/${stat}?base=${base}`),
-  search: (q, entityType) =>
+  search: (q, entityType, source) =>
     req(`/api/content/search?q=${encodeURIComponent(q)}` +
-        (entityType ? `&entity_type=${entityType}` : '')),
+        (entityType ? `&entity_type=${entityType}` : '') +
+        (source ? `&source=${encodeURIComponent(source)}` : '')),
+  contentSources: () => req('/api/content/sources'),
+  statblockPreview: (id) =>
+    req(`/api/content/${encodeURIComponent(id)}/statblock`),
   contentOptions: (entityType, ruleset = 'dnd5e-2014') =>
     req(`/api/content/options?entity_type=${entityType}&ruleset=${ruleset}`),
   derivedAll: (id) => req(`/api/characters/${id}/derived`),

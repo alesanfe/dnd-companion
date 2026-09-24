@@ -16,6 +16,7 @@ def search(
     q: str = Query(..., min_length=1),
     entity_type: str | None = None,
     ruleset: str | None = None,
+    source: str | None = None,
     limit: int = Query(20, le=100),
 ):
     conn = content_db()
@@ -34,10 +35,45 @@ def search(
     if ruleset:
         sql += " AND e.ruleset = ?"
         params.append(ruleset)
+    if source:
+        sql += " AND e.source_id = ?"
+        params.append(source)
     sql += " ORDER BY bm25(content_fts) LIMIT ?"
     params.append(limit)
     rows = conn.execute(sql, params).fetchall()
     return {"results": [dict(r) for r in rows]}
+
+
+@router.get("/sources")
+def list_sources():
+    """Fuentes de contenido instaladas (con recuento) — para filtros UI."""
+    conn = content_db()
+    rows = conn.execute(
+        """SELECT s.id, s.name, s.license, s.distribution_allowed,
+                  COUNT(e.id) AS entities
+           FROM content_sources s
+           LEFT JOIN content_entities e ON e.source_id = s.id
+           GROUP BY s.id ORDER BY entities DESC""").fetchall()
+    return {"sources": [dict(r) for r in rows]}
+
+
+@router.get("/{entity_id}/statblock")
+def statblock_preview(entity_id: str):
+    """Stat block canónico normalizado — cualquier fuente soportada."""
+    from ..domain import statblock
+    conn = content_db()
+    row = conn.execute(
+        "SELECT name, data, source_id FROM content_entities WHERE id = ?",
+        (entity_id,)).fetchone()
+    if row is None:
+        from fastapi import HTTPException
+        raise HTTPException(404, "entity not found")
+    block = statblock.normalize(json.loads(row["data"]))
+    if block is None:
+        raise HTTPException(422, "la entidad no es un stat block")
+    block.pop("raw", None)                  # no reenviar el blob crudo
+    return {"entity_id": entity_id, "source_id": row["source_id"],
+            "statblock": block}
 
 
 _TYPE_ALIASES = {
@@ -255,14 +291,24 @@ def create_homebrew(body: HomebrewIn):
 
 
 @router.get("/options")
-def options(entity_type: str, ruleset: str | None = None):
-    """Opciones para el wizard: lista {id, name} de un tipo de entidad."""
+def options(entity_type: str, ruleset: str | None = None,
+            source: str | None = None, all_sources: bool = False):
+    """Opciones para el wizard: lista {id, name} de un tipo de entidad.
+    'mixed' siempre incluido (contenido agnóstico de edición);
+    por defecto solo fuentes redistribuibles (SRD/Open5e) para no
+    saturar con ~130k entidades privadas — all_sources=true las incluye."""
     conn = content_db()
-    sql = ("SELECT id, name FROM content_entities WHERE entity_type = ?")
+    sql = ("SELECT id, name, source_id FROM content_entities "
+           "WHERE entity_type = ?")
     params: list = [entity_type]
     if ruleset:
-        sql += " AND ruleset = ?"
+        sql += " AND ruleset IN (?, 'mixed')"
         params.append(ruleset)
+    if source:
+        sql += " AND source_id = ?"
+        params.append(source)
+    if not all_sources:
+        sql += " AND is_redistributable = 1"
     sql += " ORDER BY name"
     rows = conn.execute(sql, params).fetchall()
     return {"options": [dict(r) for r in rows]}

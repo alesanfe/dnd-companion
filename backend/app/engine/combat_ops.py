@@ -12,6 +12,7 @@ import json
 import uuid
 from typing import Callable
 
+from ..domain import statblock
 from ..domain.combat import Combat, Combatant, hp_state
 from .dice import roll
 
@@ -144,11 +145,13 @@ def combatant_add(combat: Combat, p: dict, ctx):
                 char_hp = json.loads(srow["data"]).get("hp")
         except (AttributeError, Exception):
             char_hp = None
-    dex = data.get("dexterity", 10)
+    # Normaliza cualquier schema de fuente (5e-bits, Open5e v1/v2,
+    # 5etools, codexMUNDI, dnd-data) al bloque canónico.
+    block = statblock.normalize(data) or p.get("stat_block")
     init = p.get("initiative")
     if init is None:
-        init = roll("1d20").total + (dex - 10) // 2
-    acs = data.get("armor_class") or []
+        init = roll("1d20").total + (
+            (block or {}).get("initiative_mod", 0))
     c = Combatant(
         id=uuid.uuid4().hex,
         kind=p.get("kind", "monster" if data else "npc"),
@@ -156,12 +159,12 @@ def combatant_add(combat: Combat, p: dict, ctx):
         ref_id=p.get("ref_id") or p.get("content_entity_id"),
         initiative=int(init),
         hp_current=(p.get("hp_max") or (char_hp or {}).get("current")
-                    or data.get("hit_points", 1)),
+                    or (block or {}).get("hp", 1)),
         hp_max=(p.get("hp_max") or (char_hp or {}).get("max")
-                or data.get("hit_points", 1)),
+                or (block or {}).get("hp", 1)),
         hp_temp=(char_hp or {}).get("temp", 0),
-        ac=p.get("ac") or (acs[0].get("value", 10) if acs else 10),
-        stat_block=data or p.get("stat_block") or None,
+        ac=p.get("ac") or (block or {}).get("ac", 10),
+        stat_block=block,
     )
     combat.combatants.append(c)
     inv = {"operation_type": "combatant.remove",
@@ -367,12 +370,17 @@ def combatant_save(combat: Combat, p: dict, ctx):
     característica del stat block. El total va en el evento."""
     c = _find(combat, p["combatant_id"])
     ability = p["ability"]
-    score = (c.stat_block or {}).get(
-        {"str": "strength", "dex": "dexterity", "con": "constitution",
-         "int": "intelligence", "wis": "wisdom", "cha": "charisma"
-         }.get(ability, ability), 10)
+    block = c.stat_block or {}
+    if "saves" in block:            # bloque canónico: totales ya dados
+        total_mod = block["saves"].get(ability, 0)
+    else:                           # bloque crudo (legacy): score→mod
+        score = block.get(
+            {"str": "strength", "dex": "dexterity", "con": "constitution",
+             "int": "intelligence", "wis": "wisdom", "cha": "charisma"
+             }.get(ability, ability), 10)
+        total_mod = (score - 10) // 2
     r = roll("1d20")
-    total = r.total + (score - 10) // 2
+    total = r.total + total_mod
     return {"operation_type": "noop", "payload": {}}, [
         {"type": "dice.roll.created",
          "payload": {"combatant": c.name, "save": ability,

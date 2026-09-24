@@ -1,14 +1,20 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '../api.js'
 
 export default function Search() {
   const [q, setQ] = useState('')
   const [type, setType] = useState('')
   const [edition, setEdition] = useState('')
+  const [source, setSource] = useState('')
+  const [sources, setSources] = useState([])
   const [results, setResults] = useState([])
   const [parsed, setParsed] = useState(null)
   const [asked, setAsked] = useState(null)
   const [err, setErr] = useState(null)
+
+  useEffect(() => {
+    api.contentSources().then((r) => setSources(r.sources)).catch(() => {})
+  }, [])
 
   const go = async (e) => {
     e.preventDefault()
@@ -18,7 +24,7 @@ export default function Search() {
                   (edition ? ` ruleset:${edition}` : '')
       const r = cmd.trim().startsWith('/') || edition
         ? await api.commandSearch(cmd)
-        : await api.search(q)
+        : await api.search(q, null, source || null)
       setResults(r.results)
       setParsed(r.parsed || null)
     } catch (e2) { setErr(e2.message) }
@@ -43,6 +49,14 @@ export default function Search() {
           <option value="">2014+2024</option>
           <option value="2014">2014</option>
           <option value="2024">2024</option>
+        </select>
+        <select value={source} onChange={(e) => setSource(e.target.value)}
+                aria-label="Fuente de contenido">
+          <option value="">todas las fuentes</option>
+          {sources.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name} ({s.entities})
+            </option>))}
         </select>
         <button type="submit">Buscar</button>
       </form>
@@ -80,7 +94,10 @@ export default function Search() {
         {results.map((r) => (
           <li key={r.id}>
             <strong>{r.name}</strong>{' '}
-            <span className="muted">{r.entity_type} · {r.ruleset}</span>
+            <span className="muted">
+              {r.entity_type} · {r.ruleset} · {r.source_id}
+              {!r.is_redistributable && ' · contenido privado'}
+            </span>
             {r.summary && (
               <p className="excerpt">
                 {Object.entries(r.summary).map(([k, v]) => `${k}: ${v}`).join(' · ')}

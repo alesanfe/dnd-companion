@@ -169,6 +169,84 @@ def import_character(body: ImportIn):
     return {"id": cid, "version": 1}
 
 
+@router.get("/{character_id}/actions")
+def contextual_actions(character_id: str):
+    """Acciones agrupadas por economía de acción: qué puede hacer el
+    personaje AHORA. Deriva de inventario (armas), conjuros conocidos
+    (por casting_time) y efectos activos (grant_action/reaction)."""
+    conn = state_db()
+    row = conn.execute(
+        "SELECT data FROM characters WHERE id = ?", (character_id,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "character not found")
+    char = Character(**json.loads(row["data"]))
+    content = content_db()
+
+    groups: dict[str, list] = {
+        "action": [], "bonus_action": [], "reaction": [],
+        "movement": [], "free": [],
+    }
+    for basic in ("Attack", "Dash", "Disengage", "Dodge", "Help",
+                  "Hide", "Search", "Use Object"):
+        groups["action"].append({"name": basic, "source": "basic"})
+    groups["reaction"].append(
+        {"name": "Opportunity Attack", "source": "basic"})
+    groups["movement"].append({"name": "Move", "source": "basic"})
+
+    str_mod = char.abilities.modifier("str")
+    dex_mod = char.abilities.modifier("dex")
+
+    # armas del inventario → ataques con bonificador calculado
+    for item in char.inventory:
+        if not item.source_id:
+            continue
+        w = _content_row(item.source_id)
+        if not w:
+            continue
+        cat = (w.get("equipment_category") or {}).get("index", "")
+        if "weapon" not in cat:
+            continue
+        props = [p.get("index") for p in w.get("properties", [])]
+        mod = dex_mod if "finesse" in props else str_mod
+        dmg = (w.get("damage") or {}).get("damage_dice", "1d4")
+        groups["action"].append({
+            "name": f"Ataque: {item.name}",
+            "source": item.source_id,
+            "hit": f"+{char.proficiency_bonus + mod}",
+            "damage": f"{dmg}{mod:+d}",
+        })
+
+    # conjuros conocidos → agrupados por tiempo de lanzamiento
+    for sid in char.spells_known:
+        sp = _content_row(sid)
+        if not sp:
+            continue
+        ct = str(sp.get("casting_time", "1 action")).lower()
+        if "bonus" in ct:
+            g = "bonus_action"
+        elif "reaction" in ct:
+            g = "reaction"
+        elif "minute" in ct or "hour" in ct:
+            g = "free"                       # fuera de combate
+        else:
+            g = "action"
+        groups[g].append({"name": f"Conjuro: {sp.get('name')}",
+                          "source": sid, "casting_time": ct})
+
+    # efectos que conceden acciones (p.ej. haste, rogue cunning action)
+    for eff in char.effects:
+        for o in eff.operations:
+            if o.op.value == "grant_action":
+                groups[str(o.value or "action")].append(
+                    {"name": eff.name, "source": eff.source or eff.id})
+            elif o.op.value == "grant_reaction":
+                groups["reaction"].append(
+                    {"name": eff.name, "source": eff.source or eff.id})
+
+    return {"character_id": character_id, "actions": groups}
+
+
 @router.get("/{character_id}/derived/{stat}")
 def derived_stat(character_id: str, stat: str, base: float = 10):
     """Stat resuelto por el motor de efectos, con trazabilidad:

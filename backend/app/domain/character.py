@@ -97,6 +97,8 @@ class Character(BaseModel):
     conditions: list[str] = Field(default_factory=list)
     effects: list[Effect] = Field(default_factory=list)     # activos/pasivos
     inventory: list[InventoryItem] = Field(default_factory=list)
+    purse: dict[str, int] = Field(
+        default_factory=lambda: {"pp": 0, "gp": 0, "ep": 0, "sp": 0, "cp": 0})
     narrative: Narrative = Field(default_factory=Narrative)
     proficiency_bonus: int = 2
 

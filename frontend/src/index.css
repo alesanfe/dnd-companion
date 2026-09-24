@@ -119,3 +119,17 @@ select {
 }
 
 label { display: flex; align-items: center; gap: 0.4rem; }
+
+.purse { flex-wrap: wrap; }
+.coin {
+  font-family: ui-monospace, monospace;
+  background: #2e2a1e;
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+}
+
+.citation {
+  border-left: 3px solid var(--accent);
+  padding-left: 0.7rem;
+  margin: 0.7rem 0;
+}

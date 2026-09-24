@@ -290,6 +290,96 @@ def inventory_remove(char: Character, p: dict, ctx):
                   "payload": {"removed": item.name, "quantity": qty}}]
 
 
+_CP = {"pp": 1000, "gp": 100, "ep": 50, "sp": 10, "cp": 1}
+
+
+def _purse_cp(char: Character) -> int:
+    return sum(char.purse.get(k, 0) * v for k, v in _CP.items())
+
+
+def _normalize_purse(total_cp: int) -> dict[str, int]:
+    """Denominaciones mínimas: pp > gp > ep > sp > cp."""
+    out = {}
+    for coin in ("pp", "gp", "ep", "sp"):
+        out[coin], total_cp = divmod(total_cp, _CP[coin])
+    out["cp"] = total_cp
+    return out
+
+
+def _spend(char: Character, amount_cp: int) -> None:
+    if _purse_cp(char) < amount_cp:
+        raise ValueError("fondos insuficientes")
+    char.purse = _normalize_purse(_purse_cp(char) - amount_cp)
+
+
+@op("character.currency.earn")
+def currency_earn(char: Character, p: dict, ctx):
+    inv = {"operation_type": "character.currency.spend",
+           "payload": dict(p)}
+    for coin, n in p.items():
+        if coin in _CP:
+            char.purse[coin] = char.purse.get(coin, 0) + max(0, int(n))
+    return inv, [{"type": "inventory.item.transferred",
+                  "payload": {"earned": p, "purse": char.purse}}]
+
+
+@op("character.currency.spend")
+def currency_spend(char: Character, p: dict, ctx):
+    """Gasta monedas con conversión automática (todo pasa a cp)."""
+    before = dict(char.purse)
+    needed = sum(max(0, int(p.get(k, 0))) * _CP[k]
+                 for k in p if k in _CP)
+    _spend(char, needed)
+    inv = {"operation_type": "character.currency.set",
+           "payload": {"purse": before}}
+    return inv, [{"type": "inventory.item.transferred",
+                  "payload": {"spent": p, "purse": char.purse}}]
+
+
+@op("character.currency.set")
+def currency_set(char: Character, p: dict, ctx):
+    before = dict(char.purse)
+    char.purse = {k: max(0, int(v)) for k, v in p["purse"].items()
+                  if k in _CP}
+    return {"operation_type": "character.currency.set",
+            "payload": {"purse": before}}, []
+
+
+@op("character.shop.buy")
+def shop_buy(char: Character, p: dict, ctx):
+    """Compra en una tienda (campaign entity kind='shop'): descuenta
+    monedas, añade el objeto al inventario y decrementa stock — todo
+    en la transacción de la operación."""
+    if ctx is None or ctx.state_db() is None:
+        raise ValueError("shop.buy requiere contexto de estado")
+    import json as _json
+    row = ctx.state_db().execute(
+        "SELECT data FROM campaign_entities WHERE id = ?",
+        (p["shop_id"],)).fetchone()
+    if row is None:
+        raise ValueError("tienda no encontrada")
+    shop = _json.loads(row["data"])
+    stock = shop.get("stock", [])
+    entry = next((s for s in stock if s.get("name") == p["item"]), None)
+    if entry is None or entry.get("quantity", 0) < 1:
+        raise ValueError("sin stock")
+
+    price_cp = int(entry["price_cp"])
+    before = char.model_dump()
+    _spend(char, price_cp)
+    inv_add, _ = HANDLERS["character.inventory.add"](
+        char, {"name": p["item"], "quantity": 1,
+               "source_id": entry.get("source_id")}, ctx)
+    entry["quantity"] -= 1
+    ctx.state_db().execute(
+        "UPDATE campaign_entities SET data = ? WHERE id = ?",
+        (_json.dumps(shop), p["shop_id"]))
+    return _restore_inverse(before), [
+        {"type": "inventory.item.transferred",
+         "payload": {"bought": p["item"], "price_cp": price_cp,
+                     "purse": char.purse}}]
+
+
 def _content(ctx, entity_id: str) -> dict | None:
     """Lee una entidad de la content DB (None si no hay ctx/DB)."""
     import json as _json

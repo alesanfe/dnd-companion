@@ -19,7 +19,19 @@ RAW_BASE = (
     "https://raw.githubusercontent.com/5e-bits/5e-database/main/src"
 )
 
-# filename -> entity_type
+# filename -> entity_type (2014 layout; 2024 renames a few files)
+FILE_TYPES_2024_ONLY = {
+    "5e-SRD-Species.json": "species",
+    "5e-SRD-Subspecies.json": "subspecies",
+    "5e-SRD-Poisons.json": "poison",
+    "5e-SRD-Weapon-Mastery-Properties.json": "weapon-mastery",
+}
+FILE_TYPES_2014_ONLY = {
+    "5e-SRD-Races.json": "race",
+    "5e-SRD-Subraces.json": "subrace",
+    "5e-SRD-Rule-Sections.json": "rule-section",
+    "5e-SRD-Rules.json": "rule",
+}
 FILE_TYPES = {
     "5e-SRD-Ability-Scores.json": "ability-score",
     "5e-SRD-Alignments.json": "alignment",
@@ -37,13 +49,9 @@ FILE_TYPES = {
     "5e-SRD-Magic-Schools.json": "magic-school",
     "5e-SRD-Monsters.json": "monster",
     "5e-SRD-Proficiencies.json": "proficiency",
-    "5e-SRD-Races.json": "race",
-    "5e-SRD-Rule-Sections.json": "rule-section",
-    "5e-SRD-Rules.json": "rule",
     "5e-SRD-Skills.json": "skill",
     "5e-SRD-Spells.json": "spell",
     "5e-SRD-Subclasses.json": "subclass",
-    "5e-SRD-Subraces.json": "subrace",
     "5e-SRD-Traits.json": "trait",
     "5e-SRD-Weapon-Properties.json": "weapon-property",
 }
@@ -94,8 +102,12 @@ def import_srd(
         distribution_allowed=True,
     )
 
+    file_types = dict(FILE_TYPES)
+    file_types.update(
+        FILE_TYPES_2024_ONLY if edition == "2024" else FILE_TYPES_2014_ONLY)
+
     count = 0
-    for filename, entity_type in FILE_TYPES.items():
+    for filename, entity_type in file_types.items():
         path = filename if local_dir else f"{repo_dir}/en/{filename}"
         try:
             rows = _load_file(local_dir, path)

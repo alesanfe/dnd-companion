@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, Query
+from pydantic import BaseModel
 
 from ..db.connections import content_db
 
@@ -33,7 +34,7 @@ def search(
     if ruleset:
         sql += " AND e.ruleset = ?"
         params.append(ruleset)
-    sql += " LIMIT ?"
+    sql += " ORDER BY bm25(content_fts) LIMIT ?"
     params.append(limit)
     rows = conn.execute(sql, params).fetchall()
     return {"results": [dict(r) for r in rows]}
@@ -174,6 +175,61 @@ def _summarize(data: dict) -> dict:
         if v is not None:
             out[k] = v
     return out
+
+
+@router.get("/compare")
+def compare(index: str):
+    """Comparador de reglas: la misma entidad en 2014 vs 2024."""
+    conn = content_db()
+    rows = conn.execute(
+        "SELECT id, entity_type, name, ruleset, data, source_id "
+        "FROM content_entities WHERE id LIKE ? ORDER BY ruleset",
+        (f"%:{index}",)).fetchall()
+    versions = {}
+    for r in rows:
+        versions[r["ruleset"]] = {
+            "id": r["id"], "name": r["name"],
+            "entity_type": r["entity_type"], "source_id": r["source_id"],
+            "data": json.loads(r["data"]),
+        }
+    return {"index": index, "versions": versions}
+
+
+class HomebrewIn(BaseModel):
+    entity_type: str
+    name: str
+    data: dict = {}
+    ruleset: str = "dnd5e-2014"
+    license: str = "user-created"
+    redistributable: bool = True     # es contenido del propio usuario
+
+
+@router.post("/homebrew", status_code=201)
+def create_homebrew(body: HomebrewIn):
+    """Contenido homebrew del usuario → content DB con su propia fuente."""
+    import uuid
+    from datetime import datetime, timezone
+    conn = content_db()
+    conn.execute(
+        """INSERT OR IGNORE INTO content_sources
+           (id, name, license, imported_at, distribution_allowed)
+           VALUES ('homebrew', 'Contenido homebrew del usuario',
+                   'user-created', ?, 1)""",
+        (datetime.now(timezone.utc).isoformat(),))
+    eid = f"homebrew:{uuid.uuid4().hex[:12]}"
+    data = {**body.data, "name": body.name, "index": eid.split(":")[-1]}
+    conn.execute(
+        """INSERT INTO content_entities
+           (id, entity_type, name, ruleset, source_id, license,
+            is_redistributable, data)
+           VALUES (?,?,?,?, 'homebrew', ?, ?, ?)""",
+        (eid, body.entity_type, body.name, body.ruleset, body.license,
+         int(body.redistributable), json.dumps(data, ensure_ascii=False)))
+    conn.execute(
+        "INSERT INTO content_fts (entity_id, name, body) VALUES (?,?,?)",
+        (eid, body.name, json.dumps(data, ensure_ascii=False)))
+    conn.commit()
+    return {"id": eid}
 
 
 @router.get("/options")

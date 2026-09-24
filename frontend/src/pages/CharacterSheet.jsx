@@ -12,6 +12,8 @@ export default function CharacterSheet() {
   const [history, setHistory] = useState(null)
   const [newItem, setNewItem] = useState('')
   const [newCond, setNewCond] = useState('')
+  const [coin, setCoin] = useState('gp')
+  const [actions, setActions] = useState(null)
 
   const load = () => api.getCharacter(id).then(setChar).catch((e) => setErr(e.message))
   useEffect(() => { load() }, [id])
@@ -162,6 +164,43 @@ export default function CharacterSheet() {
           ))}
         </section>
       )}
+
+      <section className="card">
+        <h2>Monedas</h2>
+        <div className="row purse">
+          {['pp', 'gp', 'ep', 'sp', 'cp'].map((c) => (
+            <span key={c} className="coin">{c.toUpperCase()}: {(d.purse || {})[c] || 0}</span>
+          ))}
+        </div>
+        <div className="row">
+          <input type="number" min="1" value={amount}
+                 onChange={(e) => setAmount(+e.target.value)} />
+          <select value={coin} onChange={(e) => setCoin(e.target.value)}>
+            {['pp', 'gp', 'ep', 'sp', 'cp'].map((c) => <option key={c}>{c}</option>)}
+          </select>
+          <button className="heal" onClick={() => op('character.currency.earn', { [coin]: amount })}>+</button>
+          <button className="dmg" onClick={() => op('character.currency.spend', { [coin]: amount })}>-</button>
+        </div>
+      </section>
+
+      <section className="card">
+        <h2>Acciones</h2>
+        <button onClick={async () => {
+          if (actions) { setActions(null); return }
+          const r = await fetch(`/api/characters/${id}/actions`).then((x) => x.json())
+          setActions(r.actions)
+        }}>{actions ? 'Ocultar' : 'Ver acciones disponibles'}</button>
+        {actions && Object.entries(actions).map(([g, list]) => (
+          <div key={g}>
+            <h3 className="muted" style={{ textTransform: 'capitalize' }}>{g.replace('_', ' ')}</h3>
+            <ul>{list.map((a, i) => (
+              <li key={i}>{a.name}
+                {a.hit && <span className="muted"> {a.hit} · {a.damage}</span>}
+              </li>))}
+            </ul>
+          </div>
+        ))}
+      </section>
 
       <section className="card">
         <h2>Condiciones</h2>

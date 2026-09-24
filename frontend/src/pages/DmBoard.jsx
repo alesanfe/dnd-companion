@@ -17,6 +17,9 @@ export default function DmBoard() {
   const [crs, setCrs] = useState('')
   const [difficulty, setDifficulty] = useState(null)
   const [rollReq, setRollReq] = useState({ character_id: '', expression: '1d20', reason: '' })
+  const [sessions, setSessions] = useState([])
+  const [sessTitle, setSessTitle] = useState('')
+  const [timeline, setTimeline] = useState(null)
 
   const refresh = (id, version) =>
     api.getCombat(id).then((r) => setCombat(r)).catch((e) => setErr(e.message))
@@ -126,6 +129,47 @@ export default function DmBoard() {
               {difficulty.warnings.map((w) => <em key={w} className="error"><br />{w}</em>)}
             </p>
           )}
+        </section>
+      )}
+
+      {campaign && (
+        <section className="card">
+          <h2>Sesiones y preparación</h2>
+          <div className="row">
+            <input value={sessTitle} placeholder="Título de sesión"
+                   onChange={(e) => setSessTitle(e.target.value)} />
+            <button disabled={!sessTitle} onClick={async () => {
+              await fetch(`/api/campaigns/${campaign.id}/sessions`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: sessTitle,
+                  number: sessions.length + 1 }),
+              })
+              setSessTitle('')
+              const r = await fetch(`/api/campaigns/${campaign.id}/sessions`).then((x) => x.json())
+              setSessions(r.sessions)
+            }}>Crear</button>
+            <button onClick={async () => {
+              const r = await fetch(`/api/campaigns/${campaign.id}/timeline`).then((x) => x.json())
+              setTimeline(timeline ? null : r.timeline)
+            }}>Cronología</button>
+          </div>
+          {sessions.map((s) => (
+            <div key={s.id}>
+              <strong>#{s.number} {s.title}</strong>
+              <span className="muted"> · {s.status}</span>
+              <ul>
+                {s.scenes.map((sc) => (
+                  <li key={sc.id}>{sc.data.order}. {sc.name}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+          {timeline && timeline.map((t) => (
+            <div key={t.id} className="row">
+              <span className="muted">{t.world_date || '—'}</span>
+              <span>{t.name}</span>
+            </div>
+          ))}
         </section>
       )}
 

@@ -39,9 +39,17 @@ class OperationIn(BaseModel):
 
 
 class OpContext:
-    """Acceso a la content DB desde handlers (stat blocks, etc.)."""
+    """Acceso a las DBs desde handlers. state_conn es la conexión de la
+    transacción actual: los handlers que tocan otras entidades (tiendas)
+    quedan dentro de la misma transacción atómica."""
+    def __init__(self, state_conn=None):
+        self._state = state_conn
+
     def content_db(self):
         return content_db()
+
+    def state_db(self):
+        return self._state
 
 
 _MODELS = {"character": Character, "combat": Combat}
@@ -81,10 +89,10 @@ def apply_to_store(op: OperationIn) -> dict:
     try:
         if op.entity_kind == "combat":
             inverse, events = apply_combat_operation(
-                entity, op.operation_type, op.payload, OpContext())
+                entity, op.operation_type, op.payload, OpContext(conn))
         else:
             inverse, events = apply_operation(
-                entity, op.operation_type, op.payload, OpContext())
+                entity, op.operation_type, op.payload, OpContext(conn))
     except (KeyError, ValueError, IndexError) as exc:
         _store_op(conn, op, row["version"], OperationStatus.REJECTED, None)
         conn.commit()

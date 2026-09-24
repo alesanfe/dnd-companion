@@ -186,6 +186,122 @@ def list_relationships(campaign_id: str, entity_id: str | None = None):
     return {"relationships": [dict(r) for r in rows]}
 
 
+class EntityPatch(BaseModel):
+    name: str | None = None
+    data: dict | None = None
+    visibility: str | None = None
+    known_to: list[str] | None = None
+    reveal_condition: str | None = None
+
+
+@router.patch("/{campaign_id}/entities/{entity_id}")
+def patch_entity(campaign_id: str, entity_id: str, body: EntityPatch):
+    """Actualiza campos de una entidad (orden de escena, estado, notas…)."""
+    conn = state_db()
+    row = conn.execute(
+        "SELECT * FROM campaign_entities WHERE id = ? AND campaign_id = ?",
+        (entity_id, campaign_id)).fetchone()
+    if row is None:
+        raise HTTPException(404, "entity not found")
+    sets, params = [], []
+    if body.name is not None:
+        sets.append("name = ?"); params.append(body.name)
+    if body.data is not None:
+        merged = {**json.loads(row["data"]), **body.data}
+        sets.append("data = ?"); params.append(json.dumps(merged))
+    if body.visibility is not None:
+        sets.append("visibility = ?"); params.append(body.visibility)
+    if body.known_to is not None:
+        sets.append("known_to = ?"); params.append(json.dumps(body.known_to))
+    if body.reveal_condition is not None:
+        sets.append("reveal_condition = ?")
+        params.append(body.reveal_condition)
+    if not sets:
+        return {"id": entity_id, "changed": []}
+    sets += ["updated_at = ?", "version = version + 1"]
+    params += [datetime.now(timezone.utc).isoformat(), entity_id]
+    conn.execute(
+        f"UPDATE campaign_entities SET {', '.join(sets)} WHERE id = ?",
+        params)
+    conn.commit()
+    return {"id": entity_id,
+            "changed": [s.split(" = ")[0] for s in sets[:-2]]}
+
+
+# --- Sesiones y línea temporal ---------------------------------------
+
+class SessionIn(BaseModel):
+    number: int | None = None
+    title: str
+    status: str = "prep"               # prep|active|done
+    data: dict = {}
+
+
+@router.post("/{campaign_id}/sessions", status_code=201)
+def create_session(campaign_id: str, body: SessionIn):
+    conn = state_db()
+    sid = uuid.uuid4().hex
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """INSERT INTO sessions
+           (id, campaign_id, number, title, status, data, created_at,
+            updated_at)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (sid, campaign_id, body.number, body.title, body.status,
+         json.dumps(body.data), now, now))
+    conn.commit()
+    return {"id": sid}
+
+
+@router.get("/{campaign_id}/sessions")
+def list_sessions(campaign_id: str):
+    conn = state_db()
+    rows = conn.execute(
+        "SELECT * FROM sessions WHERE campaign_id = ? ORDER BY number",
+        (campaign_id,)).fetchall()
+    out = []
+    for r in rows:
+        s = dict(r)
+        s["data"] = json.loads(s["data"])
+        # escenas vinculadas a esta sesión, ordenadas
+        scenes = conn.execute(
+            "SELECT id, name, data, visibility FROM campaign_entities "
+            "WHERE campaign_id = ? AND kind = 'scene' "
+            "AND json_extract(data, '$.session_id') = ?",
+            (campaign_id, s["id"])).fetchall()
+        s["scenes"] = sorted(
+            [{**dict(x), "data": json.loads(x["data"])} for x in scenes],
+            key=lambda x: x["data"].get("order", 0))
+        out.append(s)
+    return {"sessions": out}
+
+
+@router.get("/{campaign_id}/timeline")
+def timeline(campaign_id: str):
+    """Cronología del mundo: eventos + relaciones fechadas, ordenadas."""
+    conn = state_db()
+    events = conn.execute(
+        "SELECT id, name, data FROM campaign_entities "
+        "WHERE campaign_id = ? AND kind = 'event'", (campaign_id,)
+    ).fetchall()
+    rels = conn.execute(
+        "SELECT * FROM relationships WHERE campaign_id = ? "
+        "AND world_date IS NOT NULL", (campaign_id,)).fetchall()
+    items = [
+        {"kind": "event", "id": e["id"], "name": e["name"],
+         "world_date": json.loads(e["data"]).get("world_date"),
+         "data": json.loads(e["data"])}
+        for e in events
+    ] + [
+        {"kind": "relationship", "id": r["id"],
+         "name": f"{r['from_id']} → {r['to_id']}",
+         "world_date": r["world_date"], "data": dict(r)}
+        for r in rels
+    ]
+    items.sort(key=lambda x: x["world_date"] or "")
+    return {"timeline": items}
+
+
 # --- Solicitud de tirada (DM -> jugador) -----------------------------
 
 class RollRequestIn(BaseModel):

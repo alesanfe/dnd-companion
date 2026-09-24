@@ -5,6 +5,7 @@ export default function Search() {
   const [q, setQ] = useState('')
   const [results, setResults] = useState([])
   const [parsed, setParsed] = useState(null)
+  const [asked, setAsked] = useState(null)
   const [err, setErr] = useState(null)
 
   const go = async (e) => {
@@ -28,6 +29,27 @@ export default function Search() {
         <button type="submit">Buscar</button>
       </form>
       {err && <p className="error">{err}</p>}
+
+      <div className="row">
+        <button onClick={async () => {
+          const r = await api.rulesAsk(q)
+          setAsked(r)
+        }}>Preguntar a las reglas</button>
+      </div>
+      {asked && (
+        <section className="card">
+          <h2>Asistente de reglas</h2>
+          {!asked.evidence_found
+            ? <p>Sin evidencia en las fuentes instaladas.</p>
+            : asked.citations.map((c) => (
+              <div key={c.entity_id} className="citation">
+                <strong>{c.name}</strong>
+                <span className="muted"> · {c.ruleset} · {c.citation.source_id} ({c.citation.license})</span>
+                {c.excerpt && <p className="excerpt" dangerouslySetInnerHTML={{ __html: c.excerpt }} />}
+              </div>
+            ))}
+        </section>
+      )}
       {parsed && (
         <p className="muted">
           tipo: {parsed.type || 'cualquiera'}

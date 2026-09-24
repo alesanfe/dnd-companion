@@ -107,6 +107,11 @@ export const api = {
   }),
   commandSearch: (q) =>
     req(`/api/content/command?q=${encodeURIComponent(q)}`),
+  rulesAsk: (question, ruleset) =>
+    req('/api/rules/ask', {
+      method: 'POST',
+      body: JSON.stringify({ question, ruleset }),
+    }),
   encounterDifficulty: (party_levels, monster_crs) =>
     req('/api/encounters/difficulty', {
       method: 'POST',

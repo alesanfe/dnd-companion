@@ -112,3 +112,18 @@ CREATE TABLE IF NOT EXISTS relationships (
 );
 CREATE INDEX IF NOT EXISTS idx_rel_campaign
     ON relationships(campaign_id);
+
+-- Sesiones de juego: preparación por escenas enlazadas via
+-- campaign_entities(kind='scene').data.session_id
+CREATE TABLE IF NOT EXISTS sessions (
+    id          TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL REFERENCES campaigns(id),
+    number      INTEGER,
+    title       TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'prep',  -- prep|active|done
+    data        TEXT NOT NULL DEFAULT '{}',    -- notas, resumen posterior
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_campaign
+    ON sessions(campaign_id);

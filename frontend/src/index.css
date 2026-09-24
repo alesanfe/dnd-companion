@@ -211,6 +211,17 @@ label { display: flex; align-items: center; gap: 0.4rem; }
   padding: 0.3rem 0.6rem;
 }
 
+.notice {
+  background: #3d2c1e;
+  border-left: 3px solid #ffd700;
+  border-radius: 6px;
+  padding: 0.7rem 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 .citation {
   border-left: 3px solid var(--accent);
   padding-left: 0.7rem;

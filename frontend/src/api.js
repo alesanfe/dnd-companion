@@ -77,6 +77,9 @@ export const api = {
         (entityType ? `&entity_type=${entityType}` : '')),
   contentOptions: (entityType, ruleset = 'dnd5e-2014') =>
     req(`/api/content/options?entity_type=${entityType}&ruleset=${ruleset}`),
+  characterAttack: (characterId, itemName) =>
+    req(`/api/operations/character/${characterId}/attack` +
+        `?item_name=${encodeURIComponent(itemName)}`, { method: 'POST' }),
   characterRoll: (characterId, expression, rollType = 'check') =>
     req(`/api/operations/character/${characterId}/roll` +
         `?expression=${encodeURIComponent(expression)}&roll_type=${rollType}`,

@@ -108,6 +108,24 @@ def character_roll(character_id: str, expression: str = "1d20",
     adv = dis = False
     extra_mod = 0
     applied = []
+
+    # modificador automático según tipo: check:dex, save:wis, skill:x
+    base_type, _, detail = roll_type.partition(":")
+    if base_type in ("check", "save") and detail:
+        extra_mod += char.abilities.modifier(detail)
+        applied.append(f"{detail}: {char.abilities.modifier(detail):+d}")
+        if base_type == "save" and detail in char.save_proficiencies:
+            extra_mod += char.proficiency_bonus
+            applied.append(f"prof: +{char.proficiency_bonus}")
+    elif base_type == "skill" and detail:
+        ability = _SKILL_ABILITIES.get(detail, "int")
+        extra_mod += char.abilities.modifier(ability)
+        applied.append(f"{ability}({detail}): "
+                       f"{char.abilities.modifier(ability):+d}")
+        if detail in char.skill_proficiencies:
+            extra_mod += char.proficiency_bonus
+            applied.append(f"prof: +{char.proficiency_bonus}")
+
     for eff in char.effects:
         # solo efectos pasivos o con trigger before_roll
         if eff.trigger is not None and eff.trigger.value != "before_roll":
@@ -145,6 +163,55 @@ def character_roll(character_id: str, expression: str = "1d20",
     return {"expression": r.expression, "rolls": r.rolls, "kept": r.kept,
             "total": r.total, "auto_fail": False,
             "effects_applied": applied}
+
+
+# SRD 2014: habilidad → característica (nombre de habilidad en inglés)
+_SKILL_ABILITIES = {
+    "athletics": "str",
+    "acrobatics": "dex", "sleight-of-hand": "dex", "stealth": "dex",
+    "arcana": "int", "history": "int", "investigation": "int",
+    "nature": "int", "religion": "int",
+    "animal-handling": "wis", "insight": "wis", "medicine": "wis",
+    "perception": "wis", "survival": "wis",
+    "deception": "cha", "intimidation": "cha", "performance": "cha",
+    "persuasion": "cha",
+}
+
+
+@router.post("/character/{character_id}/attack")
+def character_attack(character_id: str, item_name: str):
+    """Ataque completo con un arma del inventario: tirada de impacto
+    (d20 + mod + prof, con efectos/condiciones) + tirada de daño."""
+    conn = state_db()
+    row = conn.execute(
+        "SELECT data FROM characters WHERE id = ?", (character_id,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "character not found")
+    char = Character(**json.loads(row["data"]))
+    item = next((i for i in char.inventory
+                 if i.name.lower() == item_name.lower()), None)
+    if item is None:
+        raise HTTPException(404, "arma no en inventario")
+    w = {}
+    if item.source_id:
+        r = content_db().execute(
+            "SELECT data FROM content_entities WHERE id = ?",
+            (item.source_id,)).fetchone()
+        w = json.loads(r["data"]) if r else {}
+    props = [p.get("index") for p in w.get("properties", [])]
+    mod = char.abilities.modifier(
+        "dex" if "finesse" in props or "ranged" in
+        str(w.get("weapon_range", "")).lower() else "str")
+    hit_bonus = char.proficiency_bonus + mod
+    dmg_dice = (w.get("damage") or {}).get("damage_dice", "1d4")
+    hit = dice_roll(f"1d20{hit_bonus:+d}")
+    dmg = dice_roll(f"{dmg_dice}{mod:+d}")
+    return {"weapon": item.name,
+            "hit": {"rolls": hit.rolls, "total": hit.total,
+                    "bonus": hit_bonus},
+            "damage": {"expression": dmg.expression, "rolls": dmg.rolls,
+                       "total": dmg.total}}
 
 
 _MODELS = {"character": Character, "combat": Combat}

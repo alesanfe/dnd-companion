@@ -16,6 +16,8 @@ export default function CharacterSheet() {
   const [coin, setCoin] = useState('gp')
   const [actions, setActions] = useState(null)
   const [focus, setFocus] = useState(false)   // modo concentración
+  const [notice, setNotice] = useState(null)  // aviso de concentración
+  const [journalEntry, setJournalEntry] = useState('')
 
   const load = () => api.getCharacter(id).then(setChar).catch((e) => setErr(e.message))
   useEffect(() => { load() }, [id])
@@ -43,7 +45,12 @@ export default function CharacterSheet() {
 
   const op = async (type, payload) => {
     try {
-      await api.applyOp(char, type, payload)
+      const r = await api.applyOp(char, type, payload)
+      // daño manteniendo concentración → avisa de la tirada de CON
+      const cc = (r.events || []).find((e) => e.payload?.concentration_check)
+      if (cc) {
+        setNotice(`Concentración (${cc.payload.spell}): salva CON, CD ${cc.payload.concentration_dc}`)
+      }
       load()
     } catch (e) {
       setErr(e.message)
@@ -103,6 +110,11 @@ export default function CharacterSheet() {
         }}>Historial</button>
       </div>
       {err && <p className="error">{err}</p>}
+      {notice && (
+        <p className="notice" role="alert">
+          {notice} <button onClick={() => setNotice(null)}>OK</button>
+        </p>
+      )}
 
       {rollRequest && (
         <section className="card" role="alert">
@@ -247,6 +259,14 @@ export default function CharacterSheet() {
             <ul>{list.map((a, i) => (
               <li key={i}>{a.name}
                 {a.hit && <span className="muted"> {a.hit} · {a.damage}</span>}
+                {a.name.startsWith('Ataque:') && (
+                  <button style={{ minHeight: 32, marginLeft: 8 }}
+                          onClick={async () => {
+                    const w = a.name.replace('Ataque: ', '')
+                    const r = await api.characterAttack(id, w)
+                    setRollLog((l) => [`${w}: impacto ${r.hit.total} · daño ${r.damage.total}`, ...l].slice(0, 10))
+                  }}>⚔</button>
+                )}
               </li>))}
             </ul>
           </div>
@@ -296,12 +316,35 @@ export default function CharacterSheet() {
           <input value={expr} onChange={(e) => setExpr(e.target.value)}
                  placeholder="2d6+3, 1d20adv, 4d6kh3" />
           <select value={rollType} onChange={(e) => setRollType(e.target.value)}>
-            {['check', 'attack', 'save', 'damage'].map((t) => (
-              <option key={t} value={t}>{t}</option>))}
+            <option value="check">check</option>
+            <option value="attack">attack</option>
+            <option value="damage">damage</option>
+            <optgroup label="Salvaciones">
+              {['str', 'dex', 'con', 'int', 'wis', 'cha'].map((a) => (
+                <option key={a} value={`save:${a}`}>save:{a}</option>))}
+            </optgroup>
+            <optgroup label="Habilidades">
+              {['skill:perception', 'skill:stealth', 'skill:athletics',
+                'skill:insight', 'skill:investigation', 'skill:persuasion']
+                .map((s) => <option key={s} value={s}>{s.slice(6)}</option>)}
+            </optgroup>
           </select>
           <button type="submit">Tirar</button>
         </form>
         <ul className="log">{rollLog.map((l, i) => <li key={i}>{l}</li>)}</ul>
+      </section>
+
+      <section className="card optional">
+        <h2>Diario</h2>
+        <div className="row">
+          <input value={journalEntry} placeholder="Anotación de la sesión…"
+                 onChange={(e) => setJournalEntry(e.target.value)} />
+          <button disabled={!journalEntry.trim()} onClick={() => {
+            op('character.journal.add', { entry: journalEntry.trim() })
+            setJournalEntry('')
+          }}>Anotar</button>
+        </div>
+        <ul>{(d.narrative?.journal || []).map((j, i) => <li key={i}>{j}</li>)}</ul>
       </section>
     </main>
   )

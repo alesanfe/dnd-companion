@@ -40,8 +40,9 @@ def hp_damage(char: Character, p: dict, ctx):
     payload = {"amount": amount, "temp_absorbed": absorbed,
                "current": char.hp.current}
     if char.concentrating_on:
-        # recibir daño exige tirada de CON para mantener el conjuro
+        # recibir daño exige tirada de CON: CD máx(10, daño/2)
         payload["concentration_check"] = True
+        payload["concentration_dc"] = max(10, amount // 2)
         payload["spell"] = char.concentrating_on
     return inv, [{"type": "character.hp.changed", "payload": payload}]
 
@@ -423,6 +424,13 @@ def spell_cast(char: Character, p: dict, ctx):
     spell_id = p["spell_id"]
     level = int(p.get("level", 0))
     sp = _content(ctx, spell_id) or {}
+    spell_level = int(sp.get("level", 0))
+    # upcasting válido; no se puede lanzar un conjuro por debajo de su nivel
+    if level and level < spell_level:
+        raise ValueError(
+            f"espacio insuficiente: {sp.get('name')} es de nivel {spell_level}")
+    if not level:
+        level = spell_level
     before = char.model_dump()
     if level > 0:
         slot = char.spell_slots.setdefault(
@@ -490,6 +498,24 @@ def shop_refund(char: Character, p: dict, ctx):
             "payload": {"shop_id": p["shop_id"], "item": p["item"]}}, [
         {"type": "inventory.item.transferred",
          "payload": {"refunded": p["item"], "price_cp": price_cp}}]
+
+
+@op("character.journal.add")
+def journal_add(char: Character, p: dict, ctx):
+    """Entrada de diario/crónicas — reversible."""
+    entry = p["entry"]
+    char.narrative.journal.append(entry)
+    return {"operation_type": "character.journal.pop",
+            "payload": {}}, [
+        {"type": "inventory.item.transferred",
+         "payload": {"journal_entry": entry}}]
+
+
+@op("character.journal.pop")
+def journal_pop(char: Character, p: dict, ctx):
+    entry = char.narrative.journal.pop() if char.narrative.journal else None
+    return {"operation_type": "character.journal.add",
+            "payload": {"entry": entry}}, []
 
 
 @op("character.craft")

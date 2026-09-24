@@ -233,13 +233,58 @@ def combatant_death_save(combat: Combat, p: dict, ctx):
                               "outcome": outcome}}]
 
 
+@op("combatant.death_save_roll")
+def combatant_death_save_roll(combat: Combat, p: dict, ctx):
+    """El servidor tira el d20: >=10 éxito, 1 natural = 2 fallos,
+    20 natural = recupera 1 PG (reglas SRD)."""
+    c = _find(combat, p["combatant_id"])
+    if c.hp_current > 0:
+        raise ValueError("el combatiente no está a 0 PG")
+    inv = {"operation_type": "combatant.death_save.set",
+           "payload": {"combatant_id": c.id,
+                       "death_saves": dict(c.death_saves),
+                       "hp": c.hp_current,
+                       "conditions": list(c.conditions)}}
+    r = roll("1d20")
+    outcome = None
+    if r.total == 20:                     # pifia natural inversa: revive
+        c.hp_current = 1
+        c.death_saves = {"success": 0, "fail": 0}
+        outcome = "recupera 1 PG"
+    elif r.total == 1:
+        c.death_saves["fail"] += 2
+        outcome = "pifia (2 fallos)"
+    elif r.total >= 10:
+        c.death_saves["success"] += 1
+    else:
+        c.death_saves["fail"] += 1
+    if c.death_saves["success"] >= 3:
+        c.conditions.append("estable")
+        c.death_saves = {"success": 0, "fail": 0}
+        outcome = "estable"
+    elif c.death_saves["fail"] >= 3:
+        c.conditions.append("muerto")
+        outcome = "muerto"
+    _sync_character(c, ctx)
+    return inv, [{"type": "character.hp.changed",
+                  "payload": {"combatant": c.name, "death_save_roll": r.total,
+                              "outcome": outcome}}]
+
+
 @op("combatant.death_save.set")
 def combatant_death_save_set(combat: Combat, p: dict, ctx):
     c = _find(combat, p["combatant_id"])
     inv = {"operation_type": "combatant.death_save.set",
            "payload": {"combatant_id": c.id,
-                       "death_saves": dict(c.death_saves)}}
+                       "death_saves": dict(c.death_saves),
+                       "hp": c.hp_current,
+                       "conditions": list(c.conditions)}}
     c.death_saves = dict(p["death_saves"])
+    if "hp" in p:
+        c.hp_current = int(p["hp"])
+    if "conditions" in p:
+        c.conditions = list(p["conditions"])
+    _sync_character(c, ctx)
     return inv, []
 
 

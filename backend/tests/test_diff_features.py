@@ -462,6 +462,93 @@ def test_condition_disadvantage_and_autofail():
     assert r.json()["auto_fail"] is True
 
 
+def test_skill_roll_adds_ability_and_prof():
+    cid = _mkchar()
+    import json as _j
+    from app.db.connections import state_db
+    conn = state_db()
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    d["abilities"]["wis"] = 14          # +2
+    d["skill_proficiencies"] = ["perception"]
+    d["proficiency_bonus"] = 2
+    conn.execute("UPDATE characters SET data = ? WHERE id = ?",
+                 (_j.dumps(d), cid))
+    conn.commit()
+    r = client.post(f"/api/operations/character/{cid}/roll",
+                    params={"expression": "1d20",
+                            "roll_type": "skill:perception"})
+    b = r.json()
+    assert b["total"] == b["kept"][0] + 4   # +2 WIS +2 prof
+    assert any("wis" in a for a in b["effects_applied"])
+    assert any("prof" in a for a in b["effects_applied"])
+
+
+def test_spell_cast_rejects_low_slot():
+    cid = _mkchar()
+    import json as _j
+    from app.db.connections import state_db
+    conn = state_db()
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    d["spell_slots"] = {"1": {"total": 4, "used": 0},
+                        "3": {"total": 2, "used": 0}}
+    conn.execute("UPDATE characters SET data = ? WHERE id = ?",
+                 (_j.dumps(d), cid))
+    conn.commit()
+    # fireball es nivel 3 → no se puede con espacio de nivel 1
+    r = _op(cid, _version(cid), "character.spell.cast",
+            {"spell_id": "srd-2014:fireball", "level": 1})
+    assert r.status_code == 400
+    # upcasting a nivel 3 sí (si hay spell conocido en DB)
+    r = _op(cid, _version(cid), "character.spell.cast",
+            {"spell_id": "srd-2014:fireball", "level": 3})
+    if r.status_code == 200:
+        d = client.get(f"/api/characters/{cid}").json()["data"]
+        assert d["spell_slots"]["3"]["used"] == 1
+
+
+def test_death_save_roll_server_side():
+    combat = client.post("/api/combat", json={"name": "DR"}).json()
+    _combat_op(combat["id"], combat["version"], "combatant.add",
+               {"name": "Hero", "hp_max": 10})
+    cdata = client.get(f"/api/combat/{combat['id']}").json()["combat"]
+    bid = cdata["combatants"][0]["id"]
+    v = client.get(f"/api/combat/{combat['id']}").json()["version"]
+    _combat_op(combat["id"], v, "combatant.damage",
+               {"combatant_id": bid, "amount": 99})
+    v = client.get(f"/api/combat/{combat['id']}").json()["version"]
+    r = _combat_op(combat["id"], v, "combatant.death_save_roll",
+                   {"combatant_id": bid})
+    assert r.status_code == 200
+    ev = r.json()["events"][0]["payload"]
+    assert 1 <= ev["death_save_roll"] <= 20
+
+
+def test_journal_add_and_undo():
+    cid = _mkchar()
+    r = _op(cid, _version(cid), "character.journal.add",
+            {"entry": "Conocimos al tabernero"})
+    assert r.status_code == 200
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert d["narrative"]["journal"] == ["Conocimos al tabernero"]
+    client.post(f"/api/operations/undo/{r.json()['operation_id']}")
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert d["narrative"]["journal"] == []
+
+
+def test_attack_endpoint_hit_and_damage():
+    cid = _mkchar()
+    _op(cid, _version(cid), "character.inventory.add",
+        {"name": "Daga", "source_id": "srd-2014:dagger"})
+    r = client.post(f"/api/operations/character/{cid}/attack",
+                    params={"item_name": "Daga"})
+    if r.status_code == 404:
+        import pytest
+        pytest.skip("content DB no importada")
+    b = r.json()
+    assert 1 <= b["hit"]["total"] <= 20 + b["hit"]["bonus"]
+    assert b["damage"]["rolls"]
+
+
 def test_patch_and_delete_character():
     cid = _mkchar()
     r = client.patch(f"/api/characters/{cid}", json={"name": "Renombrado"})

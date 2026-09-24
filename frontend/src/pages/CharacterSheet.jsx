@@ -327,6 +327,21 @@ export default function CharacterSheet() {
         ))}
       </section>
 
+      {(d.effects || []).length > 0 && (
+        <section className="card optional">
+          <h2>Efectos activos</h2>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            {d.effects.map((e) => (
+              <span key={e.id} className="chip" title={e.source}>
+                {e.name}
+                <button aria-label={`Quitar efecto ${e.name}`} onClick={() =>
+                  op('character.effect.remove', { effect_id: e.id })}>×</button>
+              </span>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="card optional">
         <h2>Condiciones</h2>
         <div className="row">

@@ -704,6 +704,19 @@ def proficiency_remove(char: Character, p: dict, ctx):
             "payload": p}, []
 
 
+@op("character.narrative.set")
+def narrative_set(char: Character, p: dict, ctx):
+    """Edita campos de trasfondo narrativo (personality, ideals, bonds,
+    flaws, appearance, backstory) — reversible."""
+    field = p["field"]
+    inv = {"operation_type": "character.narrative.set",
+           "payload": {"field": field,
+                       "value": getattr(char.narrative, field, None)}}
+    setattr(char.narrative, field, p.get("value", ""))
+    return inv, [{"type": "resource.usage.changed",
+                  "payload": {"narrative": field}}]
+
+
 @op("character.craft")
 def craft(char: Character, p: dict, ctx):
     """Fabricación/downtime: consume ingredientes del inventario y

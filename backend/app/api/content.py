@@ -42,7 +42,8 @@ def search(
 
 _TYPE_ALIASES = {
     "spell": "spell", "monster": "monster", "rule": "rule",
-    "item": "magic-item", "class": "class", "race": "race",
+    "item": "magic-item", "magic-item": "magic-item", "class": "class",
+    "race": "race", "species": "species",      # species = raza 2024
     "feat": "feat", "condition": "condition", "background": "background",
     "equipment": "equipment", "trait": "trait",
 }

@@ -86,6 +86,24 @@ def add_party(combat_id: str):
     return {"added": added}
 
 
+@router.get("")
+def list_combats(campaign_id: str | None = None,
+                 status: str | None = None):
+    """Combates activos/pasados — el DM reabre el tracker desde aquí."""
+    conn = state_db()
+    sql = ("SELECT id, name, campaign_id, ruleset, version, updated_at "
+           "FROM combats WHERE 1=1")
+    params: list = []
+    if campaign_id:
+        sql += " AND campaign_id = ?"; params.append(campaign_id)
+    if status:
+        sql += " AND json_extract(data,'$.status') = ?"
+        params.append(status)
+    sql += " ORDER BY updated_at DESC"
+    return {"combats": [dict(r) for r in
+                        conn.execute(sql, params).fetchall()]}
+
+
 @router.get("/{combat_id}")
 def get_combat(combat_id: str, reveal_hp: bool = True):
     """reveal_hp=false devuelve la vista de jugador (estados, sin números)."""

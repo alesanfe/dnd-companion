@@ -3,6 +3,8 @@ import { api } from '../api.js'
 
 export default function Search() {
   const [q, setQ] = useState('')
+  const [type, setType] = useState('')
+  const [edition, setEdition] = useState('')
   const [results, setResults] = useState([])
   const [parsed, setParsed] = useState(null)
   const [asked, setAsked] = useState(null)
@@ -12,8 +14,10 @@ export default function Search() {
     e.preventDefault()
     try {
       // sintaxis de comandos: /spell fire level:3 — si no, FTS normal
-      const r = q.trim().startsWith('/')
-        ? await api.commandSearch(q)
+      const cmd = (type ? `/${type} ` : '') + q.trim() +
+                  (edition ? ` ruleset:${edition}` : '')
+      const r = cmd.trim().startsWith('/') || edition
+        ? await api.commandSearch(cmd)
         : await api.search(q)
       setResults(r.results)
       setParsed(r.parsed || null)
@@ -26,6 +30,20 @@ export default function Search() {
       <form onSubmit={go} className="row">
         <input value={q} onChange={(e) => setQ(e.target.value)}
                placeholder="fireball — o /monster cr:1..5 type:undead" autoFocus />
+        <select value={type} onChange={(e) => setType(e.target.value)}
+                aria-label="Tipo de entidad">
+          <option value="">todo</option>
+          {['spell', 'monster', 'class', 'race', 'species', 'feat',
+            'equipment', 'item', 'condition', 'rule', 'background',
+            'trait'].map((t) => (
+            <option key={t} value={t}>{t}</option>))}
+        </select>
+        <select value={edition} onChange={(e) => setEdition(e.target.value)}
+                aria-label="Edición">
+          <option value="">2014+2024</option>
+          <option value="2014">2014</option>
+          <option value="2024">2024</option>
+        </select>
         <button type="submit">Buscar</button>
       </form>
       {err && <p className="error">{err}</p>}

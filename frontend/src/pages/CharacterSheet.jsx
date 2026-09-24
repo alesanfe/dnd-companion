@@ -458,13 +458,21 @@ export default function CharacterSheet() {
         </section>
       )}
 
-      {(d.features || []).length > 0 && (
-        <section className="card optional">
-          <h2>Rasgos de clase</h2>
+      <section className="card optional">
+        <h2>Rasgos</h2>
+        <SpellPicker entityType="feature" verb="Añadir"
+          placeholder="Rasgo opcional (invocación, infusión, maniobra…)"
+          onPick={(fid) =>
+            op('character.feature.add', { entity_id: fid })} />
+        {(d.features || []).length > 0 && (
           <div className="row" style={{ flexWrap: 'wrap' }}>
-            {d.features.map((f) => <span key={f} className="chip">{f}</span>)}
-          </div>
-        </section>)}
+            {d.features.map((f) => (
+              <span key={f} className="chip">{f}
+                <button aria-label={`Quitar rasgo ${f}`} onClick={() =>
+                  op('character.feature.remove', { name: f })
+                }>×</button></span>))}
+          </div>)}
+      </section>
 
       <section className="card optional">
         <h2>Dotes y dones</h2>

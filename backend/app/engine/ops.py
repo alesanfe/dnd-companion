@@ -817,6 +817,34 @@ def _list_add_remove(lst: list, value: str, add: bool):
         lst.remove(value)
 
 
+@op("character.feature.add")
+def feature_add(char: Character, p: dict, ctx):
+    """Rasgo opcional elegido manualmente (invocación, infusión,
+    maniobra…). Si viene entity id se guarda el nombre real."""
+    name = p.get("name")
+    if not name and p.get("entity_id") and ctx is not None:
+        try:
+            row = ctx.content_db().execute(
+                "SELECT name FROM content_entities WHERE id = ?",
+                (p["entity_id"],)).fetchone()
+            name = row["name"] if row else None
+        except Exception:      # noqa: BLE001
+            name = None
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("feature name requerido")
+    _list_add_remove(char.features, name, True)
+    return {"operation_type": "character.feature.remove",
+            "payload": {"name": name}}, []
+
+
+@op("character.feature.remove")
+def feature_remove(char: Character, p: dict, ctx):
+    _list_add_remove(char.features, p["name"], False)
+    return {"operation_type": "character.feature.add",
+            "payload": {"name": p["name"]}}, []
+
+
 @op("character.subclass.set")
 def subclass_set(char: Character, p: dict, ctx):
     """Fija la subclase de la clase indicada (índice en classes[])."""

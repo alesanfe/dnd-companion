@@ -23,6 +23,7 @@ export default function CharacterSheet() {
   const [history, setHistory] = useState(null)
   const [newItem, setNewItem] = useState('')
   const [newCond, setNewCond] = useState('')
+  const [condRounds, setCondRounds] = useState('')
   const [coin, setCoin] = useState('gp')
   const [actions, setActions] = useState(null)
   const [searchParams] = useSearchParams()
@@ -756,15 +757,34 @@ export default function CharacterSheet() {
           <datalist id="cond-list">
             {condOptions.map((c) => <option key={c} value={c} />)}
           </datalist>
+          <input type="number" min="1" placeholder="rondas"
+                 title="Duración en rondas (vacío = sin límite)"
+                 aria-label="Duración en rondas"
+                 style={{ maxWidth: 76 }}
+                 value={condRounds}
+                 onChange={(e) => setCondRounds(e.target.value)} />
           <button disabled={!newCond.trim()} onClick={() => {
-            op('character.condition.apply', { condition: newCond.trim() })
+            op('character.condition.apply', {
+              condition: newCond.trim(),
+              ...(condRounds ? { rounds: +condRounds } : {}) })
             setNewCond('')
           }}>Aplicar</button>
+          {Object.keys(d.condition_durations || {}).length > 0 && (
+            <button className="ghost"
+                    title="Pasar una ronda — expira condiciones"
+                    onClick={() =>
+                      op('character.tick', { rounds: 1 })}>
+              ⏱ +1 ronda</button>)}
         </div>
         {(d.conditions || []).map((c) => (
-          <CondChip key={c} name={c}
-                    onRemove={() => op('character.condition.remove',
-                                       { condition: c })} />
+          <span key={c} className="row" style={{ alignItems: 'center' }}>
+            <CondChip name={c}
+              onRemove={() => op('character.condition.remove',
+                                 { condition: c })} />
+            {d.condition_durations?.[c] != null && (
+              <span className="muted" style={{ fontSize: '.8rem' }}>
+                ⏳ {d.condition_durations[c]} rondas</span>)}
+          </span>
         ))}
       </section>
 

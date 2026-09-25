@@ -123,23 +123,46 @@ def hp_set(char: Character, p: dict, ctx):
 @op("character.condition.apply")
 def condition_apply(char: Character, p: dict, ctx):
     cond = p["condition"]
+    rounds = int(p["rounds"]) if p.get("rounds") else None
     inv = {"operation_type": "character.condition.remove",
            "payload": {"condition": cond}}
     if cond not in char.conditions:
         char.conditions.append(cond)
+    if rounds:
+        char.condition_durations[cond] = rounds
     return inv, [{"type": "character.condition.applied",
-                  "payload": {"condition": cond}}]
+                  "payload": {"condition": cond, "rounds": rounds}}]
 
 
 @op("character.condition.remove")
 def condition_remove(char: Character, p: dict, ctx):
     cond = p["condition"]
+    had_rounds = char.condition_durations.get(cond)
     inv = {"operation_type": "character.condition.apply",
-           "payload": {"condition": cond}}
+           "payload": {"condition": cond,
+                       **({"rounds": had_rounds} if had_rounds else {})}}
     if cond in char.conditions:
         char.conditions.remove(cond)
+    char.condition_durations.pop(cond, None)
     return inv, [{"type": "character.condition.removed",
                   "payload": {"condition": cond}}]
+
+
+@op("character.tick")
+def character_tick(char: Character, p: dict, ctx):
+    """Pasa una ronda fuera de combate: decrementa las duraciones de
+    condiciones y expira las que lleguen a 0."""
+    inv = _set_inverse(char)
+    expired = []
+    for cond in list(char.condition_durations):
+        char.condition_durations[cond] -= int(p.get("rounds", 1))
+        if char.condition_durations[cond] <= 0:
+            del char.condition_durations[cond]
+            if cond in char.conditions:
+                char.conditions.remove(cond)
+            expired.append(cond)
+    return inv, [{"type": "character.condition.removed",
+                  "payload": {"expired": expired}}]
 
 
 @op("character.resource.consume")

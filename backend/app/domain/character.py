@@ -101,6 +101,8 @@ class Character(BaseModel):
     skill_proficiencies: list[str] = Field(default_factory=list)
     save_proficiencies: list[str] = Field(default_factory=list)
     conditions: list[str] = Field(default_factory=list)
+    condition_durations: dict[str, int] = Field(default_factory=dict)
+    # {'poisoned': 3} → expira al pasar 3 rondas fuera de combate
     effects: list[Effect] = Field(default_factory=list)     # activos/pasivos
     inventory: list[InventoryItem] = Field(default_factory=list)
     purse: dict[str, int] = Field(

@@ -200,6 +200,23 @@ def test_pending_roll_requests():
     assert client.get(f"{url}?{ids}").json()["pending"] == []
 
 
+def test_condition_durations_tick():
+    """Condición con rondas → tick la expira y la quita."""
+    cid = _mkchar()
+    ver = 1
+    r = _op(cid, ver, "character.condition.apply",
+            {"condition": "poisoned", "rounds": 2})
+    ver = r.json()["version"]
+    r = _op(cid, ver, "character.tick", {"rounds": 1})
+    ver = r.json()["version"]
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert d["conditions"] == ["poisoned"]
+    assert d["condition_durations"] == {"poisoned": 1}
+    _op(cid, ver, "character.tick", {"rounds": 1})
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert d["conditions"] == [] and d["condition_durations"] == {}
+
+
 def test_death_saves_lifecycle():
     """0 PG → salvaciones (1=2 fallos, 20=1PG); curar reinicia."""
     cid = _mkchar()

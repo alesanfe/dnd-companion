@@ -608,6 +608,65 @@ def export_campaign(campaign_id: str):
     }
 
 
+@router.get("/{campaign_id}/export-vtt")
+def export_vtt(campaign_id: str):
+    """Export neutral para VTTs (Foundry/Roll20/…): personajes y
+    combatientes como actores genéricos {name, type, hp, ac, abilities,
+    conditions, cr}. No es un schema propietario — cada VTT lo mapea
+    con un importador."""
+    conn = state_db()
+    camp = conn.execute("SELECT id, name FROM campaigns WHERE id = ?",
+                        (campaign_id,)).fetchone()
+    if camp is None:
+        raise HTTPException(404, "campaign not found")
+
+    def actor(name, kind, d):
+        ab = d.get("abilities") or {}
+        return {
+            "name": name,
+            "type": "npc" if kind != "character" else "character",
+            "hp": {"current": (d.get("hp") or {}).get("current",
+                                d.get("hp_current", 1)),
+                   "max": (d.get("hp") or {}).get("max",
+                             d.get("hp_max", 1)),
+                   "temp": (d.get("hp") or {}).get("temp",
+                              d.get("hp_temp", 0))},
+            "ac": (d.get("derived") or {}).get("ac") or
+                  d.get("ac") or (d.get("stat_block") or {}).get("ac"),
+            "abilities": ab,
+            "level": sum(c.get("level", 1)
+                         for c in d.get("classes", [])) or None,
+            "conditions": d.get("conditions", []),
+            "cr": (d.get("stat_block") or {}).get("cr"),
+            "spells": d.get("spells_known") or None,
+        }
+
+    actors, combats_out = [], []
+    for r in conn.execute(
+            "SELECT name, data FROM characters WHERE campaign_id = ?",
+            (campaign_id,)).fetchall():
+        actors.append(actor(r["name"], "character", json.loads(r["data"])))
+    for r in conn.execute(
+            "SELECT name, data FROM combats WHERE campaign_id = ?",
+            (campaign_id,)).fetchall():
+        cb = json.loads(r["data"])
+        cbt = {"name": cb.get("name"), "round": cb.get("round"),
+               "combatants": [
+                   {**actor(c.get("name"), c.get("kind", "monster"), c),
+                    "initiative": c.get("initiative")}
+                   for c in cb.get("combatants", [])]}
+        combats_out.append(cbt)
+        actors.extend(cbt["combatants"])
+
+    return {
+        "format": "vtt-generic",
+        "format_version": 1,
+        "campaign": dict(camp),
+        "actors": actors,
+        "combats": combats_out,
+    }
+
+
 # --- Solicitud de tirada (DM -> jugador) -----------------------------
 
 class RollRequestIn(BaseModel):

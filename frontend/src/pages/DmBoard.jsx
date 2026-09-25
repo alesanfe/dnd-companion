@@ -15,6 +15,7 @@ export default function DmBoard() {
   const [dmg, setDmg] = useState({})
   const [err, setErr] = useState(null)
   const [dmTab, setDmTab] = useState('sesion')
+  const [playerView, setPlayerView] = useState(false)  // lo que ven los jugadores
   const [entities, setEntities] = useState([])
   const [entForm, setEntForm] = useState({ kind: 'npc', name: '', notes: '', monsters: '' })
   const [partyLevels, setPartyLevels] = useState('3,3,3,3')
@@ -104,6 +105,11 @@ export default function DmBoard() {
             <button key={k} role="tab" aria-selected={dmTab === k}
                     onClick={() => setDmTab(k)}>{label}</button>))}
         </nav>
+        <button className="ghost" aria-pressed={playerView}
+                title="Oculta lo que los jugadores no deben ver"
+                onClick={() => setPlayerView(!playerView)}>
+          {playerView ? '🙈 Vista jugador: ON' : '👁 Vista jugador'}
+        </button>
         {campaign && (
           <p className="muted" style={{ fontSize: '.8rem' }}>
             {campaign.name}
@@ -177,8 +183,10 @@ export default function DmBoard() {
                onScroll={(e) => {
                  if (e.target.scrollTop <= 40) setNewRolls(0)
                }}>
-          {rollFeed.filter((r) => feedFilter === 'todas' ||
-                r.roll_type === feedFilter).map((r, i) => (
+          {rollFeed.filter((r) =>
+                (!playerView || !r.secret) &&
+                (feedFilter === 'todas' ||
+                 r.roll_type === feedFilter)).map((r, i) => (
             <div key={i} className="row">
               <span>{r.secret ? '🔒 ' : ''}{r.character}</span>
               <span className="muted">
@@ -193,7 +201,21 @@ export default function DmBoard() {
 
       {campaign && (
         <section className="card" hidden={dmTab !== 'campana'}>
-          <h2>Entidades de campaña</h2>
+          <h2>Entidades de campaña
+            <button className="ghost" style={{ float: 'right' }}
+                    title="Actores y combates en JSON genérico de VTT"
+                    onClick={async () => {
+              const r = await fetch(
+                `/api/campaigns/${campaign.id}/export-vtt`)
+              const data = await r.json()
+              const blob = new Blob([JSON.stringify(data, null, 2)],
+                                    { type: 'application/json' })
+              const a = document.createElement('a')
+              a.href = URL.createObjectURL(blob)
+              a.download = `${campaign.name || 'campaign'}-vtt.json`
+              a.click()
+            }}>Exportar VTT</button>
+          </h2>
           <div className="row">
             <select value={entForm.kind}
                     onChange={(e) => setEntForm({ ...entForm, kind: e.target.value })}>
@@ -233,30 +255,35 @@ export default function DmBoard() {
           <button onClick={() =>
             api.listEntities(campaign.id).then((r) => setEntities(r.entities))
           }>Cargar lista</button>
-          {entities.map((e) => (
+          {entities
+            .filter((e) => !playerView || e.visibility === 'public')
+            .map((e) => (
             <div key={e.id} className="row">
               <span className="muted">{e.kind}</span>
               <span style={{ flex: 1 }}>{e.name}</span>
-              <button className="ghost" aria-label={`Borrar ${e.name}`}
-                      onClick={async () => {
-                if (!confirm(`¿Borrar "${e.name}"?`)) return
-                await fetch(
-                  `/api/campaigns/${campaign.id}/entities/${e.id}`,
-                  { method: 'DELETE' })
-                api.listEntities(campaign.id).then((r) => setEntities(r.entities))
-              }}>×</button>
-              {e.kind === 'scene' && (e.data.monsters || []).length > 0 && (
-                <button style={{ minHeight: 32 }} onClick={async () => {
-                  const r = await api.startScene(campaign.id, e.id)
-                  refresh(r.combat_id)
-                }}>▶ combate</button>
-              )}
-              {e.visibility === 'dm' && (
-                <button onClick={async () => {
-                  await api.revealEntity(campaign.id, e.id)
-                  api.listEntities(campaign.id).then((r) => setEntities(r.entities))
-                }}>Revelar</button>
-              )}
+              {!playerView && (
+                <>
+                  <button className="ghost" aria-label={`Borrar ${e.name}`}
+                          onClick={async () => {
+                    if (!confirm(`¿Borrar "${e.name}"?`)) return
+                    await fetch(
+                      `/api/campaigns/${campaign.id}/entities/${e.id}`,
+                      { method: 'DELETE' })
+                    api.listEntities(campaign.id).then((r) => setEntities(r.entities))
+                  }}>×</button>
+                  {e.kind === 'scene' && (e.data.monsters || []).length > 0 && (
+                    <button style={{ minHeight: 32 }} onClick={async () => {
+                      const r = await api.startScene(campaign.id, e.id)
+                      refresh(r.combat_id)
+                    }}>▶ combate</button>
+                  )}
+                  {e.visibility === 'dm' && (
+                    <button onClick={async () => {
+                      await api.revealEntity(campaign.id, e.id)
+                      api.listEntities(campaign.id).then((r) => setEntities(r.entities))
+                    }}>Revelar</button>
+                  )}
+                </>)}
             </div>
           ))}
         </section>
@@ -566,7 +593,7 @@ export default function DmBoard() {
 
           {/* Panel contextual: click en un combatiente → condiciones
              con duración, acciones y stat block */}
-          {sel && (
+          {sel && !playerView && (
             <section className="card" hidden={dmTab !== 'combate'}
                      aria-label={`Condiciones de ${sel.name}`}>
               <h2>Condición — {sel.name}</h2>
@@ -590,7 +617,7 @@ export default function DmBoard() {
                 }}>Aplicar</button>
               </div>
             </section>)}
-          {sel && (sel.stat_block?.actions?.length > 0) && (
+          {sel && !playerView && (sel.stat_block?.actions?.length > 0) && (
             <section className="card" hidden={dmTab !== 'combate'}
                      aria-label={`Acciones de ${sel.name}`}>
               <h2>{sel.name}
@@ -617,7 +644,7 @@ export default function DmBoard() {
 
           {/* Vista DM del personaje: CA/PG/condiciones + acciones de
               mesa sin abrir la ficha completa */}
-          {sel && sel.kind === 'character' && (
+          {sel && !playerView && sel.kind === 'character' && (
             <section className="card" hidden={dmTab !== 'combate'}
                      aria-label={`Resumen DM de ${sel.name}`}>
               <h2>{sel.name}

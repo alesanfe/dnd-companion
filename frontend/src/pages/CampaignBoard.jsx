@@ -12,6 +12,7 @@ export default function CampaignBoard() {
   const [err, setErr] = useState(null)
   const [pend, setPend] = useState([])
   const [camp, setCamp] = useState(null)
+  const [rolls, setRolls] = useState([])
   // el formulario de unirse solo ocupa espacio si todavía no estás dentro
   const [joined, setJoined] = useState(
     () => localStorage.getItem(`dnd-joined-${id}`) === '1')
@@ -48,6 +49,10 @@ export default function CampaignBoard() {
       if (ev?.type === 'dice.roll.requested' ||
           ev?.type?.startsWith('campaign.') ||
           ev?.type?.startsWith('combat.')) load()
+      // tiradas públicas (las secretas nunca llegan a este socket)
+      if (ev?.type === 'dice.roll.created') {
+        setRolls((l) => [ev.payload, ...l].slice(0, 10))
+      }
     }
     return () => ws.close()
   }, [id])
@@ -97,6 +102,17 @@ export default function CampaignBoard() {
                  placeholder="Código de invitación" />
           <button type="submit">Unirse</button>
         </form>)}
+
+      {rolls.length > 0 && (
+        <section className="card">
+          <h2>Tiradas recientes</h2>
+          {rolls.map((r, i) => (
+            <div key={i} className="row">
+              <span>{r.character}</span>
+              <span className="muted">{r.roll_type} · {r.expression}</span>
+              <strong>{r.total}</strong>
+            </div>))}
+        </section>)}
 
       {chars.length > 0 && (
         <section className="card">

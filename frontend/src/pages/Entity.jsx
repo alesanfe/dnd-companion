@@ -66,6 +66,12 @@ export default function Entity() {
         <button className="ghost" aria-expanded={colPick}
                 onClick={() => setColPick(!colPick)}>Colección</button>
         <AddToCharacter entity={ent} />
+        <button className="ghost" onClick={() => {
+          const text = block
+            ? JSON.stringify(block, null, 2)
+            : JSON.stringify(ent.data, null, 2)
+          navigator.clipboard?.writeText(text)
+        }}>Copiar</button>
       </div>
       {colPick && (
         <div className="card" role="dialog" aria-label="Añadir a colección">

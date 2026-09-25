@@ -22,6 +22,8 @@ export default function DmBoard() {
   const [difficulty, setDifficulty] = useState(null)
   const [rollReq, setRollReq] = useState({ character_id: '', expression: '1d20', reason: '' })
   const [dmgType, setDmgType] = useState('')
+  const [newCond, setNewCond] = useState('')
+  const [condRounds, setCondRounds] = useState('')
   const [selId, setSelId] = useState(null)
   const [feedFilter, setFeedFilter] = useState('todas')
   const [sessions, setSessions] = useState([])
@@ -86,6 +88,13 @@ export default function DmBoard() {
 
   return (
     <main className="dm">
+      <datalist id="dm-conds">
+        {['blinded', 'charmed', 'deafened', 'frightened', 'grappled',
+          'incapacitated', 'invisible', 'paralyzed', 'petrified',
+          'poisoned', 'prone', 'restrained', 'stunned', 'unconscious',
+          'muerto', 'concentrando'].map((x) =>
+          <option key={x} value={x} />)}
+      </datalist>
       <h1>Mesa del DM</h1>
       <div className="dm-shell">
       <aside className="dm-side">
@@ -529,7 +538,16 @@ export default function DmBoard() {
                         setSelId(c.id)}>
                   {isTurn && <span className="turn-tag">turno </span>}
                   {c.name}
-                  {c.conditions.map((x) => <em key={x} className="chip">{x}</em>)}
+                  {c.conditions.map((x) => (
+                    <em key={x} className="chip"
+                        title={(c.condition_durations?.[x]
+                          ? `${c.condition_durations[x]} rondas — ` : '') +
+                          'click para quitar'}
+                        onClick={() => cop('combatant.condition.remove',
+                          { combatant_id: c.id, condition: x })}
+                        style={{ cursor: 'pointer' }}>
+                      {x}{c.condition_durations?.[x]
+                        ? ` ⏳${c.condition_durations[x]}` : ''}</em>))}
                 </span>
                 <span className="hp">{c.hp_current}/{c.hp_max}</span>
                 <input type="number" style={{ maxWidth: 70 }}
@@ -546,8 +564,32 @@ export default function DmBoard() {
             )})}
           </section>
 
-          {/* Panel contextual: click en un combatiente → sus acciones
-             y stat block (ataque/daño/CD/recharge parseados) */}
+          {/* Panel contextual: click en un combatiente → condiciones
+             con duración, acciones y stat block */}
+          {sel && (
+            <section className="card" hidden={dmTab !== 'combate'}
+                     aria-label={`Condiciones de ${sel.name}`}>
+              <h2>Condición — {sel.name}</h2>
+              <div className="row">
+                <input list="dm-conds" value={newCond}
+                       placeholder="blinded, poisoned…"
+                       aria-label="Condición a aplicar"
+                       onChange={(e) => setNewCond(e.target.value)} />
+                <input type="number" min="1" placeholder="rondas"
+                       title="Duración en rondas (vacío = sin límite)"
+                       aria-label="Duración en rondas"
+                       style={{ maxWidth: 80 }}
+                       value={condRounds}
+                       onChange={(e) => setCondRounds(e.target.value)} />
+                <button disabled={!newCond.trim()} onClick={() => {
+                  cop('combatant.condition.apply', {
+                    combatant_id: sel.id,
+                    condition: newCond.trim(),
+                    ...(condRounds ? { rounds: +condRounds } : {}) })
+                  setNewCond('')
+                }}>Aplicar</button>
+              </div>
+            </section>)}
           {sel && (sel.stat_block?.actions?.length > 0) && (
             <section className="card" hidden={dmTab !== 'combate'}
                      aria-label={`Acciones de ${sel.name}`}>

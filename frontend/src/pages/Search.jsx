@@ -24,19 +24,26 @@ export default function Search() {
       JSON.stringify({ q, type, edition, source }))
   }, [q, type, edition, source])
 
-  const go = async (e) => {
-    e?.preventDefault()
+  const doSearch = async (term) => {
+    const term0 = term ?? q
     try {
-      // sintaxis de comandos: /spell fire level:3 — si no, FTS normal
-      const cmd = (type ? `/${type} ` : '') + q.trim() +
+      const cmd = (type ? `/${type} ` : '') + term0.trim() +
                   (edition ? ` ruleset:${edition}` : '')
       const r = cmd.trim().startsWith('/') || edition
         ? await api.commandSearch(cmd)
-        : await api.search(q, null, source || null)
+        : await api.search(term0, null, source || null)
       setResults(r.results)
       setParsed(r.parsed || null)
+      if (term0.trim()) {                   // historial de consultas
+        const rec = JSON.parse(sessionStorage.getItem(
+          'dnd-recent-searches') || '[]')
+        sessionStorage.setItem('dnd-recent-searches',
+          JSON.stringify([term0.trim(),
+            ...rec.filter((x) => x !== term0.trim())].slice(0, 8)))
+      }
     } catch (e2) { setErr(e2.message) }
   }
+  const go = (e) => { e?.preventDefault(); doSearch() }
 
   // al volver del detalle: reejecuta la búsqueda guardada y
   // restaura la posición de scroll
@@ -106,7 +113,10 @@ export default function Search() {
       )}
       {/* recientes + favoritos cuando no hay consulta */}
       {!q.trim() && results.length === 0 && (
-        <QuickAccess />)}
+        <QuickAccess onSearch={(term) => {
+          setQ(term)
+          doSearch(term)
+        }} />)}
 
       {results.length === 0 && q.trim() && (
         <p className="empty">Sin resultados — prueba otro término,
@@ -196,7 +206,7 @@ function Compare({ ids }) {
 
 
 /** Favoritos (guardados con ☆ en detalle) + recientes (visitas). */
-function QuickAccess() {
+function QuickAccess({ onSearch }) {
   const favs = JSON.parse(localStorage.getItem('dnd-favs') || '[]')
   const recs = JSON.parse(localStorage.getItem('dnd-recents') || '[]')
   const norm = (x) => typeof x === 'string'
@@ -233,7 +243,24 @@ function QuickAccess() {
     {col && <CollectionBlock ids={cols[col] || []} name={col} />}
     {!col && block('★ Favoritos', favs)}
     {!col && block('Recientes', recs)}
+    {!col && <RecentSearches onSearch={onSearch} />}
   </>)
+}
+
+/** Últimas consultas escritas — recuperables con un toque. */
+function RecentSearches({ onSearch }) {
+  const items = JSON.parse(
+    sessionStorage.getItem('dnd-recent-searches') || '[]')
+  if (!items.length) return null
+  return (
+    <section className="card">
+      <h2>Búsquedas recientes</h2>
+      <div className="row" style={{ flexWrap: 'wrap' }}>
+        {items.map((x) => (
+          <button key={x} className="ghost"
+                  onClick={() => onSearch(x)}>{x}</button>))}
+      </div>
+    </section>)
 }
 
 /** Una colección: resuelve ids a nombres de entidad. */

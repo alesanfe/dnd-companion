@@ -45,6 +45,7 @@ export default function CharacterSheet() {
     () => new Set(['resumen']))
   const [notice, setNotice] = useState(null)  // aviso de concentración
   const [undoable, setUndoable] = useState(null)  // {id, label} toast deshacer
+  const [pinnedNames, setPinnedNames] = useState({})
   const [journalEntry, setJournalEntry] = useState('')
   const [derived, setDerived] = useState(null)
   const [shops, setShops] = useState([])
@@ -74,6 +75,21 @@ export default function CharacterSheet() {
 
   // Sync en vivo: si el personaje está en una campaña, escucha eventos
   // de la sala y recarga cuando algo lo toca. Las peticiones de tirada
+  // nombres de favoritos que no son objetos de inventario (conjuros)
+  useEffect(() => {
+    if (!char) return
+    const dd = char.data
+    for (const pid of dd.pinned || []) {
+      if ((dd.inventory || []).some((x) => x.id === pid)) continue
+      if (pinnedNames[pid]) continue
+      api.getEntity(pid)
+        .then((e) => setPinnedNames((n) => ({ ...n, [pid]: e.name })))
+        .catch(() => setPinnedNames((n) =>
+          ({ ...n, [pid]: pid.split(':').pop().replace(/-/g, ' ') })))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [char?.data?.pinned])
+
   // del DM aparecen como banner accionable.
   useEffect(() => {
     if (!char?.campaign_id) return undefined
@@ -230,6 +246,17 @@ export default function CharacterSheet() {
             <span className="muted">⭑ {d.concentrating_on}</span>}
           {d.conditions?.length > 0 &&
             <span className="muted">{d.conditions.join(' · ')}</span>}
+          {derived && (
+            <button className="ghost" style={{ minHeight: 32 }}
+                    aria-label="Tirar iniciativa"
+                    onClick={async () => {
+              const r = await api.characterRoll(
+                id, `1d20${derived.initiative >= 0 ? '+' : ''}` +
+                    derived.initiative, 'initiative')
+              setRollLog((l) => [
+                `Iniciativa: ${r.kept.join('+')} = ${r.total}`,
+                ...l].slice(0, 10))
+            }}>🎲</button>)}
         </div>
         {focus && (
           <div className="row" style={{ flexWrap: 'wrap' }}>
@@ -617,6 +644,12 @@ export default function CharacterSheet() {
             <ul>{list.map((a, i) => (
               <li key={i}>{a.name}
                 {a.hit && <span className="muted"> {a.hit} · {a.damage}</span>}
+                <button className="ghost" style={{ minHeight: 28 }}
+                        title="Fijar en Resumen"
+                        aria-label={`Fijar ${a.name} en Resumen`}
+                        onClick={() => op('character.pin',
+                          { id: a.source || a.name })}>
+                  📌</button>
                 {a.name.startsWith('Ataque:') && (
                   <button style={{ minHeight: 32, marginLeft: 8 }}
                           onClick={async () => {
@@ -652,6 +685,28 @@ export default function CharacterSheet() {
           </div>
         </section>
       )}
+
+      {(d.pinned || []).length > 0 && (
+        <section className="card" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>
+          <h2>Favoritos</h2>
+          {d.pinned.map((pid) => {
+            const it = (d.inventory || []).find((x) => x.id === pid)
+            const spell = (d.spells_known || []).includes(pid) ? pid : null
+            return (
+              <div key={pid} className="row">
+                <span style={{ flex: 1 }}>
+                  {it?.name || pinnedNames[pid] ||
+                    pid.split(':').pop().replace(/-/g, ' ')}</span>
+                {it && (
+                  <button onClick={() => setAtkItem(it)}>Atacar</button>)}
+                {spell && (
+                  <button onClick={() => setCastId(spell)}>Lanzar</button>)}
+                <button className="ghost"
+                        aria-label="Quitar de favoritos"
+                        onClick={() =>
+                          op('character.unpin', { id: pid })}>×</button>
+              </div>)})}
+        </section>)}
 
       <section className="card optional" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>
         <h2>Condiciones</h2>
@@ -766,6 +821,7 @@ export default function CharacterSheet() {
         {(d.spells_known || []).length > 0 && (
           <SpellList ids={d.spells_known}
             onCast={(sid) => setCastId(sid)}
+            onPin={(sid) => op('character.pin', { id: sid })}
             onForget={(sid) =>
               op('character.spell.forget', { spell_id: sid })} />
         )}
@@ -1187,7 +1243,7 @@ function CondChip({ name, onRemove }) {
   )
 }
 
-function SpellList({ ids, onCast, onForget }) {
+function SpellList({ ids, onCast, onForget, onPin }) {
   const [names, setNames] = useState({})
   const [meta, setMeta] = useState({})
   const [menu, setMenu] = useState(null)
@@ -1225,6 +1281,9 @@ function SpellList({ ids, onCast, onForget }) {
             ⋮</button>
           {menu === sid && (
             <span className="row" role="menu">
+              <button className="ghost" onClick={() => {
+                setMenu(null); onPin?.(sid)
+              }}>Fijar</button>
               <button className="ghost" onClick={() => {
                 setMenu(null)
                 navigate(`/content/${encodeURIComponent(sid)}`)

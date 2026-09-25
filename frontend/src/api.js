@@ -3,6 +3,47 @@ import { getToken, currentUser } from './session.js'
 
 const CLIENT_ID = crypto.randomUUID()
 
+/* Alias ES→EN para que el FTS (contenido en inglés) encuentre
+   términos comunes escritos en español. Frase exacta primero,
+   luego palabra a palabra. */
+const ES_PHRASES = {
+  'bola de fuego': 'fireball', 'misil mágico': 'magic missile',
+  'mano de mago': 'mage hand', 'rayo de escarcha': 'ray of frost',
+  'proyectil de fuego': 'fire bolt', 'paso brumoso': 'misty step',
+  'curar heridas': 'cure wounds', 'palabra curativa': 'healing word',
+  'armadura de mago': 'mage armor', 'invisibilidad': 'invisibility',
+  'volar': 'fly', 'teletransporte': 'teleport', 'escudo': 'shield',
+  'bola de nieve': 'snowball swarm', 'luz': 'light',
+  'orientación divina': 'guidance', 'taumaturgia': 'thaumaturgy',
+  'druida': 'druid', 'pícaro': 'rogue', 'pícara': 'rogue',
+}
+const ES_WORDS = {
+  guerrero: 'fighter', guerrera: 'fighter', mago: 'wizard',
+  maga: 'wizard', clérigo: 'cleric', clériga: 'cleric',
+  bárbaro: 'barbarian', bárbara: 'barbarian', paladín: 'paladin',
+  paladina: 'paladin', explorador: 'ranger', exploradora: 'ranger',
+  monje: 'monk', brujo: 'warlock', bruja: 'warlock', bardo: 'bard',
+  hechicero: 'sorcerer', hechicera: 'sorcerer', dragón: 'dragon',
+  goblin: 'goblin', trasgo: 'goblin', orco: 'orc', orca: 'orc',
+  esqueleto: 'skeleton', zombi: 'zombie', vampiro: 'vampire',
+  licantropo: 'werewolf', ogro: 'ogre', gigante: 'giant',
+  demonio: 'demon', diablo: 'devil', elfo: 'elf', elfa: 'elf',
+  enano: 'dwarf', enana: 'dwarf', mediano: 'halfling', gnomo: 'gnome',
+  espada: 'sword', daga: 'dagger', arco: 'bow', hacha: 'axe',
+  martillo: 'hammer', lanza: 'spear', ballesta: 'crossbow',
+  armadura: 'armor', coraza: 'plate', cuero: 'leather',
+  escamas: 'scale', malla: 'chain', poción: 'potion',
+  pergamin: 'scroll', pergamino: 'scroll', anillo: 'ring',
+  amuleto: 'amulet', capa: 'cloak', vara: 'rod', varita: 'wand',
+  conjuro: 'spell', monstruo: 'monster', objeto: 'item',
+  dote: 'feat', rasgo: 'trait', condición: 'condition',
+}
+function esTranslate(q) {
+  const low = q.toLowerCase().trim()
+  if (ES_PHRASES[low]) return ES_PHRASES[low]
+  return low.split(/\s+/).map((w) => ES_WORDS[w] || w).join(' ')
+}
+
 function authHeaders() {
   const t = getToken()
   return t ? { Authorization: `Bearer ${t}` } : {}
@@ -76,7 +117,7 @@ export const api = {
   derivedStat: (id, stat, base = 10) =>
     req(`/api/characters/${id}/derived/${stat}?base=${base}`),
   search: (q, entityType, source, forClass) =>
-    req(`/api/content/search?q=${encodeURIComponent(q)}` +
+    req(`/api/content/search?q=${encodeURIComponent(esTranslate(q))}` +
         (entityType ? `&entity_type=${entityType}` : '') +
         (source ? `&source=${encodeURIComponent(source)}` : '') +
         (forClass ? `&for_class=${encodeURIComponent(forClass)}` : '')),

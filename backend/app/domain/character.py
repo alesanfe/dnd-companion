@@ -112,6 +112,8 @@ class Character(BaseModel):
     inspiration: bool = False               # inspiración del DM
     death_saves: dict[str, int] = Field(
         default_factory=lambda: {"success": 0, "fail": 0})
+    pinned: list[str] = Field(default_factory=list)
+    # ids de inventario/spells fijados → salen en Resumen/modo partida
 
     @property
     def total_level(self) -> int:

@@ -846,6 +846,27 @@ def spell_learn(char: Character, p: dict, ctx):
          "payload": {"spell_learned": sid}}]
 
 
+@op("character.pin")
+def pin_item(char: Character, p: dict, ctx):
+    """Fija un ataque/conjuro/objeto en el resumen (favoritos)."""
+    pid = p["id"]
+    if pid not in char.pinned:
+        char.pinned.append(pid)
+    return {"operation_type": "character.unpin",
+            "payload": {"id": pid}}, [
+        {"type": "resource.usage.changed",
+         "payload": {"pinned": pid}}]
+
+
+@op("character.unpin")
+def unpin_item(char: Character, p: dict, ctx):
+    pid = p["id"]
+    if pid in char.pinned:
+        char.pinned.remove(pid)
+    return {"operation_type": "character.pin",
+            "payload": {"id": pid}}, []
+
+
 @op("character.spell.forget")
 def spell_forget(char: Character, p: dict, ctx):
     sid = p["spell_id"]

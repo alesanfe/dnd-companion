@@ -4,8 +4,10 @@ import { api } from '../api.js'
 import { pendingOps } from '../db.js'
 import { clearAuth, currentUser, getPrefs, setAuth, setPref }
   from '../session.js'
+import { useT } from '../i18n.jsx'
 
 export default function Header() {
+  const { t, lang, setLang } = useT()
   const [user, setUser] = useState(currentUser())
   const [creds, setCreds] = useState({ u: '', p: '' })
   const [online, setOnline] = useState(navigator.onLine)
@@ -64,17 +66,21 @@ export default function Header() {
 
   return (
     <header className="nav">
-      <Link to="/">Personajes</Link>
-      <Link to="/campaigns">Campañas</Link>
-      <Link to="/search">Compendio</Link>
-      <Link to="/dm">Mesa DM</Link>
-      <Link to="/new" className="btn-create">+ Crear</Link>
+      <Link to="/">{t('nav.sheets')}</Link>
+      <Link to="/campaigns">{t('nav.campaigns')}</Link>
+      <Link to="/search">{t('nav.compendium')}</Link>
+      <Link to="/dm">{t('nav.dm')}</Link>
+      <Link to="/new" className="btn-create">+ {t('nav.create')}</Link>
       <span className="spacer" />
+      <button className="ghost lang" aria-label="Language / Idioma"
+              title="ES / EN"
+              onClick={() => setLang(lang === 'es' ? 'en' : 'es')}>
+        {lang.toUpperCase()}</button>
       <button className={`ghost sync ${online ? 'on' : 'off'}`}
               role="status" aria-live="polite"
               aria-label="Estado de sincronización"
               onClick={() => setShowSync(!showSync)}>
-        {online ? 'en línea' : 'offline'}
+        {online ? t('sync.online') : t('sync.offline')}
         {pending > 0 && ` · ${pending}`}
       </button>
       {notifs.length > 0 && (
@@ -85,18 +91,18 @@ export default function Header() {
               onClick={() => setShowSettings(!showSettings)}>⚙</button>
       {user
         ? <><span className="muted">{user.username}</span>
-            <button className="ghost" onClick={() => { clearAuth(); setUser(null) }}>Salir</button></>
-        : <button className="ghost" onClick={() => setShowLogin(!showLogin)}>Entrar</button>}
+            <button className="ghost" onClick={() => { clearAuth(); setUser(null) }}>{t('account.logout')}</button></>
+        : <button className="ghost" onClick={() => setShowLogin(!showLogin)}>{t('account.login')}</button>}
 
       {showLogin && !user && (
         <div className="popover">
-          <input placeholder="usuario" value={creds.u} autoFocus
+          <input placeholder={t('account.user')} value={creds.u} autoFocus
                  onChange={(e) => setCreds({ ...creds, u: e.target.value })} />
-          <input placeholder="contraseña" type="password" value={creds.p}
+          <input placeholder={t('account.pass')} type="password" value={creds.p}
                  onChange={(e) => setCreds({ ...creds, p: e.target.value })} />
           <div className="row">
-            <button onClick={() => auth(api.login)}>Entrar</button>
-            <button className="ghost" onClick={() => auth(api.register)}>Registrar</button>
+            <button onClick={() => auth(api.login)}>{t('account.login')}</button>
+            <button className="ghost" onClick={() => auth(api.register)}>Register</button>
           </div>
         </div>
       )}
@@ -119,18 +125,15 @@ export default function Header() {
 
       {showSync && (
         <div className="popover" role="dialog" aria-label="Sincronización">
-          <strong>Sincronización</strong>
+          <strong>{t('sync.online') === 'online' ? 'Sync' : 'Sincronización'}</strong>
           <span className={online ? '' : 'muted'}>
-            {online ? 'En línea' : 'Sin conexión — los cambios se guardan localmente'}
-          </span>
+            {online ? t('sync.online') : t('sync.offline')}</span>
           {pending > 0
-            ? <span className="muted">
-                {pending} cambio{pending > 1 ? 's' : ''} pendiente{pending > 1 ? 's' : ''}
-                {' '}de subir — se reintentan solos al volver la conexión.</span>
-            : <span className="muted">Todo sincronizado.</span>}
+            ? <span className="muted">{pending} {t('sync.pending')}</span>
+            : <span className="muted">{t('charlist.synced')} ✓</span>}
           <SyncConflicts />
           <button className="ghost"
-                  onClick={() => setShowSync(false)}>Cerrar</button>
+                  onClick={() => setShowSync(false)}>{t('common.close')}</button>
         </div>
       )}
 

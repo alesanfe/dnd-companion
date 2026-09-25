@@ -11,28 +11,30 @@ import CampaignBoard from './pages/CampaignBoard.jsx'
 import CampaignList from './pages/CampaignList.jsx'
 import Search from './pages/Search.jsx'
 import Entity from './pages/Entity.jsx'
+import { useT } from './i18n.jsx'
 
 /** Barra inferior fija en móvil (≤700px): los cinco destinos
     principales a un toque, con "+" que abre el menú de creación. */
 function MobileNav() {
   const nav = useNavigate()
+  const { t } = useT()
   const [open, setOpen] = useState(false)
   const go = (to) => { setOpen(false); nav(to) }
   return (
-    <nav className="mobile-nav" aria-label="Navegación móvil">
-      <NavLink to="/" end>Fichas</NavLink>
-      <NavLink to="/campaigns">Campañas</NavLink>
-      <button className="fab" aria-label="Crear" aria-expanded={open}
+    <nav className="mobile-nav" aria-label={t('nav.create')}>
+      <NavLink to="/" end>{t('nav.sheets')}</NavLink>
+      <NavLink to="/campaigns">{t('nav.campaigns')}</NavLink>
+      <button className="fab" aria-label={t('nav.create')} aria-expanded={open}
               onClick={() => setOpen(!open)}>+</button>
-      <NavLink to="/search">Compendio</NavLink>
-      <NavLink to="/dm">DM</NavLink>
+      <NavLink to="/search">{t('nav.compendium')}</NavLink>
+      <NavLink to="/dm">{t('nav.dm')}</NavLink>
       {open && (
         <div className="fab-menu" role="menu">
           {[
-            ['Personaje', '/new'],
-            ['Importar personaje', '/?import=1'],
-            ['Campaña / mesa', '/dm'],
-            ['Contenido (compendio)', '/search'],
+            [t('create.character'), '/new'],
+            [t('create.import'), '/?import=1'],
+            [t('create.campaign'), '/dm'],
+            [t('create.content'), '/search'],
           ].map(([label, to]) => (
             <button key={label} role="menuitem"
                     onClick={() => go(to)}>{label}</button>))}

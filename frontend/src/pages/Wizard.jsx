@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
+import { useT } from '../i18n.jsx'
 
 const ABILITIES = ['str', 'dex', 'con', 'int', 'wis', 'cha']
 const STANDARD_ARRAY = [15, 14, 13, 12, 10, 8]
@@ -25,6 +26,7 @@ const CLASS_PRIORITY = {
 }
 
 export default function Wizard() {
+  const { t } = useT()
   const nav = useNavigate()
   const [step, setStep] = useState(0)
   const [name, setName] = useState('')
@@ -89,7 +91,7 @@ export default function Wizard() {
 
   return (
     <main>
-      <h1>Nuevo personaje</h1>
+      <h1>{t('wiz.title')}</h1>
       {err && <p className="error">{err}</p>}
 
       <p className="muted" aria-label="Progreso">
@@ -105,9 +107,9 @@ export default function Wizard() {
       <div>
       {step === 0 && (
         <section className="card">
-          <h2>1. Nombre y reglas</h2>
+          <h2>1. {t('wiz.name')} + {t('search.edition')}</h2>
           <input value={name} onChange={(e) => setName(e.target.value)}
-                 placeholder="Nombre" />
+                 placeholder={t('wiz.name')} />
           {[
             ['dnd5e-2024', 'Reglas 2024',
              'Edición revisada (SRD 5.2). Recomendada.'],
@@ -129,24 +131,24 @@ export default function Wizard() {
                   recomendado</span>}
             </button>))}
           <button className="primary" disabled={!name.trim()}
-                  onClick={() => setStep(1)}>Siguiente</button>
+                  onClick={() => setStep(1)}>{t('wiz.next')}</button>
         </section>
       )}
 
       {step === 1 && (
         <section className="card">
-          <h2>2. Clase</h2>
+          <h2>2. {t('wiz.class')}</h2>
           {sel(classes, classId, setClassId)}
           <div className="row">
-            <button onClick={() => setStep(0)}>Atrás</button>
-            <button disabled={!classId} onClick={() => setStep(2)}>Siguiente</button>
+            <button onClick={() => setStep(0)}>{t('wiz.back')}</button>
+            <button disabled={!classId} onClick={() => setStep(2)}>{t('wiz.next')}</button>
           </div>
         </section>
       )}
 
       {step === 2 && (
         <section className="card">
-          <h2>3. Especie y trasfondo</h2>
+          <h2>3. {t('wiz.species')} + {t('wiz.background')}</h2>
           <h3 style={{ marginTop: 0 }}>Especie</h3>
           {sel(species, speciesId, setSpeciesId)}
           <h3>Trasfondo</h3>
@@ -154,15 +156,15 @@ export default function Wizard() {
           <GrantPreview speciesId={speciesId}
                         backgroundId={backgroundId} />
           <div className="row">
-            <button onClick={() => setStep(1)}>Atrás</button>
-            <button onClick={() => setStep(3)}>Siguiente</button>
+            <button onClick={() => setStep(1)}>{t('wiz.back')}</button>
+            <button onClick={() => setStep(3)}>{t('wiz.next')}</button>
           </div>
         </section>
       )}
 
       {step === 3 && (
         <section className="card">
-          <h2>4. Características <span className="muted">(array estándar: {remaining.join(', ') || '—'})</span></h2>
+          <h2>4. {t('wiz.abilities')} <span className="muted">(array estándar: {remaining.join(', ') || '—'})</span></h2>
           {ABILITIES.map((ab) => {
             const others = Object.entries(abilities)
               .filter(([k]) => k !== ab).map(([, v]) => v)
@@ -196,7 +198,7 @@ export default function Wizard() {
             }}>Restablecer</button>
           </div>
           <div className="row">
-            <button onClick={() => setStep(2)}>Atrás</button>
+            <button onClick={() => setStep(2)}>{t('wiz.back')}</button>
             <button disabled={ABILITIES.some((a) => !abilities[a])}
                     onClick={() => setStep(4)}>Revisar</button>
           </div>
@@ -205,7 +207,7 @@ export default function Wizard() {
 
       {step === 4 && (
         <section className="card">
-          <h2>5. Revisión</h2>
+          <h2>5. {t('wiz.summary')}</h2>
           <p><strong>{name}</strong></p>
           <p className="muted">
             {[classId, speciesId, backgroundId]
@@ -233,9 +235,9 @@ export default function Wizard() {
               incompatibles entre sí.
             </p>)}
           <div className="row">
-            <button onClick={() => setStep(3)}>Atrás</button>
+            <button onClick={() => setStep(3)}>{t('wiz.back')}</button>
             <button className="primary"
-                    onClick={submit}>Crear personaje</button>
+                    onClick={submit}>{t('wiz.finish')}</button>
           </div>
         </section>
       )}

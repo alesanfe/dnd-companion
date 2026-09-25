@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
+import { useT } from '../i18n.jsx'
 
 /** Ctrl/Cmd+K — búsqueda global del corpus desde cualquier página.
     Flechas para navegar, Enter abre el resultado, Esc cierra. */
 export default function CommandPalette() {
+  const { t } = useT()
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const [results, setResults] = useState([])
@@ -49,8 +51,8 @@ export default function CommandPalette() {
                     border: '1px solid var(--border)' }}
            onClick={(e) => e.stopPropagation()}>
         <input ref={inputRef} value={q}
-               placeholder="Buscar en el corpus… (Esc para cerrar)"
-               aria-label="Buscar en el corpus"
+               placeholder={t('palette.placeholder')}
+               aria-label={t('search.title')}
                onChange={(e) => setQ(e.target.value)}
                onKeyDown={(e) => {
                  if (e.key === 'ArrowDown') {

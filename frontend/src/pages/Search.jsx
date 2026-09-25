@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
+import { useT } from '../i18n.jsx'
 
 export default function Search() {
+  const { t } = useT()
   // los filtros sobreviven al ir y volver del detalle (sessionStorage)
   const saved = JSON.parse(sessionStorage.getItem('dnd-search') || '{}')
   const [q, setQ] = useState(saved.q || '')
@@ -61,10 +63,10 @@ export default function Search() {
 
   return (
     <main className="wide">
-      <h1>Buscador de reglas</h1>
+      <h1>{t('search.title')}</h1>
       <form onSubmit={go} className="row">
         <input value={q} onChange={(e) => setQ(e.target.value)}
-               placeholder="fireball — o /monster cr:1..5 type:undead" autoFocus />
+               placeholder={t('search.placeholder')} autoFocus />
         <select value={type} onChange={(e) => setType(e.target.value)}
                 aria-label="Tipo de entidad">
           <option value="">todo</option>
@@ -80,14 +82,14 @@ export default function Search() {
           <option value="2024">2024</option>
         </select>
         <select value={source} onChange={(e) => setSource(e.target.value)}
-                aria-label="Fuente de contenido">
-          <option value="">todas las fuentes</option>
+                aria-label={t('search.source')}>
+          <option value="">{t('search.allSources')}</option>
           {sources.map((s) => (
             <option key={s.id} value={s.id}>
               {s.name} ({s.entities})
             </option>))}
         </select>
-        <button type="submit">Buscar</button>
+        <button type="submit">{t('search.button')}</button>
       </form>
       {err && <p className="error">{err}</p>}
 
@@ -95,11 +97,11 @@ export default function Search() {
         <button onClick={async () => {
           const r = await api.rulesAsk(q)
           setAsked(r)
-        }}>Preguntar a las reglas</button>
+        }}>{t('search.ask')}</button>
       </div>
       {asked && (
         <section className="card">
-          <h2>Asistente de reglas</h2>
+          <h2>{t('search.assistant')}</h2>
           {!asked.evidence_found
             ? <p>Sin evidencia en las fuentes instaladas.</p>
             : asked.citations.map((c) => (
@@ -113,14 +115,13 @@ export default function Search() {
       )}
       {/* recientes + favoritos cuando no hay consulta */}
       {!q.trim() && results.length === 0 && (
-        <QuickAccess onSearch={(term) => {
+        <QuickAccess t={t} onSearch={(term) => {
           setQ(term)
           doSearch(term)
         }} />)}
 
       {results.length === 0 && q.trim() && (
-        <p className="empty">Sin resultados — prueba otro término,
-          quita filtros o busca en otra fuente.</p>)}
+        <p className="empty">{t('search.empty')}</p>)}
 
       {parsed && (
         <p className="muted">
@@ -183,7 +184,7 @@ function Compare({ ids }) {
     views.flatMap((v) => (v.render?.fields || []).map((f) => f.label)))]
   return (
     <section className="card">
-      <h2>Comparar</h2>
+      <h2>{useT().t('search.compare')}</h2>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead><tr>
           <th />
@@ -208,7 +209,7 @@ function Compare({ ids }) {
 
 
 /** Favoritos (guardados con ☆ en detalle) + recientes (visitas). */
-function QuickAccess({ onSearch }) {
+function QuickAccess({ onSearch, t }) {
   const favs = JSON.parse(localStorage.getItem('dnd-favs') || '[]')
   const recs = JSON.parse(localStorage.getItem('dnd-recents') || '[]')
   const norm = (x) => typeof x === 'string'
@@ -243,8 +244,8 @@ function QuickAccess({ onSearch }) {
             {c}</button>))}
       </div>)}
     {col && <CollectionBlock ids={cols[col] || []} name={col} />}
-    {!col && block('★ Favoritos', favs)}
-    {!col && block('Recientes', recs)}
+    {!col && block(t('search.favorites'), favs)}
+    {!col && block(t('search.recent'), recs)}
     {!col && <RecentSearches onSearch={onSearch} />}
   </>)
 }
@@ -256,7 +257,7 @@ function RecentSearches({ onSearch }) {
   if (!items.length) return null
   return (
     <section className="card">
-      <h2>Búsquedas recientes</h2>
+      <h2>{useT().t('search.recentQueries')}</h2>
       <div className="row" style={{ flexWrap: 'wrap' }}>
         {items.map((x) => (
           <button key={x} className="ghost"
@@ -268,13 +269,14 @@ function RecentSearches({ onSearch }) {
 /** Crear contenido propio → fuente 'homebrew' (marcada como
     user-created, privada del usuario). */
 function HomebrewForm() {
+  const { t } = useT()
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({
     entity_type: 'item', name: '', ruleset: 'dnd5e-2014', desc: '' })
   const [msg, setMsg] = useState(null)
   if (!open) return (
     <button className="ghost" onClick={() => setOpen(true)}>
-      + Contenido homebrew</button>)
+      {t('search.homebrew')}</button>)
   return (
     <section className="card" role="dialog"
              aria-label="Crear contenido homebrew">
@@ -316,7 +318,7 @@ function HomebrewForm() {
           setMsg(`Creado: ${r.id}`)
         }}>Guardar en el compendio</button>
         <button className="ghost" onClick={() => setOpen(false)}>
-          Cerrar</button>
+          {t('common.close')}</button>
       </div>
       {msg && <p className="muted" role="status">✓ {msg}</p>}
     </section>)

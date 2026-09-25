@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
+import { useT } from '../i18n.jsx'
 
 /** Lista de campañas del usuario — hub entre fichas y mesa. */
 export default function CampaignList() {
+  const { t } = useT()
   const [camps, setCamps] = useState(null)
   const [err, setErr] = useState(null)
 
@@ -16,15 +18,13 @@ export default function CampaignList() {
   const ROLE = { owner: 'DM', dm: 'DM', player: 'Jugador' }
   return (
     <main>
-      <h1>Campañas</h1>
+      <h1>{t('camp.title')}</h1>
       {err && <p className="error">{err}</p>}
-      {camps === null && <p className="muted">Cargando…</p>}
+      {camps === null && <p className="muted">{t('common.loading')}</p>}
       {camps && camps.length === 0 && (
         <div className="card empty">
-          <p><strong>Sin campañas todavía</strong></p>
-          <p>Crea una desde la Mesa DM o únete con un código de
-             invitación.</p>
-          <Link to="/dm"><button className="primary">Mesa DM</button></Link>
+          <p><strong>{t('camp.empty')}</strong></p>
+          <Link to="/dm"><button className="primary">{t('nav.dm')}</button></Link>
         </div>)}
       {(camps || []).map((c) => (
         <Link key={c.id} to={`/campaign/${c.id}`}

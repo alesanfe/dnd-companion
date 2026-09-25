@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api } from '../api.js'
 import { currentUser } from '../session.js'
+import { useT } from '../i18n.jsx'
 
 /** Vista de jugador: solo entidades públicas/reveladas de la campaña. */
 export default function CampaignBoard() {
   const { id } = useParams()
+  const { t } = useT()
   const [entities, setEntities] = useState(null)
   const [chars, setChars] = useState([])
   const [code, setCode] = useState('')
@@ -80,7 +82,7 @@ export default function CampaignBoard() {
 
   return (
     <main>
-      <h1>{camp?.name || 'Campaña'}</h1>
+      <h1>{camp?.name || t('camp.title')}</h1>
       {camp && (
         <p className="muted">
           {camp.ruleset?.replace('dnd5e-', 'Reglas ') || ''}
@@ -99,13 +101,13 @@ export default function CampaignBoard() {
       {!joined && (
         <form onSubmit={join} className="row">
           <input value={code} onChange={(e) => setCode(e.target.value)}
-                 placeholder="Código de invitación" />
-          <button type="submit">Unirse</button>
+                 placeholder={t('camp.invite')} />
+          <button type="submit">{t('camp.join')}</button>
         </form>)}
 
       {rolls.length > 0 && (
         <section className="card">
-          <h2>Tiradas recientes</h2>
+          <h2>{t('camp.rolls')}</h2>
           {rolls.map((r, i) => (
             <div key={i} className="row">
               <span>{r.character}</span>
@@ -116,7 +118,7 @@ export default function CampaignBoard() {
 
       {chars.length > 0 && (
         <section className="card">
-          <h2>Personajes de la campaña</h2>
+          <h2>{t('camp.characters')}</h2>
           {chars.map((c) => (
             <div key={c.id} className="row">
               <Link to={`/character/${c.id}`}>{c.name}</Link>
@@ -145,7 +147,7 @@ export default function CampaignBoard() {
         ))
       )}
       {entities && entities.length === 0 && (
-        <p className="muted">El DM aún no ha revelado nada.</p>
+        <p className="muted">{t('camp.nothingRevealed')}</p>
       )}
     </main>
   )

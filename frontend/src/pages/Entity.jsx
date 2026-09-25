@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api } from '../api.js'
+import { useT } from '../i18n.jsx'
 
 /** Vista legible de una entidad del corpus — stat block normalizado
     para monstruos, campos clave para conjuros/objetos, y el JSON
     original como fallback. */
 export default function Entity() {
+  const { t } = useT()
   const { id } = useParams()
   const [ent, setEnt] = useState(null)
   const [block, setBlock] = useState(null)
@@ -71,7 +73,7 @@ export default function Entity() {
             ? JSON.stringify(block, null, 2)
             : JSON.stringify(ent.data, null, 2)
           navigator.clipboard?.writeText(text)
-        }}>Copiar</button>
+        }}>{t('entity.copy')}</button>
       </div>
       {colPick && (
         <div className="card" role="dialog" aria-label="Añadir a colección">
@@ -97,7 +99,7 @@ export default function Entity() {
       {editions && Object.keys(editions.versions || {}).length > 1 && (
         <div className="row" role="group"
              aria-label="Versiones por edición">
-          <span className="muted">Otras ediciones:</span>
+          <span className="muted">{t('entity.editions')}</span>
           {Object.entries(editions.versions).map(([rs, v]) => (
             v.id !== ent.id && (
               <Link key={rs}
@@ -106,7 +108,7 @@ export default function Entity() {
                 {rs.replace('dnd5e-', '')}</Link>)))}
           {editions.diff?.length > 0 && (
             <span className="muted" style={{ fontSize: '.8rem' }}>
-              difieren: {editions.diff.join(', ')}</span>)}
+              {t('entity.diff')} {editions.diff.join(', ')}</span>)}
         </div>)}
 
       {block && (
@@ -207,7 +209,7 @@ function TableView({ data }) {
             const txt = Array.isArray(rolled)
               ? rolled.join(' — ') : String(rolled)
             navigator.clipboard?.writeText(txt)
-          }}>Copiar</button>
+          }}>{t('entity.copy')}</button>
         </div>)}
       {cols.length > 0 && rows.length > 0 && (
         <table>

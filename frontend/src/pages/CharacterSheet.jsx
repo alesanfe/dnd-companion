@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams }
   from 'react-router-dom'
 import { api } from '../api.js'
 import { currentUser } from '../session.js'
+import { useT } from '../i18n.jsx'
 
 const SHEET_TABS = [
   ['resumen', 'Resumen'], ['acciones', 'Acciones'],
@@ -13,6 +14,7 @@ const SHEET_TABS = [
 
 export default function CharacterSheet() {
   const { id, tab: routeTab } = useParams()
+  const { t } = useT()
   const [char, setChar] = useState(null)
   const [amount, setAmount] = useState(1)
   const [charDmgType, setCharDmgType] = useState('')
@@ -228,7 +230,7 @@ export default function CharacterSheet() {
 
       {rollRequest && (
         <section className="card" role="alert">
-          <h2>El DM pide una tirada</h2>
+          <h2>{t('sheet.rollreq')}</h2>
           <p><strong>{rollRequest.expression}</strong>
             {rollRequest.reason && ` — ${rollRequest.reason}`}
             {rollRequest.secret && <span className="muted"> (secreta)</span>}
@@ -298,13 +300,14 @@ export default function CharacterSheet() {
                       e.target.checked ? nx.add(k) : nx.delete(k)
                       return nx
                     })} />
-                  {label}</label>))}
+                  {t('tab.' + k) || label}</label>))}
           </div>)}
         {!focus && (
           <nav className="tabs" role="tablist" aria-label="Secciones">
             {SHEET_TABS.map(([k, label]) => (
                 <button key={k} role="tab" aria-selected={tab === k}
-                        onClick={() => setTab(k)}>{label}</button>))}
+                        onClick={() => setTab(k)}>
+                  {t('tab.' + k) || label}</button>))}
           </nav>)}
       </div>
 
@@ -339,7 +342,7 @@ export default function CharacterSheet() {
 
       {history && (
         <section className="card optional" hidden={focus ? !hud.has('actividad') : tab !== 'actividad'}>
-          <h2>Historial <span className="muted">(reversible)</span></h2>
+          <h2>{t('sheet.history')} <span className="muted">(reversible)</span></h2>
           {history.map((h) => (
             <div key={h.operation_id} className="row">
               <span className="muted">{h.timestamp.slice(11, 19)}</span>
@@ -372,7 +375,7 @@ export default function CharacterSheet() {
 
       {derived && (
         <section className="card" hidden={focus ? !hud.has('stats') : tab !== 'stats'}>
-          <h2>Calculado</h2>
+          <h2>{t('sheet.derived')}</h2>
           <div className="row" style={{ flexWrap: 'wrap' }}>
             <span className="coin">CA {derived.armor_class.total}</span>
             <span className="coin">Init {derived.initiative >= 0 ? '+' : ''}{derived.initiative}</span>
@@ -391,7 +394,7 @@ export default function CharacterSheet() {
       {/* hoja 2024: habilidades agrupadas por característica, cada
           valor pulsable para tirar */}
       <section className="card" hidden={focus ? !hud.has('stats') : tab !== 'stats'}>
-        <h2>Características</h2>
+        <h2>{t('tab.stats')}</h2>
         <div className="ability-grid">
           {stats.map(([ab, label, skills]) => {
             const score = d.abilities?.[ab] ?? 10
@@ -498,7 +501,7 @@ export default function CharacterSheet() {
       </section>
 
       <section className="card" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>
-        <h2>Experiencia</h2>
+        <h2>{t('sheet.xp')}</h2>
         <div className="row">
           <span>XP {d.xp || 0}
             {derived?.next_level_xp &&
@@ -520,7 +523,7 @@ export default function CharacterSheet() {
       </section>
 
       <section className="card" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>
-        <h2>Puntos de golpe</h2>
+        <h2>{t('sheet.hp')}</h2>
         <div className="hp-big">
           {hp.current} / {hp.max}
           {hp.temp > 0 && <span className="temp"> +{hp.temp} temp</span>}
@@ -585,10 +588,10 @@ export default function CharacterSheet() {
       </section>
 
       <section className="card" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>
-        <h2>Descansos</h2>
+        <h2>{t('sheet.rests')}</h2>
         <div className="row">
-          <button onClick={() => op('character.rest.short', {})}>Descanso corto</button>
-          <button onClick={() => op('character.rest.long', {})}>Descanso largo</button>
+          <button onClick={() => op('character.rest.short', {})}>{t('sheet.short')}</button>
+          <button onClick={() => op('character.rest.long', {})}>{t('sheet.long')}</button>
         </div>
         {(d.hit_dice || []).map((p, i) => (
           <div key={i} className="row">
@@ -603,7 +606,7 @@ export default function CharacterSheet() {
 
       {Object.keys(slots).length > 0 && (
         <section className="card" hidden={focus ? !hud.has('magia') : tab !== 'magia'}>
-          <h2>Espacios de conjuro</h2>
+          <h2>{t('sheet.slots')}</h2>
           {Object.entries(slots).map(([lvl, s]) => (
             <div key={lvl} className="row">
               <span aria-label={`Espacios nivel ${lvl}: ${
@@ -624,7 +627,7 @@ export default function CharacterSheet() {
 
       {(d.resources || []).length > 0 && (
         <section className="card" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>
-          <h2>Usos limitados</h2>
+          <h2>{t('sheet.limited')}</h2>
           {Object.entries(d.resources.reduce((g, r) => {
             (g[r.reset_on || 'long'] ??= []).push(r)
             return g
@@ -649,7 +652,7 @@ export default function CharacterSheet() {
       )}
 
       <section className="card optional" hidden={focus ? !hud.has('inventario') : tab !== 'inventario'}>
-        <h2>Monedas</h2>
+        <h2>{t('sheet.currency')}</h2>
         <div className="row purse">
           {['pp', 'gp', 'ep', 'sp', 'cp'].map((c) => (
             <span key={c} className="coin">{c.toUpperCase()}: {(d.purse || {})[c] || 0}</span>
@@ -667,7 +670,7 @@ export default function CharacterSheet() {
       </section>
 
       <section className="card" hidden={focus ? !hud.has('acciones') : tab !== 'acciones'}>
-        <h2>Acciones</h2>
+        <h2>{t('sheet.actions')}</h2>
         <button onClick={async () => {
           if (actions) { setActions(null); return }
           const r = await fetch(`/api/characters/${id}/actions`).then((x) => x.json())
@@ -708,7 +711,7 @@ export default function CharacterSheet() {
 
       {(d.effects || []).length > 0 && (
         <section className="card optional" hidden={focus ? !hud.has('acciones') : tab !== 'acciones'}>
-          <h2>Efectos activos</h2>
+          <h2>{t('sheet.effects')}</h2>
           <div className="row" style={{ flexWrap: 'wrap' }}>
             {d.effects.map((e) => (
               <span key={e.id} className="chip" title={e.source}>
@@ -723,7 +726,7 @@ export default function CharacterSheet() {
 
       {(d.pinned || []).length > 0 && (
         <section className="card" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>
-          <h2>Favoritos</h2>
+          <h2>{t('sheet.favorites')}</h2>
           {d.pinned.map((pid) => {
             const it = (d.inventory || []).find((x) => x.id === pid)
             const spell = (d.spells_known || []).includes(pid) ? pid : null
@@ -744,7 +747,7 @@ export default function CharacterSheet() {
         </section>)}
 
       <section className="card" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>
-        <h2>Nota rápida</h2>
+        <h2>{t('sheet.note')}</h2>
         <div className="row">
           <input value={journalEntry}
                  placeholder="Apunte de la sesión…"
@@ -765,7 +768,7 @@ export default function CharacterSheet() {
       </section>
 
       <section className="card optional" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>
-        <h2>Condiciones</h2>
+        <h2>{t('sheet.conditions')}</h2>
         <div className="row">
           <input value={newCond} onChange={(e) => setNewCond(e.target.value)}
                  placeholder="poisoned, stunned…" list="cond-list" />
@@ -804,7 +807,7 @@ export default function CharacterSheet() {
       </section>
 
       <section className="card optional" hidden={focus ? !hud.has('inventario') : tab !== 'inventario'}>
-        <h2>Inventario</h2>
+        <h2>{t('sheet.inventory')}</h2>
         <p className="muted">
           Sintonizados:{' '}
           {(d.inventory || []).filter((i) => i.attuned).length}/3
@@ -862,7 +865,7 @@ export default function CharacterSheet() {
       </section>
 
       <section className="card" hidden={focus ? !hud.has('acciones') : tab !== 'acciones'}>
-        <h2>Dados</h2>
+        <h2>{t('sheet.dice')}</h2>
         <form onSubmit={doRoll} className="row">
           <input value={expr} onChange={(e) => setExpr(e.target.value)}
                  placeholder="2d6+3, 1d20adv, 4d6kh3" />
@@ -887,7 +890,7 @@ export default function CharacterSheet() {
       </section>
 
       <section className="card optional" hidden={focus ? !hud.has('magia') : tab !== 'magia'}>
-        <h2>Conjuros</h2>
+        <h2>{t('sheet.spells')}</h2>
         <SpellPicker onPick={(sid) =>
           op('character.spell.learn', { spell_id: sid })}
           placeholder="Aprender conjuro — buscar en todas las fuentes"

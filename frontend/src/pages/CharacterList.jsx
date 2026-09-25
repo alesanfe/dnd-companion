@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
+import { useT } from '../i18n.jsx'
 
 export default function CharacterList() {
+  const { t } = useT()
   const [chars, setChars] = useState([])
   const [name, setName] = useState('')
   const [err, setErr] = useState(null)
@@ -52,18 +54,18 @@ export default function CharacterList() {
 
   return (
     <main>
-      <h1>Mis personajes</h1>
+      <h1>{t('charlist.title')}</h1>
       {err && <p className="error">Backend no disponible: {err}</p>}
       <form onSubmit={create} className="row">
         <input value={name} onChange={(e) => setName(e.target.value)}
-               placeholder="Nombre rápido (vacío)" />
-        <button type="submit">Crear</button>
+               placeholder={t('charlist.new') + '…'} />
+        <button type="submit">{t('nav.create')}</button>
         <Link to="/new"><button type="button">Wizard →</button></Link>
         <label className="ghost" style={{ cursor: 'pointer',
              display: 'inline-flex', alignItems: 'center',
              minHeight: 44, padding: '0 1rem', borderRadius: 6,
              border: '1px solid var(--border)' }}>
-          Importar
+          {t('charlist.import')}
           <input type="file" accept=".json" hidden
                  aria-label="Importar personaje desde JSON"
                  onChange={async (e) => {
@@ -80,11 +82,9 @@ export default function CharacterList() {
 
       {chars.length === 0 && !err && (
         <div className="card empty">
-          <p><strong>Todavía no tienes personajes</strong></p>
-          <p>Crea una ficha guiada con el wizard — usa datos reales
-             de todas las fuentes instaladas.</p>
+          <p><strong>{t('charlist.empty')}</strong></p>
           <Link to="/new">
-            <button className="primary">Crear personaje</button></Link>
+            <button className="primary">{t('wiz.finish')}</button></Link>
         </div>)}
 
       {chars.length > 4 && (

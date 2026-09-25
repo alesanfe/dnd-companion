@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
 import { currentUser } from '../session.js'
+import { useT } from '../i18n.jsx'
 import MapBoard from '../components/MapBoard.jsx'
 
 export default function DmBoard() {
+  const { t } = useT()
   const [campaign, setCampaign] = useState(null)
   const [campName, setCampName] = useState('')
   const [combat, setCombat] = useState(null)   // {id, version, combat}
@@ -96,19 +98,19 @@ export default function DmBoard() {
           'muerto', 'concentrando'].map((x) =>
           <option key={x} value={x} />)}
       </datalist>
-      <h1>Mesa del DM</h1>
+      <h1>{t('nav.dm')}</h1>
       <div className="dm-shell">
       <aside className="dm-side">
         <nav role="tablist" aria-label="Mesa DM">
-          {[['sesion', 'Sesión'], ['combate', 'Combate'],
-            ['campana', 'Campaña']].map(([k, label]) => (
+          {[['sesion', t('dm.session')], ['combate', t('dm.combat')],
+            ['campana', t('dm.campaign')]].map(([k, label]) => (
             <button key={k} role="tab" aria-selected={dmTab === k}
                     onClick={() => setDmTab(k)}>{label}</button>))}
         </nav>
         <button className="ghost" aria-pressed={playerView}
                 title="Oculta lo que los jugadores no deben ver"
                 onClick={() => setPlayerView(!playerView)}>
-          {playerView ? '🙈 Vista jugador: ON' : '👁 Vista jugador'}
+          {playerView ? t('dm.playerViewOn') : t('dm.playerView')}
         </button>
         {campaign && (
           <p className="muted" style={{ fontSize: '.8rem' }}>
@@ -121,7 +123,7 @@ export default function DmBoard() {
       {err && <p className="error">{err}</p>}
 
       <section className="card" hidden={dmTab !== 'sesion'}>
-        <h2>Campaña</h2>
+        <h2>{t('dm.campaign')}</h2>
         {!campaign ? (
           <form className="row" onSubmit={async (e) => {
             e.preventDefault()
@@ -163,14 +165,15 @@ export default function DmBoard() {
 
       {campaign && rollFeed.length > 0 && (
         <section className="card" hidden={dmTab !== 'sesion'}>
-          <h2>Tiradas de la mesa</h2>
+          <h2>{t('dm.feed')}</h2>
           <div className="row" role="group" aria-label="Filtrar tiradas">
             {['todas', 'check', 'save', 'attack', 'damage'].map((f) => (
               <button key={f} className="ghost"
                       aria-pressed={feedFilter === f}
                       style={{ borderColor: feedFilter === f
                         ? 'var(--accent)' : undefined }}
-                      onClick={() => setFeedFilter(f)}>{f}</button>))}
+                      onClick={() => setFeedFilter(f)}>
+                {f === 'todas' ? t('dm.allRolls') : f}</button>))}
           </div>
           {newRolls > 0 && (
             <button className="ghost" role="status"
@@ -201,7 +204,7 @@ export default function DmBoard() {
 
       {campaign && (
         <section className="card" hidden={dmTab !== 'campana'}>
-          <h2>Entidades de campaña
+          <h2>{t('dm.entities')}
             <button className="ghost" style={{ float: 'right' }}
                     title="Actores y combates en JSON genérico de VTT"
                     onClick={async () => {
@@ -214,7 +217,7 @@ export default function DmBoard() {
               a.href = URL.createObjectURL(blob)
               a.download = `${campaign.name || 'campaign'}-vtt.json`
               a.click()
-            }}>Exportar VTT</button>
+            }}>{t('dm.exportvtt')}</button>
           </h2>
           <div className="row">
             <select value={entForm.kind}
@@ -281,7 +284,7 @@ export default function DmBoard() {
                     <button onClick={async () => {
                       await api.revealEntity(campaign.id, e.id)
                       api.listEntities(campaign.id).then((r) => setEntities(r.entities))
-                    }}>Revelar</button>
+                    }}>{t('dm.reveal')}</button>
                   )}
                 </>)}
             </div>
@@ -291,7 +294,7 @@ export default function DmBoard() {
 
       {campaign && (
         <section className="card" hidden={dmTab !== 'combate'}>
-          <h2>Dificultad de encuentro</h2>
+          <h2>{t('dm.difficulty')}</h2>
           <div className="row">
             <input value={partyLevels} placeholder="niveles: 3,3,4"
                    onChange={(e) => setPartyLevels(e.target.value)} />
@@ -315,7 +318,7 @@ export default function DmBoard() {
 
       {campaign && (
         <section className="card" hidden={dmTab !== 'sesion'}>
-          <h2>Sesiones y preparación</h2>
+          <h2>{t('dm.sessions')}</h2>
           <div className="row">
             <input value={sessTitle} placeholder="Título de sesión"
                    onChange={(e) => setSessTitle(e.target.value)} />
@@ -380,7 +383,7 @@ export default function DmBoard() {
 
       {campaign && (
         <section className="card" hidden={dmTab !== 'sesion'}>
-          <h2>Pedir tirada a un jugador</h2>
+          <h2>{t('dm.rollreq')}</h2>
           <div className="row">
             <input value={rollReq.character_id} placeholder="character_id"
                    onChange={(e) => setRollReq({ ...rollReq, character_id: e.target.value })} />
@@ -398,7 +401,7 @@ export default function DmBoard() {
 
       {campaign && !combat && (
         <section className="card" hidden={dmTab !== 'combate'}>
-          <h2>Nuevo combate</h2>
+          <h2>{t('dm.newcombat')}</h2>
           <form className="row" onSubmit={async (e) => {
             e.preventDefault()
             const r = await api.createCombat(combatName || 'Encuentro', campaign.id)
@@ -417,7 +420,7 @@ export default function DmBoard() {
           <section className="card" hidden={dmTab !== 'combate'}>
             <h2>{combat.combat.name} — ronda {combat.combat.round}</h2>
             <div className="row">
-              <button onClick={() => cop('combat.next_turn', {})}>Siguiente turno</button>
+              <button onClick={() => cop('combat.next_turn', {})}>{t('dm.next')}</button>
               <button onClick={() => cop('combat.prev_turn', {})}>Anterior</button>
               <button onClick={async () => {
                 await fetch(`/api/combat/${combat.id}/add-party`,
@@ -430,14 +433,14 @@ export default function DmBoard() {
                                     'combatant.initiative.roll',
                                     { combatant_id: c.id }, 'combat')
                 refresh(combat.id)
-              }}>Tirar inits</button>
+              }}>{t('dm.init')}</button>
               <button className="ghost" onClick={async () =>
                 setDifficulty(await api.combatDifficulty(combat.id))
               }>Dificultad</button>
               <button className="ghost" aria-expanded={!!areaDmg}
                       onClick={() => setAreaDmg(areaDmg ? null : {})}>
                 Daño en área</button>
-              <button className="dmg" onClick={() => cop('combat.end', {})}>Terminar</button>
+              <button className="dmg" onClick={() => cop('combat.end', {})}>{t('dm.end')}</button>
             </div>
             {areaDmg && (
               <div className="card" role="dialog"
@@ -504,7 +507,7 @@ export default function DmBoard() {
           </section>
 
           <section className="card" hidden={dmTab !== 'combate'}>
-            <h2>Añadir combatiente</h2>
+            <h2>{t('dm.addcombatant')}</h2>
             <form onSubmit={searchMonsters} className="row">
               <input value={query} onChange={(e) => setQuery(e.target.value)}
                      placeholder="Buscar monstruo (goblin, orc…)" />
@@ -533,7 +536,7 @@ export default function DmBoard() {
           </section>
 
           <section className="card" hidden={dmTab !== 'combate'}>
-            <h2>Iniciativa</h2>
+            <h2>{t('dm.initiative')}</h2>
             <div className="row">
               <select value={dmgType}
                       onChange={(e) => setDmgType(e.target.value)}
@@ -596,7 +599,7 @@ export default function DmBoard() {
           {sel && !playerView && (
             <section className="card" hidden={dmTab !== 'combate'}
                      aria-label={`Condiciones de ${sel.name}`}>
-              <h2>Condición — {sel.name}</h2>
+              <h2>{t('dm.condition')} — {sel.name}</h2>
               <div className="row">
                 <input list="dm-conds" value={newCond}
                        placeholder="blinded, poisoned…"

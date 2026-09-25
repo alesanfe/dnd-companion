@@ -122,6 +122,9 @@ export const api = {
         (source ? `&source=${encodeURIComponent(source)}` : '') +
         (forClass ? `&for_class=${encodeURIComponent(forClass)}` : '')),
   contentSources: () => req('/api/content/sources'),
+  createHomebrew: (body) =>
+    req('/api/content/homebrew', {
+      method: 'POST', body: JSON.stringify(body) }),
   statblockPreview: (id) =>
     req(`/api/content/${encodeURIComponent(id)}/statblock`),
   entityRender: (id) =>

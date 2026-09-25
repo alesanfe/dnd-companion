@@ -127,9 +127,11 @@ export default function CharacterSheet() {
         setRollLog((l) => [`Daño aplicado: ${fx.join(' · ')}`, ...l].slice(0, 10))
       }
       load()
+      return r
     } catch (e) {
       setErr(e.message)
       load() // resync on conflict
+      return null
     }
   }
 
@@ -177,6 +179,8 @@ export default function CharacterSheet() {
           a.download = `${char.name}.json`
           a.click()
         }}>Exportar</button>
+        <button className="ghost" onClick={() => window.print()}>
+          Imprimir</button>
         {d.classes?.length > 0 && (
           <button onClick={() =>
             op('character.level_up',
@@ -541,9 +545,24 @@ export default function CharacterSheet() {
               'piercing', 'slashing']
               .map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
-          <button className="dmg" onClick={() =>
-            op('character.hp.damage',
-               { amount, type: charDmgType || undefined })}>Daño</button>
+          <button className="dmg" onClick={async () => {
+            const r = await op('character.hp.damage',
+               { amount, type: charDmgType || undefined })
+            const ev = (r?.events || []).find(
+              (e) => e.type === 'character.hp.changed')
+            const p = ev?.payload
+            if (p) {
+              setNotice(
+                `Daño${p.damage_type ? ` de ${p.damage_type}` : ''}: ` +
+                `${amount} → ${p.amount} aplicado` +
+                (p.temp_absorbed ? ` (${p.temp_absorbed} temp)` : '') +
+                (p.damage_effects?.length
+                  ? `. ${p.damage_effects.join('; ')}` : '') +
+                (p.concentration_check
+                  ? `. Salvación de CON CD ${p.concentration_dc} por ${p.spell}`
+                  : ''))
+            }
+          }}>Daño</button>
           <button className="heal" onClick={() =>
             op('character.hp.heal', { amount })}>Curar</button>
         </div>
@@ -707,6 +726,27 @@ export default function CharacterSheet() {
                           op('character.unpin', { id: pid })}>×</button>
               </div>)})}
         </section>)}
+
+      <section className="card" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>
+        <h2>Nota rápida</h2>
+        <div className="row">
+          <input value={journalEntry}
+                 placeholder="Apunte de la sesión…"
+                 aria-label="Nota rápida"
+                 onChange={(e) => setJournalEntry(e.target.value)}
+                 onKeyDown={(e) => {
+                   if (e.key === 'Enter' && journalEntry.trim()) {
+                     op('character.journal.add',
+                        { text: journalEntry.trim() })
+                     setJournalEntry('')
+                   }
+                 }} />
+          <button disabled={!journalEntry.trim()} onClick={() => {
+            op('character.journal.add', { text: journalEntry.trim() })
+            setJournalEntry('')
+          }}>Anotar</button>
+        </div>
+      </section>
 
       <section className="card optional" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>
         <h2>Condiciones</h2>

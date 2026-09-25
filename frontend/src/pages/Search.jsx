@@ -163,6 +163,8 @@ export default function Search() {
           </li>
         ))}
       </ul>
+
+      <HomebrewForm />
     </main>
   )
 }
@@ -260,6 +262,63 @@ function RecentSearches({ onSearch }) {
           <button key={x} className="ghost"
                   onClick={() => onSearch(x)}>{x}</button>))}
       </div>
+    </section>)
+}
+
+/** Crear contenido propio → fuente 'homebrew' (marcada como
+    user-created, privada del usuario). */
+function HomebrewForm() {
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState({
+    entity_type: 'item', name: '', ruleset: 'dnd5e-2014', desc: '' })
+  const [msg, setMsg] = useState(null)
+  if (!open) return (
+    <button className="ghost" onClick={() => setOpen(true)}>
+      + Contenido homebrew</button>)
+  return (
+    <section className="card" role="dialog"
+             aria-label="Crear contenido homebrew">
+      <h2>Contenido homebrew</h2>
+      <div className="row">
+        <select value={form.entity_type} aria-label="Tipo"
+                onChange={(e) => setForm(
+                  { ...form, entity_type: e.target.value })}>
+          {['item', 'weapon', 'armor', 'spell', 'feat', 'monster',
+            'trait', 'condition', 'background', 'species', 'rule']
+            .map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select value={form.ruleset} aria-label="Ruleset"
+                onChange={(e) => setForm(
+                  { ...form, ruleset: e.target.value })}>
+          <option value="dnd5e-2014">2014</option>
+          <option value="dnd5e-2024">2024</option>
+          <option value="mixed">Mixto</option>
+        </select>
+        <input value={form.name} placeholder="Nombre"
+               aria-label="Nombre del contenido"
+               onChange={(e) => setForm(
+                 { ...form, name: e.target.value })} />
+      </div>
+      <textarea value={form.desc} rows={2}
+                placeholder="Descripción / reglas caseras"
+                onChange={(e) => setForm(
+                  { ...form, desc: e.target.value })} />
+      <div className="row">
+        <button className="primary" disabled={!form.name.trim()}
+                onClick={async () => {
+          const r = await api.createHomebrew({
+            entity_type: form.entity_type,
+            name: form.name.trim(),
+            ruleset: form.ruleset,
+            data: form.desc ? { desc: form.desc } : {},
+            license: 'user-created',
+          })
+          setMsg(`Creado: ${r.id}`)
+        }}>Guardar en el compendio</button>
+        <button className="ghost" onClick={() => setOpen(false)}>
+          Cerrar</button>
+      </div>
+      {msg && <p className="muted" role="status">✓ {msg}</p>}
     </section>)
 }
 

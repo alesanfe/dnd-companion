@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams }
+  from 'react-router-dom'
 import { api } from '../api.js'
+
+const SHEET_TABS = [
+  ['resumen', 'Resumen'], ['acciones', 'Acciones'],
+  ['stats', 'Características'], ['magia', 'Magia'],
+  ['inventario', 'Inventario'], ['rasgos', 'Rasgos'],
+  ['historia', 'Historia'], ['actividad', 'Actividad'],
+]
 
 export default function CharacterSheet() {
   const { id } = useParams()
@@ -16,7 +24,9 @@ export default function CharacterSheet() {
   const [newCond, setNewCond] = useState('')
   const [coin, setCoin] = useState('gp')
   const [actions, setActions] = useState(null)
-  const [focus, setFocus] = useState(false)   // vista rápida (HUD)
+  const [searchParams] = useSearchParams()
+  const [focus, setFocus] = useState(       // modo partida (HUD)
+    searchParams.get('focus') === '1')
   const [tab, setTab] = useState('resumen')   // pestaña de la ficha
   // HUD: qué grupos quedan visibles en vista rápida
   const [hud, setHud] = useState(
@@ -200,18 +210,16 @@ export default function CharacterSheet() {
         </div>
         {focus && (
           <div className="row" style={{ flexWrap: 'wrap' }}>
-            {[['combate', ['resumen', 'combate', 'magia']],
-              ['exploración', ['resumen', 'equipo', 'personaje']],
-              ['todo', ['resumen', 'combate', 'magia', 'equipo',
-                        'personaje', 'actividad']]].map(([p, groups]) => (
+            {[['combate', ['resumen', 'acciones', 'magia']],
+              ['exploración', ['resumen', 'stats', 'inventario']],
+              ['interacción', ['resumen', 'rasgos', 'historia']],
+              ['todo', SHEET_TABS.map(([k]) => k)]]
+              .map(([p, groups]) => (
               <button key={p} className="ghost" style={{ fontSize: '.85em' }}
                       onClick={() => setHud(new Set(groups))}>
                 {p[0].toUpperCase() + p.slice(1)}</button>))}
             <span className="muted">·</span>
-            {[['resumen', 'Resumen'], ['combate', 'Combate'],
-              ['magia', 'Magia'], ['equipo', 'Equipo'],
-              ['personaje', 'Personaje'], ['actividad', 'Actividad']]
-              .map(([k, label]) => (
+            {SHEET_TABS.map(([k, label]) => (
                 <label key={k} className="muted"
                        style={{ fontSize: '.85em' }}>
                   <input type="checkbox" checked={hud.has(k)}
@@ -224,10 +232,7 @@ export default function CharacterSheet() {
           </div>)}
         {!focus && (
           <nav className="tabs" role="tablist" aria-label="Secciones">
-            {[['resumen', 'Resumen'], ['combate', 'Combate'],
-              ['magia', 'Magia'], ['equipo', 'Equipo'],
-              ['personaje', 'Personaje'], ['actividad', 'Actividad']]
-              .map(([k, label]) => (
+            {SHEET_TABS.map(([k, label]) => (
                 <button key={k} role="tab" aria-selected={tab === k}
                         onClick={() => setTab(k)}>{label}</button>))}
           </nav>)}
@@ -282,7 +287,7 @@ export default function CharacterSheet() {
       )}
 
       {derived && (
-        <section className="card" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>
+        <section className="card" hidden={focus ? !hud.has('stats') : tab !== 'stats'}>
           <h2>Calculado</h2>
           <div className="row" style={{ flexWrap: 'wrap' }}>
             <span className="coin">CA {derived.armor_class.total}</span>
@@ -298,6 +303,67 @@ export default function CharacterSheet() {
             .map(([n, v]) => `${n} ${v > 0 ? '+' : ''}${v}`).join(' ')}</p>
         </section>
       )}
+
+      {/* hoja 2024: habilidades agrupadas por característica, cada
+          valor pulsable para tirar */}
+      <section className="card" hidden={focus ? !hud.has('stats') : tab !== 'stats'}>
+        <h2>Características</h2>
+        <div className="ability-grid">
+          {STATS.map(([ab, label, skills]) => {
+            const score = d.abilities?.[ab] ?? 10
+            const mod = Math.floor((score - 10) / 2)
+            const prof = derived?.proficiency_bonus ?? 2
+            const saveProf = d.save_proficiencies?.includes(ab)
+            const rollIt = async (kind, bonus, name) => {
+              const r = await api.characterRoll(
+                id, `1d20${bonus >= 0 ? '+' : ''}${bonus}`, kind)
+              setRollLog((l) => [
+                `${name}: ${r.kept.join('+')} = ${r.total}`, ...l]
+                .slice(0, 10))
+            }
+            return (
+              <div key={ab} className="ability-cell">
+                <span className="muted">{label}</span>
+                <strong className="num">{score}</strong>
+                <button className="ghost" style={{ fontSize: '1.1em' }}
+                        aria-label={`Prueba de ${label}`}
+                        onClick={() =>
+                          rollIt('check', mod, label)}>
+                  {mod >= 0 ? '+' : ''}{mod}</button>
+                <button className="ghost" style={{ fontSize: '.8em' }}
+                        aria-label={`Salvación de ${label}${
+                          saveProf ? ' (competente)' : ''}`}
+                        onClick={() => rollIt(
+                          'save', mod + (saveProf ? prof : 0),
+                          `Salv. ${label}`)}>
+                  Salv {saveProf ? '●' : '○'}{' '}
+                  {mod + (saveProf ? prof : 0) >= 0 ? '+' : ''}
+                  {mod + (saveProf ? prof : 0)}</button>
+                <ul className="skill-list">
+                  {skills.map(([sid, sname]) => {
+                    const profs = d.skill_proficiencies || []
+                    const p = profs.includes(sid) ||
+                              profs.includes(sid.replace(/-/g, ' '))
+                    const bonus = mod + (p ? prof : 0)
+                    return (
+                      <li key={sid}>
+                        <button className="ghost"
+                                style={{ fontSize: '.8em',
+                                         textAlign: 'left' }}
+                                aria-label={`Habilidad ${sname}${
+                                  p ? ' (competente)' : ''}`}
+                                onClick={() =>
+                                  rollIt('check', bonus, sname)}>
+                          {p ? '●' : '○'} {sname}{' '}
+                          {bonus >= 0 ? '+' : ''}{bonus}</button>
+                      </li>)})}
+                </ul>
+              </div>)
+          })}
+        </div>
+        <p className="muted" style={{ fontSize: '.8rem' }}>
+          ○ sin competencia · ● competente — pulsa para tirar</p>
+      </section>
 
       <section className="card" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>
         <h2>Puntos de golpe</h2>
@@ -354,7 +420,13 @@ export default function CharacterSheet() {
           <h2>Espacios de conjuro</h2>
           {Object.entries(slots).map(([lvl, s]) => (
             <div key={lvl} className="row">
-              <span>Nivel {lvl}: {s.total - s.used}/{s.total}</span>
+              <span aria-label={`Espacios nivel ${lvl}: ${
+                s.total - s.used} de ${s.total} disponibles`}>
+                Nv.{lvl}{' '}
+                <span className="coin">
+                  {'●'.repeat(s.total - s.used)}{'○'.repeat(s.used)}
+                </span>{' '}
+                {s.total - s.used}/{s.total}</span>
               <button disabled={s.used >= s.total}
                       onClick={() => op('character.spell_slot.use', { level: +lvl })}>
                 Usar
@@ -379,7 +451,7 @@ export default function CharacterSheet() {
         </section>
       )}
 
-      <section className="card optional" hidden={focus ? !hud.has('equipo') : tab !== 'equipo'}>
+      <section className="card optional" hidden={focus ? !hud.has('inventario') : tab !== 'inventario'}>
         <h2>Monedas</h2>
         <div className="row purse">
           {['pp', 'gp', 'ep', 'sp', 'cp'].map((c) => (
@@ -397,7 +469,7 @@ export default function CharacterSheet() {
         </div>
       </section>
 
-      <section className="card" hidden={focus ? !hud.has('combate') : tab !== 'combate'}>
+      <section className="card" hidden={focus ? !hud.has('acciones') : tab !== 'acciones'}>
         <h2>Acciones</h2>
         <button onClick={async () => {
           if (actions) { setActions(null); return }
@@ -432,7 +504,7 @@ export default function CharacterSheet() {
       </section>
 
       {(d.effects || []).length > 0 && (
-        <section className="card optional" hidden={focus ? !hud.has('combate') : tab !== 'combate'}>
+        <section className="card optional" hidden={focus ? !hud.has('acciones') : tab !== 'acciones'}>
           <h2>Efectos activos</h2>
           <div className="row" style={{ flexWrap: 'wrap' }}>
             {d.effects.map((e) => (
@@ -466,7 +538,7 @@ export default function CharacterSheet() {
         ))}
       </section>
 
-      <section className="card optional" hidden={focus ? !hud.has('equipo') : tab !== 'equipo'}>
+      <section className="card optional" hidden={focus ? !hud.has('inventario') : tab !== 'inventario'}>
         <h2>Inventario</h2>
         <ItemPicker onPick={(it) =>
           op('character.inventory.add',
@@ -504,7 +576,7 @@ export default function CharacterSheet() {
                        onClose={() => setAtkItem(null)} />)}
       </section>
 
-      <section className="card" hidden={focus ? !hud.has('combate') : tab !== 'combate'}>
+      <section className="card" hidden={focus ? !hud.has('acciones') : tab !== 'acciones'}>
         <h2>Dados</h2>
         <form onSubmit={doRoll} className="row">
           <input value={expr} onChange={(e) => setExpr(e.target.value)}
@@ -554,7 +626,7 @@ export default function CharacterSheet() {
       </section>
 
       {shops.length > 0 && (
-        <section className="card optional" hidden={focus ? !hud.has('equipo') : tab !== 'equipo'}>
+        <section className="card optional" hidden={focus ? !hud.has('inventario') : tab !== 'inventario'}>
           <h2>Tienda</h2>
           {shops.map((s) => (
             <div key={s.id}>
@@ -576,7 +648,7 @@ export default function CharacterSheet() {
         </section>
       )}
 
-      <section className="card optional" hidden={focus ? !hud.has('personaje') : tab !== 'personaje'}>
+      <section className="card optional" hidden={focus ? !hud.has('rasgos') : tab !== 'rasgos'}>
         <h2>Rasgos</h2>
         <SpellPicker entityType="feature" verb="Añadir"
           placeholder="Rasgo opcional (invocación, infusión, maniobra…)"
@@ -592,7 +664,7 @@ export default function CharacterSheet() {
           </div>)}
       </section>
 
-      <section className="card optional" hidden={focus ? !hud.has('personaje') : tab !== 'personaje'}>
+      <section className="card optional" hidden={focus ? !hud.has('rasgos') : tab !== 'rasgos'}>
         <h2>Dotes y dones</h2>
         <SpellPicker entityType="feat" verb="Añadir"
           placeholder="Buscar dote en todas las fuentes"
@@ -610,7 +682,7 @@ export default function CharacterSheet() {
             op('character.reward.remove', { reward_id: rid })} />)}
       </section>
 
-      <section className="card optional" hidden={focus ? !hud.has('personaje') : tab !== 'personaje'}>
+      <section className="card optional" hidden={focus ? !hud.has('rasgos') : tab !== 'rasgos'}>
         <h2>Subclase e idiomas</h2>
         <SpellPicker entityType="subclass" verb="Elegir"
           placeholder="Buscar subclase…"
@@ -636,7 +708,7 @@ export default function CharacterSheet() {
           </div>)}
       </section>
 
-      <section className="card optional" hidden={focus ? !hud.has('personaje') : tab !== 'personaje'}>
+      <section className="card optional" hidden={focus ? !hud.has('stats') : tab !== 'stats'}>
         <h2>Competencias</h2>
         <SpellPicker entityType="skill" verb="Competente"
           placeholder="Habilidad (percepción, sigilo…)"
@@ -670,7 +742,7 @@ export default function CharacterSheet() {
         )}
       </section>
 
-      <section className="card optional" hidden={focus ? !hud.has('personaje') : tab !== 'personaje'}>
+      <section className="card optional" hidden={focus ? !hud.has('historia') : tab !== 'historia'}>
         <h2>Diario</h2>
         <div className="row">
           <input value={journalEntry} placeholder="Anotación de la sesión…"
@@ -765,6 +837,28 @@ function SpellPicker({ onPick, entityType = 'spell',
 
 /** Efecto mecánico SRD de la condición — espejo de
     domain/conditions.py (los nombres en ES se muestran tal cual). */
+/** [id, etiqueta, habilidades] — agrupación de la hoja oficial 2024. */
+const STATS = [
+  ['str', 'Fuerza', [['athletics', 'Atletismo']]],
+  ['dex', 'Destreza', [['acrobatics', 'Acrobacias'],
+                      ['sleight-of-hand', 'Juego de manos'],
+                      ['stealth', 'Sigilo']]],
+  ['con', 'Constitución', []],
+  ['int', 'Inteligencia', [['arcana', 'Arcana'], ['history', 'Historia'],
+                          ['investigation', 'Investigación'],
+                          ['nature', 'Naturaleza'],
+                          ['religion', 'Religión']]],
+  ['wis', 'Sabiduría', [['animal-handling', 'Trato animal'],
+                       ['insight', 'Perspicacia'],
+                       ['medicine', 'Medicina'],
+                       ['perception', 'Percepción'],
+                       ['survival', 'Supervivencia']]],
+  ['cha', 'Carisma', [['deception', 'Engaño'],
+                      ['intimidation', 'Intimidación'],
+                      ['performance', 'Interpretación'],
+                      ['persuasion', 'Persuasión']]],
+]
+
 const COND_RULES = {
   blinded: 'Desventaja en ataques', cegado: 'Desventaja en ataques',
   cegada: 'Desventaja en ataques',
@@ -841,6 +935,18 @@ function CastPanel({ spellId, slots, concentrating, onCast, onClose }) {
         <p className="muted">
           Espacios de nivel {lvl}: {slot.total - slot.used} →{' '}
           {slot.total - slot.used - 1}</p>)}
+      {(() => {
+        const scale = sd.damage_at_slot_level ||
+                      sd.higher_level_scaling || {}
+        const dice = scale[lvl] || scale[String(lvl)] ||
+                     sd.damage?.dice || sd.damage_dice
+        const scaled = lvl > base &&
+          Object.keys(scale).length > 0
+        return dice ? (
+          <p className="muted">
+            Daño{scaled ? ` a nivel ${lvl} (escalado)` : ''}: {dice}
+          </p>) : null
+      })()}
       {conc && concentrating && (
         <p className="notice" role="note">
           ⚠ Estás concentrado en <b>{concentrating}</b> — lanzar

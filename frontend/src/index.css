@@ -207,6 +207,35 @@ mark {
 /* etiquetas de procedencia */
 .tag-private { color: var(--private); }
 
+/* rejilla de características estilo hoja 2024 */
+.ability-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.6rem;
+}
+@media (min-width: 700px) {
+  .ability-grid { grid-template-columns: repeat(6, 1fr); }
+}
+.ability-cell {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.5rem;
+  text-align: center;
+}
+.ability-cell .num { display: block; font-size: 1.3rem; }
+.ability-cell > button { width: 100%; justify-content: center; }
+.skill-list {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+}
+.skill-list button {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 0 0.2rem;
+  min-height: 32px;
+}
+
 /* wizard: contenido + resumen lateral persistente (≥760px) */
 @media (min-width: 760px) {
   .wizard-cols {

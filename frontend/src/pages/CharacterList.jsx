@@ -126,6 +126,8 @@ export default function CharacterList() {
                 <div className="row" role="menu">
                   <Link to={`/character/${c.id}`}>
                     <button className="ghost">Abrir</button></Link>
+                  <Link to={`/character/${c.id}?focus=1`}>
+                    <button className="ghost">Modo partida</button></Link>
                   <button className="ghost"
                           onClick={() => act(c, 'duplicate')}>Duplicar</button>
                   <button className="ghost"

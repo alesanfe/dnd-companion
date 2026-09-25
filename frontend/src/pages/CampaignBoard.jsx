@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api } from '../api.js'
+import { currentUser } from '../session.js'
 
 /** Vista de jugador: solo entidades públicas/reveladas de la campaña. */
 export default function CampaignBoard() {
@@ -10,11 +11,14 @@ export default function CampaignBoard() {
   const [code, setCode] = useState('')
   const [err, setErr] = useState(null)
   const [pend, setPend] = useState([])
+  const [camp, setCamp] = useState(null)
   // el formulario de unirse solo ocupa espacio si todavía no estás dentro
   const [joined, setJoined] = useState(
     () => localStorage.getItem(`dnd-joined-${id}`) === '1')
 
   const load = () => {
+    fetch(`/api/campaigns/${id}`).then((r) => r.ok ? r.json() : null)
+      .then(setCamp).catch(() => {})
     api.listEntities(id, null, 'player')
       .then((r) => setEntities(r.entities))
       .catch((e) => setErr(e.message))
@@ -29,6 +33,24 @@ export default function CampaignBoard() {
     }).catch(() => {})
   }
   useEffect(load, [id])
+
+  // en vivo: cuando el DM revela entidades o pide tiradas, el jugador
+  // lo ve sin recargar
+  useEffect(() => {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+    const uid = currentUser()?.user_id
+    const ws = new WebSocket(
+      `${proto}://${location.host}/ws/campaign/${id}` +
+      (uid ? `?user_id=${uid}` : ''))
+    ws.onmessage = (m) => {
+      const msg = JSON.parse(m.data)
+      const ev = msg.event || msg
+      if (ev?.type === 'dice.roll.requested' ||
+          ev?.type?.startsWith('campaign.') ||
+          ev?.type?.startsWith('combat.')) load()
+    }
+    return () => ws.close()
+  }, [id])
 
   const join = async (e) => {
     e.preventDefault()
@@ -53,7 +75,11 @@ export default function CampaignBoard() {
 
   return (
     <main>
-      <h1>Campaña</h1>
+      <h1>{camp?.name || 'Campaña'}</h1>
+      {camp && (
+        <p className="muted">
+          {camp.ruleset?.replace('dnd5e-', 'Reglas ') || ''}
+          {' · '}Código: <code>{camp.invite_code}</code></p>)}
       {err && <p className="error">{err}</p>}
 
       {/* peticiones de tirada del DM para mis personajes */}

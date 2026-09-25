@@ -136,6 +136,8 @@ export const api = {
         (allSources ? '&all_sources=true' : '')),
   derivedAll: (id) => req(`/api/characters/${id}/derived`),
   getEntity: (id) => req(`/api/content/${encodeURIComponent(id)}`),
+  compareEditions: (index) =>
+    req(`/api/content/compare?index=${encodeURIComponent(index)}`),
   listCampaigns: () => req('/api/campaigns'),
   campaignEvents: (campaignId, limit = 100) =>
     req(`/api/campaigns/${campaignId}/events?limit=${limit}`),

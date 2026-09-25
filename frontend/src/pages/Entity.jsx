@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { api } from '../api.js'
 
 /** Vista legible de una entidad del corpus — stat block normalizado
@@ -11,6 +11,7 @@ export default function Entity() {
   const [block, setBlock] = useState(null)
   const [view, setView] = useState(null)
   const [err, setErr] = useState(null)
+  const [editions, setEditions] = useState(null)
 
   useEffect(() => {
     api.getEntity(id).then(setEnt).catch((e) => setErr(e.message))
@@ -18,6 +19,8 @@ export default function Entity() {
       .catch(() => setBlock(null))
     api.entityRender(id).then((r) => setView(r.render))
       .catch(() => setView(null))
+    api.compareEditions(id.split(':').pop())
+      .then(setEditions).catch(() => {})
   }, [id])
 
   // favoritos + recientes: compendio local, no del backend
@@ -85,6 +88,20 @@ export default function Entity() {
         {!ent.is_redistributable &&
           <span className="tag-private"> · contenido privado</span>}
       </p>
+      {editions && Object.keys(editions.versions || {}).length > 1 && (
+        <div className="row" role="group"
+             aria-label="Versiones por edición">
+          <span className="muted">Otras ediciones:</span>
+          {Object.entries(editions.versions).map(([rs, v]) => (
+            v.id !== ent.id && (
+              <Link key={rs}
+                    to={`/content/${encodeURIComponent(v.id)}`}
+                    className="chip">
+                {rs.replace('dnd5e-', '')}</Link>)))}
+          {editions.diff?.length > 0 && (
+            <span className="muted" style={{ fontSize: '.8rem' }}>
+              difieren: {editions.diff.join(', ')}</span>)}
+        </div>)}
 
       {block && (
         <section className="card">

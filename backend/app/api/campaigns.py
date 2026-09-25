@@ -199,6 +199,18 @@ def list_members(campaign_id: str):
     return {"members": [dict(r) for r in rows]}
 
 
+@router.get("/{campaign_id}")
+def get_campaign(campaign_id: str):
+    """Ficha mínima de campaña (nombre, ruleset, código)."""
+    conn = state_db()
+    row = conn.execute(
+        "SELECT id, name, ruleset, invite_code, created_at "
+        "FROM campaigns WHERE id = ?", (campaign_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "campaign not found")
+    return dict(row)
+
+
 @router.get("/{campaign_id}/state")
 def campaign_state(campaign_id: str):
     """Snapshot para resync tras reconexión: personajes + combate activo

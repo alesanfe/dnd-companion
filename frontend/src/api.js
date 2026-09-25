@@ -89,6 +89,7 @@ export const api = {
         (allSources ? '&all_sources=true' : '')),
   derivedAll: (id) => req(`/api/characters/${id}/derived`),
   getEntity: (id) => req(`/api/content/${encodeURIComponent(id)}`),
+  listCampaigns: () => req('/api/campaigns'),
   campaignEvents: (campaignId, limit = 100) =>
     req(`/api/campaigns/${campaignId}/events?limit=${limit}`),
   pendingRolls: (campaignId, characterIds) =>

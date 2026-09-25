@@ -27,6 +27,10 @@ export default function DmBoard() {
   const [timeline, setTimeline] = useState(null)
   const [rollFeed, setRollFeed] = useState([])
   const [eventFeed, setEventFeed] = useState(null)
+  const [areaDmg, setAreaDmg] = useState(null)   // daño multiobjetivo
+  const [areaAmt, setAreaAmt] = useState(10)
+  const [areaType, setAreaType] = useState('')
+  const [areaResults, setAreaResults] = useState(null)
 
   // feed en vivo: tiradas de los jugadores en la sala
   useEffect(() => {
@@ -48,10 +52,12 @@ export default function DmBoard() {
 
   const cop = async (type, payload) => {
     try {
-      await api.applyOp({ id: combat.id, version: combat.version },
-                        type, payload, 'combat')
+      const r = await api.applyOp(
+        { id: combat.id, version: combat.version },
+        type, payload, 'combat')
       refresh(combat.id)
-    } catch (e) { setErr(e.message); refresh(combat.id) }
+      return r
+    } catch (e) { setErr(e.message); refresh(combat.id); return null }
   }
 
   const searchMonsters = async (e) => {
@@ -356,8 +362,65 @@ export default function DmBoard() {
               <button className="ghost" onClick={async () =>
                 setDifficulty(await api.combatDifficulty(combat.id))
               }>Dificultad</button>
+              <button className="ghost" aria-expanded={!!areaDmg}
+                      onClick={() => setAreaDmg(areaDmg ? null : {})}>
+                Daño en área</button>
               <button className="dmg" onClick={() => cop('combat.end', {})}>Terminar</button>
             </div>
+            {areaDmg && (
+              <div className="card" role="dialog"
+                   aria-label="Aplicar daño a varios objetivos"
+                   style={{ background: 'var(--card-raised)' }}>
+                <div className="row" style={{ flexWrap: 'wrap' }}>
+                  {ordered.map((c) => (
+                    <label key={c.id} className="chip"
+                           style={{ cursor: 'pointer' }}>
+                      <input type="checkbox"
+                             checked={!!areaDmg[c.id]}
+                             onChange={(e) => setAreaDmg({
+                               ...areaDmg, [c.id]: e.target.checked })} />
+                      {' '}{c.name}</label>))}
+                </div>
+                <div className="row">
+                  <input type="number" min="1" value={areaAmt}
+                         onChange={(e) => setAreaAmt(+e.target.value)}
+                         aria-label="Cantidad" />
+                  <select value={areaType}
+                          onChange={(e) => setAreaType(e.target.value)}
+                          aria-label="Tipo de daño">
+                    <option value="">sin tipo</option>
+                    {['fire', 'cold', 'lightning', 'poison', 'acid',
+                      'necrotic', 'radiant', 'psychic', 'thunder',
+                      'force', 'bludgeoning', 'piercing',
+                      'slashing'].map((t) =>
+                      <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <button className="dmg" onClick={async () => {
+                    const targets = ordered.filter((c) => areaDmg[c.id])
+                    let ver = combat.version
+                    const res = []
+                    for (const c of targets) {
+                      const r = await api.applyOp(
+                        { id: combat.id, version: ver },
+                        'combatant.damage',
+                        { combatant_id: c.id, amount: areaAmt,
+                          damage_type: areaType }, 'combat')
+                      ver = r.version ?? ver + 1
+                      const ev = (r.events || []).find(
+                        (e) => e.type === 'character.hp.changed')
+                      res.push(`${c.name}: ${areaAmt} → ${
+                        ev?.payload?.amount ?? areaAmt}${
+                        ev?.payload?.note ? ` (${ev.payload.note})` : ''}`)
+                    }
+                    setAreaResults(res)
+                    refresh(combat.id)
+                  }}>Aplicar</button>
+                </div>
+                {(areaResults || []).length > 0 && (
+                  <ul style={{ margin: '.4rem 0 0' }}>
+                    {areaResults.map((r, i) => <li key={i}>{r}</li>)}
+                  </ul>)}
+              </div>)}
             {difficulty && (
               <p>
                 <span className="chip">{difficulty.rating}</span>{' '}

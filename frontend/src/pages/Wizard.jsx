@@ -101,6 +101,8 @@ export default function Wizard() {
               {i ? ' ─ ' : ''}{s}</span>))}
       </p>
 
+      <div className="wizard-cols">
+      <div>
       {step === 0 && (
         <section className="card">
           <h2>1. Nombre y reglas</h2>
@@ -237,6 +239,32 @@ export default function Wizard() {
           </div>
         </section>
       )}
+      </div>
+
+      <aside className="card wizard-summary"
+             aria-label="Resumen del personaje">
+        <h3 style={{ marginTop: 0 }}>Resumen</h3>
+        <p><strong>{name || 'Sin nombre'}</strong></p>
+        <p className="muted">
+          {{ 'dnd5e-2014': 'Reglas 2014', 'dnd5e-2024': 'Reglas 2024',
+             mixed: 'Modo mixto' }[ruleset]}</p>
+        <dl>
+          <dt>Clase</dt>
+          <dd>{classId ? classId.split(':').pop().split('|')[0]
+              .replace(/-/g, ' ') : '—'}</dd>
+          <dt>Especie</dt>
+          <dd>{speciesId ? speciesId.split(':').pop().split('|')[0]
+              .replace(/-/g, ' ') : '—'}</dd>
+          <dt>Trasfondo</dt>
+          <dd>{backgroundId ? backgroundId.split(':').pop().split('|')[0]
+              .replace(/-/g, ' ') : '—'}</dd>
+        </dl>
+        {Object.values(abilities).some(Boolean) && (
+          <p className="muted">
+            {ABILITIES.map((ab) => `${ab.toUpperCase()} ${abilities[ab]}`)
+              .join(' · ')}</p>)}
+      </aside>
+      </div>
     </main>
   )
 }

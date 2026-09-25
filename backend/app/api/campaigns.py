@@ -47,6 +47,26 @@ def create_campaign(body: CampaignCreate,
     return {"id": cid, "invite_code": invite}
 
 
+@router.get("")
+def list_campaigns(user: dict | None = Depends(optional_user)):
+    """Campañas del usuario (si hay token) o todas en modo local."""
+    conn = state_db()
+    uid = (user or {}).get("user_id")
+    if uid:
+        rows = conn.execute(
+            """SELECT c.id, c.name, c.ruleset, m.role, c.created_at
+               FROM campaigns c
+               JOIN members m ON m.campaign_id = c.id
+               WHERE m.user_id = ? ORDER BY c.created_at DESC""",
+            (uid,)).fetchall()
+    else:
+        rows = conn.execute(
+            """SELECT c.id, c.name, c.ruleset,
+                      'dm' AS role, c.created_at
+               FROM campaigns c ORDER BY c.created_at DESC""").fetchall()
+    return {"campaigns": [dict(r) for r in rows]}
+
+
 class JoinIn(BaseModel):
     invite_code: str
     user_id: str | None = None          # registra membresía si se pasa

@@ -6,6 +6,8 @@ export default function CharacterList() {
   const [chars, setChars] = useState([])
   const [name, setName] = useState('')
   const [err, setErr] = useState(null)
+  const [menu, setMenu] = useState(null)   // id del char con ⋮ abierto
+  const [filter, setFilter] = useState('')
 
   const load = () => api.listCharacters()
     .then((r) => setChars(r.characters))
@@ -20,6 +22,33 @@ export default function CharacterList() {
     setName('')
     load()
   }
+
+  const act = async (c, action) => {
+    setMenu(null)
+    if (action === 'export') {
+      const ex = await api.exportCharacter(c.id)
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(new Blob(
+        [JSON.stringify(ex, null, 2)], { type: 'application/json' }))
+      a.download = `${c.name}.json`; a.click()
+    } else if (action === 'duplicate') {
+      const ex = await api.exportCharacter(c.id)
+      const data = ex.character?.data || ex.data || ex
+      await api.importCharacter(
+        { ...ex, name: `${c.name} (copia)`, data })
+      load()
+    } else if (action === 'delete') {
+      if (!confirm(`¿Borrar a ${c.name}? Esta acción no se puede deshacer.`))
+        return
+      await fetch(`/api/characters/${c.id}`, { method: 'DELETE' })
+      load()
+    }
+  }
+
+  const shown = filter.trim()
+    ? chars.filter((c) =>
+        c.name.toLowerCase().includes(filter.trim().toLowerCase()))
+    : chars
 
   return (
     <main>
@@ -48,6 +77,7 @@ export default function CharacterList() {
                  }} />
         </label>
       </form>
+
       {chars.length === 0 && !err && (
         <div className="card empty">
           <p><strong>Todavía no tienes personajes</strong></p>
@@ -56,20 +86,55 @@ export default function CharacterList() {
           <Link to="/new">
             <button className="primary">Crear personaje</button></Link>
         </div>)}
-      <ul className="char-list">
-        {chars.map((c) => (
-          <li key={c.id} className="row">
-            <Link to={`/character/${c.id}`} style={{ flex: 1 }}>{c.name}</Link>
-            <span className="muted"> v{c.version} · {c.ruleset}</span>
-            <button className="ghost" aria-label={`Borrar ${c.name}`}
-                    onClick={async () => {
-              if (!confirm(`¿Borrar a ${c.name}? Esta acción no se puede deshacer.`)) return
-              await fetch(`/api/characters/${c.id}`, { method: 'DELETE' })
-              load()
-            }}>×</button>
-          </li>
-        ))}
-      </ul>
+
+      {chars.length > 4 && (
+        <input value={filter} onChange={(e) => setFilter(e.target.value)}
+               placeholder={`Buscar entre ${chars.length} personajes…`}
+               aria-label="Buscar personaje" />)}
+
+      <div className="char-grid">
+        {shown.map((c) => {
+          const pct = c.hp_max
+            ? Math.round(100 * (c.hp_current ?? c.hp_max) / c.hp_max) : 100
+          return (
+            <div key={c.id} className="card char-card">
+              <div className="row" style={{ marginTop: 0 }}>
+                <Link to={`/character/${c.id}`}
+                      style={{ flex: 1, fontSize: '1.1rem',
+                               fontWeight: 700, textDecoration: 'none',
+                               color: 'inherit' }}>
+                  {c.name}</Link>
+                <button className="ghost"
+                        aria-label={`Opciones de ${c.name}`}
+                        onClick={() => setMenu(menu === c.id ? null : c.id)}>
+                  ⋮</button>
+              </div>
+              <p className="muted" style={{ margin: '0 0 .4rem' }}>
+                {(c.class_names || []).join(' / ') || 'Sin clase'}
+                {' · '}Nivel {c.level || 1} · {c.ruleset.replace('dnd5e-', 'reglas ')}
+              </p>
+              {c.hp_max != null && (
+                <>
+                  <div className="hp-bar" role="img"
+                       aria-label={`PG ${c.hp_current} de ${c.hp_max}`}>
+                    <div style={{ width: `${pct}%` }} />
+                  </div>
+                  <p className="muted" style={{ margin: '.2rem 0 0' }}>
+                    {c.hp_current}/{c.hp_max} PG</p>
+                </>)}
+              {menu === c.id && (
+                <div className="row" role="menu">
+                  <Link to={`/character/${c.id}`}>
+                    <button className="ghost">Abrir</button></Link>
+                  <button className="ghost"
+                          onClick={() => act(c, 'duplicate')}>Duplicar</button>
+                  <button className="ghost"
+                          onClick={() => act(c, 'export')}>Exportar</button>
+                  <button className="ghost"
+                          onClick={() => act(c, 'delete')}>Eliminar</button>
+                </div>)}
+            </div>)})}
+      </div>
     </main>
   )
 }

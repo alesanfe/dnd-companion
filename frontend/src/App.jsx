@@ -6,6 +6,7 @@ import CharacterSheet from './pages/CharacterSheet.jsx'
 import Wizard from './pages/Wizard.jsx'
 import DmBoard from './pages/DmBoard.jsx'
 import CampaignBoard from './pages/CampaignBoard.jsx'
+import CampaignList from './pages/CampaignList.jsx'
 import Search from './pages/Search.jsx'
 import Entity from './pages/Entity.jsx'
 
@@ -21,6 +22,7 @@ export default function App() {
         <Route path="/search" element={<Search />} />
         <Route path="/content/:id" element={<Entity />} />
         <Route path="/dm" element={<DmBoard />} />
+        <Route path="/campaigns" element={<CampaignList />} />
         <Route path="/campaign/:id" element={<CampaignBoard />} />
       </Routes>
     </div>

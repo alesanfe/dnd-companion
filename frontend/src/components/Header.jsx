@@ -65,6 +65,7 @@ export default function Header() {
   return (
     <header className="nav">
       <Link to="/">Personajes</Link>
+      <Link to="/campaigns">Campañas</Link>
       <Link to="/search">Compendio</Link>
       <Link to="/dm">Mesa DM</Link>
       <Link to="/new" className="btn-create">+ Crear</Link>

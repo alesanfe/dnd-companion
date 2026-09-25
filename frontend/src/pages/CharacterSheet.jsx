@@ -22,11 +22,13 @@ export default function CharacterSheet() {
   const [hud, setHud] = useState(
     () => new Set(['resumen']))
   const [notice, setNotice] = useState(null)  // aviso de concentración
+  const [undoable, setUndoable] = useState(null)  // {id, label} toast deshacer
   const [journalEntry, setJournalEntry] = useState('')
   const [derived, setDerived] = useState(null)
   const [shops, setShops] = useState([])
   const [condOptions, setCondOptions] = useState([])
   const [atkItem, setAtkItem] = useState(null)   // arma en panel de ataque
+  const [castId, setCastId] = useState(null)     // conjuro en panel de lanzamiento
 
   const loadMeta = () => {
     api.derivedAll(id).then(setDerived).catch(() => {})
@@ -68,6 +70,11 @@ export default function CharacterSheet() {
   const op = async (type, payload) => {
     try {
       const r = await api.applyOp(char, type, payload)
+      if (r.operation_id) {
+        setUndoable({ id: r.operation_id, label: type })
+        setTimeout(() => setUndoable((u) =>
+          u?.id === r.operation_id ? null : u), 8000)
+      }
       // daño manteniendo concentración → avisa de la tirada de CON
       const cc = (r.events || []).find((e) => e.payload?.concentration_check)
       if (cc) {
@@ -114,7 +121,7 @@ export default function CharacterSheet() {
         <button className={focus ? '' : 'ghost'}
                 aria-pressed={focus}
                 onClick={() => setFocus(!focus)}>
-          {focus ? 'Salir de vista rápida' : 'Vista rápida'}
+          {focus ? 'Salir de modo partida' : 'Modo partida'}
         </button>
         <button className="ghost" onClick={async () => {
           const h = await api.opHistory(id)
@@ -148,6 +155,16 @@ export default function CharacterSheet() {
           {notice} <button onClick={() => setNotice(null)}>OK</button>
         </p>
       )}
+      {undoable && (
+        <p className="notice" role="status">
+          Operación aplicada
+          <button onClick={async () => {
+            await api.undoOp(undoable.id)
+            setUndoable(null); load()
+          }}>Deshacer</button>
+          <button className="ghost"
+                  onClick={() => setUndoable(null)}>×</button>
+        </p>)}
 
       {rollRequest && (
         <section className="card" role="alert">
@@ -183,6 +200,14 @@ export default function CharacterSheet() {
         </div>
         {focus && (
           <div className="row" style={{ flexWrap: 'wrap' }}>
+            {[['combate', ['resumen', 'combate', 'magia']],
+              ['exploración', ['resumen', 'equipo', 'personaje']],
+              ['todo', ['resumen', 'combate', 'magia', 'equipo',
+                        'personaje', 'actividad']]].map(([p, groups]) => (
+              <button key={p} className="ghost" style={{ fontSize: '.85em' }}
+                      onClick={() => setHud(new Set(groups))}>
+                {p[0].toUpperCase() + p.slice(1)}</button>))}
+            <span className="muted">·</span>
             {[['resumen', 'Resumen'], ['combate', 'Combate'],
               ['magia', 'Magia'], ['equipo', 'Equipo'],
               ['personaje', 'Personaje'], ['actividad', 'Actividad']]
@@ -279,6 +304,13 @@ export default function CharacterSheet() {
         <div className="hp-big">
           {hp.current} / {hp.max}
           {hp.temp > 0 && <span className="temp"> +{hp.temp} temp</span>}
+        </div>
+        <div className="hp-bar" role="img"
+             aria-label={`PG ${hp.current} de ${hp.max}`}>
+          <div style={{
+            width: `${hp.max ? Math.round(100 * hp.current / hp.max) : 0}%`,
+            background: hp.max && hp.current / hp.max <= 0.25
+              ? 'var(--danger)' : 'var(--success)' }} />
         </div>
         <div className="row">
           <input type="number" min="1" value={amount}
@@ -505,11 +537,20 @@ export default function CharacterSheet() {
           forClass={d.classes?.[0]?.class_id?.split(/[:|]/).pop()
                     .replace(/-/g, ' ')} />
         {(d.spells_known || []).length > 0 && (
-          <SpellList ids={d.spells_known} onCast={(sid) =>
-            op('character.spell.cast', { spell_id: sid, level: 0 })}
+          <SpellList ids={d.spells_known}
+            onCast={(sid) => setCastId(sid)}
             onForget={(sid) =>
               op('character.spell.forget', { spell_id: sid })} />
         )}
+        {castId && (
+          <CastPanel charId={id} spellId={castId} slots={slots}
+                     concentrating={d.concentrating_on}
+                     onCast={async (lvl) => {
+                       setCastId(null)
+                       await op('character.spell.cast',
+                                { spell_id: castId, level: lvl })
+                     }}
+                     onClose={() => setCastId(null)} />)}
       </section>
 
       {shops.length > 0 && (
@@ -757,6 +798,61 @@ const COND_RULES = {
   grappled: 'Velocidad 0', agarrado: 'Velocidad 0',
   agarrada: 'Velocidad 0',
   dead: 'Muerto', muerto: 'Muerto', muerta: 'Muerto',
+}
+
+/** Panel de lanzamiento: elige nivel de espacio, muestra CD/daño
+    y avisa si rompe una concentración activa. */
+function CastPanel({ spellId, slots, concentrating, onCast, onClose }) {
+  const [sp, setSp] = useState(null)
+  const [lvl, setLvl] = useState(null)
+  useEffect(() => {
+    api.getEntity(spellId).then((e) => {
+      setSp(e)
+      setLvl(e.data?.level ?? 0)
+    }).catch(() => {})
+  }, [spellId])
+  if (!sp) return null
+  const sd = sp.data || {}
+  const base = sd.level ?? 0
+  const conc = !!(sd.concentration || sd.duration === 'concentration' ||
+                  /concentración|concentration/i.test(
+                    String(sd.duration || '')))
+  const avail = Object.entries(slots)
+    .filter(([k, s]) => +k >= base && s.used < s.total)
+    .map(([k]) => +k)
+  const options = [...new Set([base, ...avail])].sort((a, b) => a - b)
+  const slot = slots[lvl] || slots[String(lvl)]
+  return (
+    <div className="card" role="dialog" aria-label={`Lanzar ${sp.name}`}
+         style={{ background: 'var(--card-raised)' }}>
+      <strong>Lanzar {sp.name}</strong>
+      <div className="row">
+        <span className="muted">Nivel de espacio</span>
+        <select value={lvl ?? base}
+                onChange={(e) => setLvl(+e.target.value)}>
+          {options.map((v) => (
+            <option key={v} value={v}
+                    disabled={v !== 0 && !(slots[v]?.used < slots[v]?.total)}>
+              Nv. {v}{slots[v] ? ` (${slots[v].total - slots[v].used} libres)` : ''}
+            </option>))}
+        </select>
+      </div>
+      {slot && (
+        <p className="muted">
+          Espacios de nivel {lvl}: {slot.total - slot.used} →{' '}
+          {slot.total - slot.used - 1}</p>)}
+      {conc && concentrating && (
+        <p className="notice" role="note">
+          ⚠ Estás concentrado en <b>{concentrating}</b> — lanzar
+          {' '}{sp.name} la finalizará.</p>)}
+      <div className="row">
+        <button className="primary"
+                disabled={lvl > 0 && !(slot && slot.used < slot.total)}
+                onClick={() => onCast(lvl ?? base)}>Lanzar conjuro</button>
+        <button className="ghost" onClick={onClose}>Cancelar</button>
+      </div>
+    </div>
+  )
 }
 
 /** Panel de ataque: muestra mods antes de tirar y permite marcar

@@ -147,14 +147,30 @@ def create_from_options(body: WizardCreate):
 
 @router.get("")
 def list_characters(campaign_id: str | None = None):
+    """Lista enriquecida: nivel total, PG y clase principal extraídos
+    del JSON para la vista de tarjetas."""
     conn = state_db()
-    sql = "SELECT id, name, ruleset, version, campaign_id FROM characters"
+    sql = """SELECT id, name, ruleset, version, campaign_id, updated_at,
+                    json_extract(data, '$.hp.current') AS hp_current,
+                    json_extract(data, '$.hp.max') AS hp_max,
+                    data
+             FROM characters"""
     params: list = []
     if campaign_id:
         sql += " WHERE campaign_id = ?"
         params.append(campaign_id)
     rows = conn.execute(sql, params).fetchall()
-    return {"characters": [dict(r) for r in rows]}
+    out = []
+    for r in rows:
+        d = dict(r)
+        data = json.loads(d.pop("data"))
+        classes = data.get("classes") or []
+        d["level"] = sum(c.get("level", 1) for c in classes) or 1
+        d["class_names"] = [
+            (c.get("name") or c.get("class_id", "").split(":")[-1]
+             ).replace("-", " ") for c in classes]
+        out.append(d)
+    return {"characters": out}
 
 
 class CharPatch(BaseModel):

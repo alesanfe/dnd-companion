@@ -207,6 +207,41 @@ mark {
 /* etiquetas de procedencia */
 .tag-private { color: var(--private); }
 
+/* wizard: contenido + resumen lateral persistente (≥760px) */
+@media (min-width: 760px) {
+  .wizard-cols {
+    display: grid;
+    grid-template-columns: 1fr 260px;
+    gap: 1rem;
+    align-items: start;
+  }
+  .wizard-summary { position: sticky; top: 76px; }
+}
+.wizard-summary dl { margin: 0; font-size: .9rem; }
+.wizard-summary dt { color: var(--muted); display: inline; }
+.wizard-summary dt::after { content: ': '; }
+.wizard-summary dd { display: inline; margin: 0 0 .3rem; }
+.wizard-summary dd::after { content: '\A'; white-space: pre; }
+
+/* tarjetas de personaje en la lista */
+.char-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 0.8rem;
+}
+.char-card { margin-bottom: 0; }
+.hp-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.hp-bar > div {
+  height: 100%;
+  background: var(--success);
+  transition: width .3s;
+}
+
 /* nav inferior móvil (≤640px) */
 @media (max-width: 640px) {
   main { padding: 0.7rem; }

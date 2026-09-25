@@ -365,6 +365,21 @@ def history(entity_id: str, limit: int = 50):
         {**dict(r), "payload": json.loads(r["payload"])} for r in rows]}
 
 
+@router.get("/conflicts")
+def conflicts(limit: int = 20):
+    """Operaciones en conflicto (optimistic locking) pendientes de
+    revisión manual — PG/recursos modificados en dos dispositivos."""
+    conn = state_db()
+    rows = conn.execute(
+        """SELECT operation_id, entity_id, entity_version, user_id,
+                  timestamp, operation_type, payload
+           FROM operations WHERE status = 'conflict'
+           ORDER BY timestamp DESC LIMIT ?""",
+        (limit,)).fetchall()
+    return {"conflicts": [
+        {**dict(r), "payload": json.loads(r["payload"])} for r in rows]}
+
+
 @router.post("/undo/{operation_id}")
 async def undo(operation_id: str):
     """Revierte una operación aplicando su inversa registrada."""

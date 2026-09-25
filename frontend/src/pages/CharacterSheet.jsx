@@ -27,7 +27,16 @@ export default function CharacterSheet() {
   const [searchParams] = useSearchParams()
   const [focus, setFocus] = useState(       // modo partida (HUD)
     searchParams.get('focus') === '1')
-  const [tab, setTab] = useState('resumen')   // pestaña de la ficha
+  const [tab, _setTab] = useState(() => {
+    const t = new URLSearchParams(window.location.search).get('tab')
+    return SHEET_TABS.some(([k]) => k === t) ? t : 'resumen'
+  })
+  const setTab = (t) => {           // pestaña compartible vía URL
+    _setTab(t)
+    const u = new URL(window.location)
+    u.searchParams.set('tab', t)
+    window.history.replaceState(null, '', u)
+  }
   // HUD: qué grupos quedan visibles en vista rápida
   const [hud, setHud] = useState(
     () => new Set(['resumen']))
@@ -39,6 +48,7 @@ export default function CharacterSheet() {
   const [condOptions, setCondOptions] = useState([])
   const [atkItem, setAtkItem] = useState(null)   // arma en panel de ataque
   const [castId, setCastId] = useState(null)     // conjuro en panel de lanzamiento
+  const [invTab, setInvTab] = useState('equipado')  // inventario interno
 
   const loadMeta = () => {
     api.derivedAll(id).then(setDerived).catch(() => {})
@@ -275,11 +285,25 @@ export default function CharacterSheet() {
               <span className="muted">{h.timestamp.slice(11, 19)}</span>
               <span style={{ flex: 1 }}>{h.operation_type}</span>
               {h.reversible ? (
+                <>
                 <button onClick={async () => {
                   await api.undoOp(h.operation_id)
                   setHistory(null)
                   load()
                 }}>Deshacer</button>
+                <button className="ghost"
+                        title="Deshace esta operación y todas las
+                               posteriores, en orden inverso"
+                        onClick={async () => {
+                  const idx = history.indexOf(h)
+                  for (const x of history.slice(0, idx + 1)) {
+                    if (x.reversible)
+                      await api.undoOp(x.operation_id)
+                  }
+                  setHistory(null)
+                  load()
+                }}>Hasta aquí</button>
+                </>
               ) : <span className="muted">—</span>}
             </div>
           ))}
@@ -438,16 +462,27 @@ export default function CharacterSheet() {
 
       {(d.resources || []).length > 0 && (
         <section className="card" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>
-          <h2>Recursos</h2>
-          {d.resources.map((r) => (
+          <h2>Usos limitados</h2>
+          {Object.entries(d.resources.reduce((g, r) => {
+            (g[r.reset_on || 'long'] ??= []).push(r)
+            return g
+          }, {})).sort(([a], [b]) =>
+            RESET_ORDER.indexOf(a) - RESET_ORDER.indexOf(b))
+            .map(([reset, list]) => (
+              <div key={reset}>
+                <h3 className="muted" style={{ fontSize: '.85rem' }}>
+                  {RESET_LABELS[reset] || reset}</h3>
+                {list.map((r) => (
             <div key={r.id} className="row">
-              <span>{r.name}: {r.current}/{r.max} <em className="muted">({r.reset_on})</em></span>
-              <button disabled={r.current <= 0}
-                      onClick={() => op('character.resource.consume', { resource_id: r.id })}>
-                Usar
-              </button>
+              <span style={{ flex: 1 }}>{r.name}: {r.current}/{r.max}</span>
+              {r.current > 0
+                ? <button onClick={() => op('character.resource.consume',
+                                           { resource_id: r.id })}>
+                    Usar</button>
+                : <span className="muted">Agotado</span>}
             </div>
           ))}
+              </div>))}
         </section>
       )}
 
@@ -540,6 +575,10 @@ export default function CharacterSheet() {
 
       <section className="card optional" hidden={focus ? !hud.has('inventario') : tab !== 'inventario'}>
         <h2>Inventario</h2>
+        <p className="muted">
+          Sintonizados:{' '}
+          {(d.inventory || []).filter((i) => i.attuned).length}/3
+        </p>
         <ItemPicker onPick={(it) =>
           op('character.inventory.add',
              { name: it.name, source_id: it.id })} />
@@ -551,7 +590,19 @@ export default function CharacterSheet() {
             setNewItem('')
           }}>Añadir</button>
         </div>
-        {(d.inventory || []).map((it) => (
+        <div className="row tabs" role="tablist"
+             aria-label="Inventario">
+          {[['equipado', 'Equipado'], ['mochila', 'Mochila'],
+            ['consumibles', 'Consumibles']].map(([k, l]) => (
+            <button key={k} role="tab" aria-selected={invTab === k}
+                    onClick={() => setInvTab(k)}>{l}</button>))}
+        </div>
+        {(d.inventory || []).filter((it) => {
+          if (invTab === 'equipado') return it.equipped
+          const consum = /poci|potion|scroll|pergamino|antorcha|torch|flecha|arrow|raci[oó]n|ration/i.test(it.name)
+          if (invTab === 'consumibles') return consum && !it.equipped
+          return !it.equipped && !consum          // mochila
+        }).map((it) => (
           <div key={it.id} className="row">
             <span style={{ flex: 1 }}>
               {it.name} ×{it.quantity}
@@ -569,6 +620,10 @@ export default function CharacterSheet() {
                                       { item_id: it.id, quantity: 1 })}>-</button>
           </div>
         ))}
+        {invTab === 'equipado' &&
+          !(d.inventory || []).some((i) => i.equipped) && (
+          <p className="muted">Nada equipado — marca objetos desde la
+             mochila.</p>)}
         {atkItem && (
           <AttackPanel charId={id} item={atkItem}
                        onResult={(line) =>
@@ -858,6 +913,10 @@ const STATS = [
                       ['performance', 'Interpretación'],
                       ['persuasion', 'Persuasión']]],
 ]
+
+const RESET_ORDER = ['short', 'dawn', 'long', 'none']
+const RESET_LABELS = { short: 'Descanso corto', dawn: 'Al amanecer',
+                       long: 'Descanso largo', none: 'Sin recuperación' }
 
 const COND_RULES = {
   blinded: 'Desventaja en ataques', cegado: 'Desventaja en ataques',

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api } from '../api.js'
 import MapBoard from '../components/MapBoard.jsx'
 
@@ -31,6 +32,8 @@ export default function DmBoard() {
   const [areaAmt, setAreaAmt] = useState(10)
   const [areaType, setAreaType] = useState('')
   const [areaResults, setAreaResults] = useState(null)
+  const feedRef = useRef(null)           // scroll del feed de tiradas
+  const [newRolls, setNewRolls] = useState(0)
 
   // feed en vivo: tiradas de los jugadores en la sala
   useEffect(() => {
@@ -41,8 +44,13 @@ export default function DmBoard() {
     ws.onmessage = (m) => {
       const msg = JSON.parse(m.data)
       const ev = msg.event
-      if (ev?.type === 'dice.roll.created')
+      if (ev?.type === 'dice.roll.created') {
         setRollFeed((f) => [ev.payload, ...f].slice(0, 20))
+        // si el DM está leyendo eventos antiguos no le movemos el
+        // scroll — cuenta "N nuevos" hasta que vuelva arriba
+        if ((feedRef.current?.scrollTop ?? 0) > 40)
+          setNewRolls((n) => n + 1)
+      }
     }
     return () => ws.close()
   }, [campaign?.id])
@@ -136,6 +144,17 @@ export default function DmBoard() {
                         ? 'var(--accent)' : undefined }}
                       onClick={() => setFeedFilter(f)}>{f}</button>))}
           </div>
+          {newRolls > 0 && (
+            <button className="ghost" role="status"
+                    onClick={() => {
+                      feedRef.current?.scrollTo({ top: 0 })
+                      setNewRolls(0)
+                    }}>{newRolls} evento{newRolls > 1 ? 's' : ''} nuevo{newRolls > 1 ? 's' : ''} ↑</button>)}
+          <div ref={feedRef}
+               style={{ maxHeight: '18rem', overflowY: 'auto' }}
+               onScroll={(e) => {
+                 if (e.target.scrollTop <= 40) setNewRolls(0)
+               }}>
           {rollFeed.filter((r) => feedFilter === 'todas' ||
                 r.roll_type === feedFilter).map((r, i) => (
             <div key={i} className="row">
@@ -144,6 +163,7 @@ export default function DmBoard() {
               <strong>{r.total}</strong>
             </div>
           ))}
+          </div>
         </section>
       )}
 
@@ -535,6 +555,42 @@ export default function DmBoard() {
                     {a.text?.slice(0, 110)}{a.text?.length > 110 && '…'}
                   </span>
                 </div>))}
+            </section>)}
+
+          {/* Vista DM del personaje: CA/PG/condiciones + acciones de
+              mesa sin abrir la ficha completa */}
+          {sel && sel.kind === 'character' && (
+            <section className="card" hidden={dmTab !== 'combate'}
+                     aria-label={`Resumen DM de ${sel.name}`}>
+              <h2>{sel.name}
+                <span className="muted" style={{ fontSize: '.8em' }}>
+                  {' '}jugador · CA {sel.ac}</span>
+                <button className="ghost" style={{ float: 'right' }}
+                        onClick={() => setSelId(null)}>×</button>
+              </h2>
+              <p>
+                PG {sel.hp_current}/{sel.hp_max}
+                {sel.hp_temp > 0 && ` (+${sel.hp_temp} temp)`}
+              </p>
+              {sel.conditions.length > 0 && (
+                <p className="muted">
+                  Condiciones: {sel.conditions.join(' · ')}</p>)}
+              {(sel.death_saves?.success > 0 ||
+                sel.death_saves?.fail > 0) && (
+                <p className="muted">
+                  Muerte: ✓{sel.death_saves.success}{' '}
+                  ✗{sel.death_saves.fail}</p>)}
+              <div className="row">
+                {sel.ref_id && (
+                  <Link to={`/character/${sel.ref_id}`}>
+                    <button className="ghost">Ficha →</button></Link>)}
+                {sel.ref_id && (
+                  <button className="ghost" onClick={() => {
+                    setRollReq({ character_id: sel.ref_id,
+                                 expression: '1d20', reason: '' })
+                    setDmTab('sesion')
+                  }}>Solicitar tirada</button>)}
+              </div>
             </section>)}
         </>
       )}

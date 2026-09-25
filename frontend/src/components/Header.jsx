@@ -128,6 +128,7 @@ export default function Header() {
                 {pending} cambio{pending > 1 ? 's' : ''} pendiente{pending > 1 ? 's' : ''}
                 {' '}de subir — se reintentan solos al volver la conexión.</span>
             : <span className="muted">Todo sincronizado.</span>}
+          <SyncConflicts />
           <button className="ghost"
                   onClick={() => setShowSync(false)}>Cerrar</button>
         </div>
@@ -167,5 +168,35 @@ export default function Header() {
         </div>
       )}
     </header>
+  )
+}
+
+/** Operaciones rechazadas por optimistic locking — se muestran en el
+    popover de sync con enlace a la entidad para revisar manualmente. */
+function SyncConflicts() {
+  const [rows, setRows] = useState(null)
+  useEffect(() => {
+    fetch('/api/operations/conflicts')
+      .then((r) => r.ok ? r.json() : { conflicts: [] })
+      .then((r) => setRows(r.conflicts))
+      .catch(() => setRows([]))
+  }, [])
+  if (!rows?.length) return null
+  return (
+    <div role="alert">
+      <strong>⚠ {rows.length} conflicto{rows.length > 1 ? 's' : ''}
+      </strong>
+      <span className="muted">
+        Datos modificados en dos dispositivos — revísalos:</span>
+      <ul style={{ margin: '.3rem 0', paddingLeft: '1rem' }}>
+        {rows.map((r) => (
+          <li key={r.operation_id}>
+            <Link to={`/character/${r.entity_id}?tab=actividad`}>
+              {r.operation_type}</Link>
+            <span className="muted">
+              {' '}· {r.timestamp?.slice(11, 19)}</span>
+          </li>))}
+      </ul>
+    </div>
   )
 }

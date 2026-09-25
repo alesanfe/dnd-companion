@@ -409,14 +409,18 @@ def derived_all(character_id: str):
                         .get("spellcasting_ability") or {}
                         ).get("index", "int")
     cast_mod = char.abilities.modifier(cast_ability)
-    pp = 10 + wis_mod + (char.proficiency_bonus
-                         if "perception" in char.skill_proficiencies else 0)
+    from ..rules import rules
+    cbase = rules()["combat"]
+    pp = cbase["passive_score_base"] + wis_mod + (
+        char.proficiency_bonus
+        if "perception" in char.skill_proficiencies else 0)
     return {
         "armor_class": {"total": ac_base + dex_applied,
                         "breakdown": ac_parts},
         "initiative": dex_mod,
         "passive_perception": pp,
-        "spell_save_dc": 8 + char.proficiency_bonus + cast_mod,
+        "spell_save_dc": cbase["spell_dc_base"] +
+                         char.proficiency_bonus + cast_mod,
         "spell_attack": char.proficiency_bonus + cast_mod,
         "spellcasting_ability": cast_ability,
         "proficiency_bonus": char.proficiency_bonus,
@@ -424,16 +428,12 @@ def derived_all(character_id: str):
     }
 
 
-# SRD 2014: XP acumulado necesario por nivel (índice = nivel actual)
-_XP_TABLE = [0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000,
-             85000, 100000, 120000, 140000, 165000, 195000, 225000,
-             265000, 305000, 355000]
-
-
 def _next_level_xp(level: int, xp: int) -> int | None:
+    """XP acumulado por nivel — tabla SRD del rules pack."""
+    from ..domain.xp import level_xp_table
     if level >= 20:
         return None
-    return _XP_TABLE[level] - xp
+    return level_xp_table()[level] - xp
 
 
 @router.get("/{character_id}")

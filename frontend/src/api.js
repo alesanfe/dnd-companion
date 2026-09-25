@@ -219,6 +219,7 @@ export const api = {
     req(`/api/encounters/for-combat/${combatId}`),
   commandSearch: (q) =>
     req(`/api/content/command?q=${encodeURIComponent(q)}`),
+  rulesTables: () => req('/api/rules/tables'),
   rulesAsk: (question, ruleset) =>
     req('/api/rules/ask', {
       method: 'POST',

@@ -12,6 +12,7 @@ from typing import Callable
 
 from ..domain.character import Character
 from ..domain.effects import Trigger
+from ..rules import rules
 from .dice import roll
 
 Handler = Callable[[Character, dict, object], tuple[dict, list[dict]]]
@@ -58,9 +59,10 @@ def hp_damage(char: Character, p: dict, ctx):
         payload["damage_effects"] = applied
         payload["damage_type"] = dtype
     if char.concentrating_on:
-        # recibir daño exige tirada de CON: CD máx(10, daño/2)
+        # recibir daño exige tirada de CON: CD máx(floor, daño/2)
+        floor = rules()["combat"]["concentration_dc_floor"]
         payload["concentration_check"] = True
-        payload["concentration_dc"] = max(10, amount // 2)
+        payload["concentration_dc"] = max(floor, amount // 2)
         payload["spell"] = char.concentrating_on
     return inv, [{"type": "character.hp.changed", "payload": payload}]
 
@@ -73,22 +75,24 @@ def death_save(char: Character, p: dict, ctx):
     if char.hp.current > 0:
         raise ValueError("el personaje no está a 0 PG")
     inv = _set_inverse(char)
+    cs = rules()["combat"]
     roll = int(p["roll"])
     result = None
-    if roll >= 20:
+    if roll >= cs["death_save_crit_success"]:
         char.hp.current = 1
         char.death_saves = {"success": 0, "fail": 0}
         result = "20 natural — recupera 1 PG"
-    elif roll == 1:
-        char.death_saves["fail"] = min(3, char.death_saves["fail"] + 2)
+    elif roll <= cs["death_save_crit_fail"]:
+        char.death_saves["fail"] = min(
+            cs["death_save_fails"], char.death_saves["fail"] + 2)
         result = "1 natural — doble fallo"
-    elif roll >= 10:
+    elif roll >= cs["death_save_dc"]:
         char.death_saves["success"] += 1
         result = "éxito"
     else:
         char.death_saves["fail"] += 1
         result = "fallo"
-    if char.death_saves["fail"] >= 3:
+    if char.death_saves["fail"] >= cs["death_save_fails"]:
         result += " — muerte"
         if "muerto" not in char.conditions:
             char.conditions.append("muerto")
@@ -637,7 +641,8 @@ def spell_cast(char: Character, p: dict, ctx):
         cast_ability = spellcasting_ability(cls_data)
     spell_dc = None
     if cast_ability:
-        spell_dc = 8 + char.proficiency_bonus + \
+        spell_dc = rules()["combat"]["spell_dc_base"] + \
+            char.proficiency_bonus + \
             char.abilities.modifier(cast_ability)
     if spell_dc and (sp.get("savingThrow") or sp.get("saves")
                      or sp.get("saving_throws") or sp.get("dc")):
@@ -797,9 +802,10 @@ def item_attune(char: Character, p: dict, ctx):
     inv = {"operation_type": "character.item.unattune",
            "payload": {"item_id": item.id}}
     if not item.attuned:
+        limit = rules()["combat"]["attunement_max"]
         attuned = sum(1 for i in char.inventory if i.attuned)
-        if attuned >= 3:
-            raise ValueError("máximo 3 objetos sintonizados")
+        if attuned >= limit:
+            raise ValueError(f"máximo {limit} objetos sintonizados")
         item.attuned = True
     return inv, [{"type": "inventory.item.transferred",
                   "payload": {"attuned": item.name}}]

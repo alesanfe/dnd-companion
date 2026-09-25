@@ -1,0 +1,115 @@
+{
+  "meta": {
+    "source": "SRD 5.1 / 5.2 — tablas normativas extraídas de 5e-bits/5e-database y el SRD oficial",
+    "license": "CC-BY-4.0",
+    "is_redistributable": true,
+    "ruleset": "mixed",
+    "notes": "Tablas de reglas canónicas. Las diferencias 2014↔2024 se marcan por campo (_2014/_2024) cuando el texto oficial diverge."
+  },
+
+  "cr_xp": {
+    "0": 10, "1/8": 25, "1/4": 50, "1/2": 100, "1": 200, "2": 450,
+    "3": 700, "4": 1100, "5": 1800, "6": 2300, "7": 2900, "8": 3900,
+    "9": 5000, "10": 5900, "11": 7200, "12": 8400, "13": 10000,
+    "14": 11500, "15": 13000, "16": 15000, "17": 18000, "18": 20000,
+    "19": 22000, "20": 25000, "21": 33000, "22": 41000, "23": 50000,
+    "24": 62000, "30": 155000
+  },
+
+  "encounter_thresholds": {
+    "comment": "XP budget por nivel de PJ — [easy, medium, hard, deadly] (DMG 2014)",
+    "1": [25, 50, 75, 100], "2": [50, 100, 150, 200],
+    "3": [75, 150, 225, 400], "4": [125, 250, 375, 500],
+    "5": [250, 500, 750, 1100], "6": [300, 600, 900, 1400],
+    "7": [350, 750, 1100, 1700], "8": [450, 900, 1400, 2100],
+    "9": [550, 1100, 1600, 2400], "10": [600, 1200, 1900, 2800],
+    "11": [800, 1600, 2400, 3600], "12": [1000, 2000, 3000, 4500],
+    "13": [1100, 2200, 3400, 5100], "14": [1250, 2500, 3800, 5700],
+    "15": [1400, 2800, 4300, 6400], "16": [1600, 3200, 4800, 7200],
+    "17": [2000, 3900, 5900, 8800], "18": [2100, 4200, 6300, 9500],
+    "19": [2400, 4900, 7300, 10900], "20": [2800, 5700, 8500, 12700]
+  },
+
+  "encounter_multipliers": {
+    "comment": "por número de monstruos — [min_count, multiplier]",
+    "steps": [[1, 1.0], [2, 1.5], [3, 2.0], [7, 2.5],
+              [11, 3.0], [15, 4.0]]
+  },
+
+  "level_xp": {
+    "comment": "XP acumulado requerido; índice 0 = nivel 1 (2014/2024 idéntico)",
+    "values": [0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000,
+               64000, 85000, 100000, 120000, 140000, 165000, 195000,
+               225000, 265000, 305000, 355000]
+  },
+
+  "ability_skills": {
+    "strength": ["athletics"],
+    "dexterity": ["acrobatics", "sleight-of-hand", "stealth"],
+    "constitution": [],
+    "intelligence": ["arcana", "history", "investigation",
+                     "nature", "religion"],
+    "wisdom": ["animal-handling", "insight", "medicine",
+               "perception", "survival"],
+    "charisma": ["deception", "intimidation", "performance",
+                 "persuasion"]
+  },
+
+  "conditions": {
+    "comment": "adv/dis/fail sobre tipos de tirada (attack|check|save|save:dex…). es = resumen UI. incapacitated = no puede actuar ni reaccionar.",
+    "blinded":      {"dis": ["attack"], "es": "Desventaja en ataques"},
+    "invisible":    {"adv": ["attack"], "es": "Ventaja en ataques"},
+    "poisoned":     {"dis": ["attack", "check"],
+                     "es": "Desventaja en ataques y pruebas"},
+    "prone":        {"dis": ["attack"], "es": "Desventaja en ataques"},
+    "restrained":   {"dis": ["attack", "save:dex"],
+                     "es": "Desventaja en ataques y salvaciones de DES"},
+    "frightened":   {"dis": ["check", "attack"],
+                     "es": "Desventaja en pruebas y ataques si ve la fuente"},
+    "grappled":     {"es": "Velocidad 0"},
+    "stunned":      {"fail": ["save:str", "save:dex"],
+                     "incapacitated": true,
+                     "es": "No actúa · fallo automático FUE/DES"},
+    "incapacitated": {"incapacitated": true, "es": "No actúa ni reacciona"},
+    "paralyzed":    {"fail": ["save:str", "save:dex"],
+                     "incapacitated": true,
+                     "es": "No actúa · fallo automático FUE/DES"},
+    "petrified":    {"fail": ["save:str", "save:dex"],
+                     "incapacitated": true,
+                     "es": "No actúa · fallo automático FUE/DES"},
+    "unconscious":  {"fail": ["save:str", "save:dex"],
+                     "incapacitated": true,
+                     "es": "No actúa · fallo automático FUE/DES"},
+    "exhaustion":   {"dis": ["check"], "scaling": true,
+                     "es": "Desventaja en pruebas (nivel 3+: ataques y salvaciones)"}
+  },
+
+  "condition_aliases": {
+    "cegado": "blinded", "cegada": "blinded",
+    "invisible": "invisible",
+    "envenenado": "poisoned", "envenenada": "poisoned",
+    "tumbado": "prone", "derribado": "prone", "postrado": "prone",
+    "apresado": "restrained", "apresada": "restrained",
+    "asustado": "frightened", "atemorizado": "frightened",
+    "agarrado": "grappled", "agarrada": "grappled",
+    "aturdido": "stunned", "aturdida": "stunned",
+    "paralizado": "paralyzed", "paralizada": "paralyzed",
+    "petrificado": "petrified", "petrificada": "petrified",
+    "inconsciente": "unconscious",
+    "incapacitado": "incapacitated", "incapacitada": "incapacitated",
+    "exhausto": "exhaustion", "agotado": "exhaustion",
+    "muerto": "dead", "muerta": "dead"
+  },
+
+  "combat": {
+    "death_save_dc": 10,
+    "death_save_crit_fail": 1,
+    "death_save_crit_success": 20,
+    "death_save_succeeds": 3,
+    "death_save_fails": 3,
+    "attunement_max": 3,
+    "concentration_dc_floor": 10,
+    "spell_dc_base": 8,
+    "passive_score_base": 10
+  }
+}

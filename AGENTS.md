@@ -35,6 +35,10 @@ cd frontend && npm install && npm run dev
 - Toda entidad de contenido lleva `source_id`, `license`, `is_redistributable`.
 - Reglas de juego van en el **motor de efectos declarativo**
   (`backend/app/engine/`), no como condicionales dispersos.
+- Las **tablas normativas** (CR→XP, umbrales de encuentro, XP por
+  nivel, habilidades por característica, condiciones, constantes de
+  combate) viven en `backend/app/rules/srd_core.json` (SRD CC-BY-4.0)
+  — leerlas vía `app.rules.rules()`; nunca duplicarlas en código.
 - `ruleset` interno: `dnd5e-2014` | `dnd5e-2024` | `mixed`. Etiquetas tipo
   "5e"/"5.5e" solo en UI.
 - Todo cambio de estado = operación con `operation_id` + `entity_version`

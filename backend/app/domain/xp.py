@@ -1,13 +1,6 @@
-"""CR → XP (tabla oficial 2014/2024)."""
-
-_CR_XP = {
-    "0": 10, "1/8": 25, "1/4": 50, "1/2": 100, "1": 200, "2": 450,
-    "3": 700, "4": 1100, "5": 1800, "6": 2300, "7": 2900, "8": 3900,
-    "9": 5000, "10": 5900, "11": 7200, "12": 8400, "13": 10000,
-    "14": 11500, "15": 13000, "16": 15000, "17": 18000, "18": 20000,
-    "19": 22000, "20": 25000, "21": 33000, "22": 41000, "23": 50000,
-    "24": 62000, "30": 155000,
-}
+"""CR → XP (tabla oficial 2014/2024) — extraída del rules pack
+``app/rules/srd_core.json`` (SRD, CC-BY-4.0)."""
+from ..rules import rules
 
 
 def _cr_str(cr) -> str:
@@ -19,4 +12,23 @@ def _cr_str(cr) -> str:
 
 
 def cr_to_xp(cr) -> int:
-    return _CR_XP.get(_cr_str(cr), 0)
+    return rules()["cr_xp"].get(_cr_str(cr), 0)
+
+
+def encounter_threshold(level: int) -> tuple[int, int, int, int]:
+    """(easy, medium, hard, deadly) para un nivel de PJ."""
+    t = rules()["encounter_thresholds"][str(min(20, max(1, level)))]
+    return tuple(t)
+
+
+def encounter_multiplier(monster_count: int) -> float:
+    """Multiplicador de XP por número de enemigos (DMG)."""
+    mult = 1.0
+    for min_count, m in rules()["encounter_multipliers"]["steps"]:
+        if monster_count >= min_count:
+            mult = m
+    return mult
+
+
+def level_xp_table() -> list[int]:
+    return rules()["level_xp"]["values"]

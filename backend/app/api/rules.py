@@ -17,6 +17,23 @@ _RULE_TYPES = ("rule", "rule-section", "condition", "spell", "feature",
                "trait", "feat")
 
 
+@router.get("/tables")
+def tables():
+    """Tablas normativas del rules pack SRD (app/rules/srd_core.json)
+    expuestas al frontend: habilidades por característica, resúmenes
+    de condiciones, constantes de combate y metadatos de licencia."""
+    from ..rules import rules
+    r = rules()
+    return {
+        "meta": r["meta"],
+        "ability_skills": r["ability_skills"],
+        "conditions": {k: v.get("es") for k, v in r["conditions"].items()
+                       if isinstance(v, dict)},
+        "combat": r["combat"],
+        "level_xp": r["level_xp"]["values"],
+    }
+
+
 class AskIn(BaseModel):
     question: str
     ruleset: str | None = None         # dnd5e-2014 | dnd5e-2024

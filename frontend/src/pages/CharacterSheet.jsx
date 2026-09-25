@@ -71,6 +71,21 @@ export default function CharacterSheet() {
   const load = () => api.getCharacter(id).then(setChar).catch((e) => setErr(e.message))
   useEffect(() => { load() }, [id])
 
+  // tablas normativas desde el rules pack (backend) — fallback local
+  const [rulesTbl, setRulesTbl] = useState(null)
+  useEffect(() => {
+    api.rulesTables().then(setRulesTbl).catch(() => {})
+  }, [])
+  const stats = rulesTbl?.ability_skills
+    ? STATS.map(([ab, label]) => [ab, label,
+        (rulesTbl.ability_skills[
+          { str: 'strength', dex: 'dexterity', con: 'constitution',
+            int: 'intelligence', wis: 'wisdom',
+            cha: 'charisma' }[ab]] || []).map((s) =>
+          [s, SKILL_ES[s] || s])])
+    : STATS
+  const condRules = rulesTbl?.conditions || COND_RULES
+
   const [rollRequest, setRollRequest] = useState(null)
   const [xpAdd, setXpAdd] = useState(0)
 
@@ -378,7 +393,7 @@ export default function CharacterSheet() {
       <section className="card" hidden={focus ? !hud.has('stats') : tab !== 'stats'}>
         <h2>Características</h2>
         <div className="ability-grid">
-          {STATS.map(([ab, label, skills]) => {
+          {stats.map(([ab, label, skills]) => {
             const score = d.abilities?.[ab] ?? 10
             const mod = Math.floor((score - 10) / 2)
             const prof = derived?.proficiency_bonus ?? 2
@@ -447,7 +462,7 @@ export default function CharacterSheet() {
                    }} />
           </div>
           <div className="row" style={{ flexWrap: 'wrap' }}>
-            {STATS.map(([ab, label]) => (
+            {stats.map(([ab, label]) => (
               <label key={ab} className="muted"
                      style={{ fontSize: '.8rem' }}>
                 {label.slice(0, 3).toUpperCase()}
@@ -778,7 +793,7 @@ export default function CharacterSheet() {
         </div>
         {(d.conditions || []).map((c) => (
           <span key={c} className="row" style={{ alignItems: 'center' }}>
-            <CondChip name={c}
+            <CondChip name={c} rules={condRules}
               onRemove={() => op('character.condition.remove',
                                  { condition: c })} />
             {d.condition_durations?.[c] != null && (
@@ -1130,6 +1145,19 @@ const STATS = [
                       ['persuasion', 'Persuasión']]],
 ]
 
+/** ids de habilidad → etiqueta ES (los ids son canónicos SRD). */
+const SKILL_ES = {
+  'athletics': 'Atletismo', 'acrobatics': 'Acrobacias',
+  'sleight-of-hand': 'Juego de manos', 'stealth': 'Sigilo',
+  'arcana': 'Arcana', 'history': 'Historia',
+  'investigation': 'Investigación', 'nature': 'Naturaleza',
+  'religion': 'Religión', 'animal-handling': 'Trato animal',
+  'insight': 'Perspicacia', 'medicine': 'Medicina',
+  'perception': 'Percepción', 'survival': 'Supervivencia',
+  'deception': 'Engaño', 'intimidation': 'Intimidación',
+  'performance': 'Interpretación', 'persuasion': 'Persuasión',
+}
+
 const RESET_ORDER = ['short', 'dawn', 'long', 'none']
 const RESET_LABELS = { short: 'Descanso corto', dawn: 'Al amanecer',
                        long: 'Descanso largo', none: 'Sin recuperación' }
@@ -1282,9 +1310,9 @@ function AttackPanel({ charId, item, onResult, onClose }) {
   )
 }
 
-function CondChip({ name, onRemove }) {
+function CondChip({ name, onRemove, rules = COND_RULES }) {
   const [open, setOpen] = useState(false)
-  const rule = COND_RULES[name.toLowerCase()]
+  const rule = rules[name.toLowerCase()]
   return (
     <span>
       <span className="chip" role="button" tabIndex={0}

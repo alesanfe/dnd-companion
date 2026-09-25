@@ -6,38 +6,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..db.connections import state_db
+from ..domain.xp import (cr_to_xp, encounter_multiplier,
+                         encounter_threshold)
 
 router = APIRouter(prefix="/api/encounters", tags=["encounters"])
-
-# XP thresholds por nivel de personaje: easy, medium, hard, deadly
-_THRESHOLDS = {
-    1: (25, 50, 75, 100), 2: (50, 100, 150, 200), 3: (75, 150, 225, 400),
-    4: (125, 250, 375, 500), 5: (250, 500, 750, 1100),
-    6: (300, 600, 900, 1400), 7: (350, 750, 1100, 1700),
-    8: (450, 900, 1400, 2100), 9: (550, 1100, 1600, 2400),
-    10: (600, 1200, 1900, 2800), 11: (800, 1600, 2400, 3600),
-    12: (1000, 2000, 3000, 4500), 13: (1100, 2200, 3400, 5100),
-    14: (1250, 2500, 3800, 5700), 15: (1400, 2800, 4300, 6400),
-    16: (1600, 3200, 4800, 7200), 17: (2000, 3900, 5900, 8800),
-    18: (2100, 4200, 6300, 9500), 19: (2400, 4900, 7300, 10900),
-    20: (2800, 5700, 8500, 12700),
-}
-
-def _multiplier(n: int) -> float:
-    if n <= 1:
-        return 1.0
-    if n == 2:
-        return 1.5
-    if n <= 6:
-        return 2.0
-    if n <= 10:
-        return 2.5
-    if n <= 14:
-        return 3.0
-    return 4.0
-
-
-from ..domain.xp import cr_to_xp  # noqa: E402  (tabla única)
 
 
 class EncounterIn(BaseModel):
@@ -49,13 +21,11 @@ class EncounterIn(BaseModel):
 def difficulty(body: EncounterIn):
     budget = {"easy": 0, "medium": 0, "hard": 0, "deadly": 0}
     for lvl in body.party_levels:
-        t = _THRESHOLDS.get(min(20, max(1, lvl)))
-        if t:
-            for k, v in zip(budget, t):
-                budget[k] += v
+        for k, v in zip(budget, encounter_threshold(lvl)):
+            budget[k] += v
 
     raw_xp = sum(cr_to_xp(cr) for cr in body.monster_crs)
-    adj_xp = int(raw_xp * _multiplier(len(body.monster_crs)))
+    adj_xp = int(raw_xp * encounter_multiplier(len(body.monster_crs)))
 
     if adj_xp >= budget["deadly"]:
         rating = "deadly"

@@ -7,42 +7,21 @@ y de combatiente (engine/combat_ops). roll_type admite
 Aliases ES→EN incluidos: los chips de la UI aceptan ambos idiomas.
 """
 
+from ..rules import rules
+
 # nombre → {adv: tipos con ventaja, dis: desventaja, fail: autofallo}
-CONDITION_ROLLS = {
-    "blinded":     {"dis": {"attack"}},
-    "invisible":   {"adv": {"attack"}},
-    "poisoned":    {"dis": {"attack", "check"}},
-    "prone":       {"dis": {"attack"}},
-    "restrained":  {"dis": {"attack", "save:dex"}},
-    "frightened":  {"dis": {"check", "attack"}},
-    "grappled":    {},
-    "stunned":     {"fail": {"save:str", "save:dex"}},
-    "paralyzed":   {"fail": {"save:str", "save:dex"}},
-    "petrified":   {"fail": {"save:str", "save:dex"}},
-    "unconscious": {"fail": {"save:str", "save:dex"}},
-    "exhaustion":  {"dis": {"check"}},
-}
+# — extraído del rules pack (srd_core.json → "conditions")
+def _build_tables():
+    raw = rules()["conditions"]
+    rolls = {name: {k: set(v) if isinstance(v, list) else v
+                    for k, v in spec.items()
+                    if k in ("adv", "dis", "fail")}
+             for name, spec in raw.items() if name != "comment"}
+    incapacitated = {name for name, spec in raw.items()
+                     if isinstance(spec, dict) and spec.get("incapacitated")}
+    return rolls, incapacitated, rules()["condition_aliases"]
 
-# No pueden actuar ni reaccionar (bloquea action.roll)
-INCAPACITATED = {"stunned", "incapacitated", "paralyzed",
-                 "unconscious", "petrified"}
-
-_ALIASES = {
-    "cegado": "blinded", "cegada": "blinded",
-    "invisible": "invisible",
-    "envenenado": "poisoned", "envenenada": "poisoned",
-    "tumbado": "prone", "derribado": "prone", "postrado": "prone",
-    "apresado": "restrained", "apresada": "restrained",
-    "asustado": "frightened", "atemorizado": "frightened",
-    "agarrado": "grappled", "agarrada": "grappled",
-    "aturdido": "stunned", "aturdida": "stunned",
-    "paralizado": "paralyzed", "paralizada": "paralyzed",
-    "petrificado": "petrified", "petrificada": "petrified",
-    "inconsciente": "unconscious",
-    "incapacitado": "incapacitated", "incapacitada": "incapacitated",
-    "exhausto": "exhaustion", "agotado": "exhaustion",
-    "muerto": "dead", "muerta": "dead",
-}
+CONDITION_ROLLS, INCAPACITATED, _ALIASES = _build_tables()
 
 
 def canon(condition: str) -> str:

@@ -11,6 +11,7 @@ from .api import (
     inventory, operations, packages, rules,
 )
 from .api.operations import OperationIn, apply_to_store
+from .db.connections import state_db
 from .ws.rooms import manager
 
 app = FastAPI(title="D&D Companion", version="0.1.0")
@@ -42,14 +43,21 @@ def health():
 
 
 @app.websocket("/ws/campaign/{campaign_id}")
-async def campaign_ws(websocket: WebSocket, campaign_id: str):
+async def campaign_ws(websocket: WebSocket, campaign_id: str,
+                      user_id: str | None = None):
     """Sala de campaña. Protocolo:
       → {"type": "operation", "operation": {...OperationIn}}
       → {"type": "ping"}
       ← {"type": "event", "event": {...}}  broadcast a la sala
       ← {"type": "ack", "operation_id", "version"} | {"type": "error", ...}
     """
-    await manager.join(campaign_id, websocket)
+    role = "local"
+    if user_id:
+        m = state_db().execute(
+            "SELECT role FROM members WHERE campaign_id=? AND user_id=?",
+            (campaign_id, user_id)).fetchone()
+        role = m["role"] if m else "player"
+    await manager.join(campaign_id, websocket, role=role)
     try:
         while True:
             raw = await websocket.receive_text()

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
+import { currentUser } from '../session.js'
 import MapBoard from '../components/MapBoard.jsx'
 
 export default function DmBoard() {
@@ -39,8 +40,10 @@ export default function DmBoard() {
   useEffect(() => {
     if (!campaign) return undefined
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+    const uid = currentUser()?.user_id
     const ws = new WebSocket(
-      `${proto}://${location.host}/ws/campaign/${campaign.id}`)
+      `${proto}://${location.host}/ws/campaign/${campaign.id}` +
+      (uid ? `?user_id=${uid}` : ''))
     ws.onmessage = (m) => {
       const msg = JSON.parse(m.data)
       const ev = msg.event

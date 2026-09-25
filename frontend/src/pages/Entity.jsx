@@ -62,6 +62,7 @@ export default function Entity() {
           {fav ? '★ Guardado' : '☆ Guardar'}</button>
         <button className="ghost" aria-expanded={colPick}
                 onClick={() => setColPick(!colPick)}>Colección</button>
+        <AddToCharacter entity={ent} />
       </div>
       {colPick && (
         <div className="card" role="dialog" aria-label="Añadir a colección">
@@ -202,5 +203,61 @@ function TableView({ data }) {
           <li key={i}>{typeof e === 'object'
             ? JSON.stringify(e) : String(e)}</li>)}</ul>)}
     </section>
+  )
+}
+
+
+/** "＋Añadir a personaje": conjuros/dotes/objetos del compendio
+    directo a la ficha como operación reversible. */
+function AddToCharacter({ entity }) {
+  const [open, setOpen] = useState(false)
+  const [chars, setChars] = useState(null)
+  const [done, setDone] = useState(null)
+  const [err, setErr] = useState(null)
+  const type = entity.entity_type
+  if (!['spell', 'feat', 'item', 'weapon', 'armor', 'magic-item',
+        'background', 'feature'].includes(type)) return null
+
+  const add = async (cid) => {
+    try {
+      const ch = await api.getCharacter(cid)
+      const [opType, payload] =
+        type === 'spell' ? ['character.spell.learn',
+                            { spell_id: entity.id }]
+        : type === 'feat' ? ['character.feat.learn',
+                             { feat_id: entity.id }]
+        : ['character.inventory.add',
+           { name: entity.name, source_id: entity.id }]
+      await api.applyOp({ id: ch.id, version: ch.version },
+                        opType, payload)
+      setDone(`${entity.name} → ${ch.name}`)
+      setErr(null)
+    } catch (e) { setErr(e.message) }
+  }
+
+  return (
+    <>
+      <button className="ghost" aria-expanded={open}
+              onClick={() => {
+                setOpen(!open)
+                if (!open) api.listCharacters()
+                  .then((r) => setChars(r.characters))
+                  .catch(() => setChars([]))
+              }}>＋ PJ</button>
+      {open && (
+        <div className="card" role="dialog"
+             aria-label={`Añadir ${entity.name} a un personaje`}>
+          {chars === null && <p className="muted">Cargando…</p>}
+          {chars?.length === 0 && (
+            <p className="muted">Sin personajes — crea uno primero.</p>)}
+          {(chars || []).map((c) => (
+            <div key={c.id} className="row">
+              <span style={{ flex: 1 }}>{c.name}</span>
+              <button onClick={() => add(c.id)}>Añadir</button>
+            </div>))}
+          {done && <p role="status" className="muted">✓ {done}</p>}
+          {err && <p className="error">{err}</p>}
+        </div>)}
+    </>
   )
 }

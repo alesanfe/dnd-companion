@@ -25,7 +25,7 @@ export default function Search() {
   }, [q, type, edition, source])
 
   const go = async (e) => {
-    e.preventDefault()
+    e?.preventDefault()
     try {
       // sintaxis de comandos: /spell fire level:3 — si no, FTS normal
       const cmd = (type ? `/${type} ` : '') + q.trim() +
@@ -37,6 +37,20 @@ export default function Search() {
       setParsed(r.parsed || null)
     } catch (e2) { setErr(e2.message) }
   }
+
+  // al volver del detalle: reejecuta la búsqueda guardada y
+  // restaura la posición de scroll
+  useEffect(() => {
+    if (saved.q) go()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => {
+    const y = sessionStorage.getItem('dnd-search-scroll')
+    if (y && results.length) {
+      window.scrollTo(0, +y)
+      sessionStorage.removeItem('dnd-search-scroll')
+    }
+  }, [results])
 
   return (
     <main className="wide">
@@ -120,7 +134,9 @@ export default function Search() {
                          : prev.filter((x) => x !== r.id))} />
               cmp
             </label>{' '}
-            <Link to={`/content/${encodeURIComponent(r.id)}`}>
+            <Link to={`/content/${encodeURIComponent(r.id)}`}
+                  onClick={() => sessionStorage.setItem(
+                    'dnd-search-scroll', String(window.scrollY))}>
               <strong>{r.name}</strong></Link>{' '}
             <span className="muted">
               {r.entity_type} · {r.ruleset} · {r.source_id}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate, useSearchParams }
   from 'react-router-dom'
 import { api } from '../api.js'
+import { currentUser } from '../session.js'
 
 const SHEET_TABS = [
   ['resumen', 'Resumen'], ['acciones', 'Acciones'],
@@ -77,7 +78,8 @@ export default function CharacterSheet() {
   useEffect(() => {
     if (!char?.campaign_id) return undefined
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-    const ws = new WebSocket(`${proto}://${location.host}/ws/campaign/${char.campaign_id}`)
+    const uid = currentUser()?.user_id
+    const ws = new WebSocket(`${proto}://${location.host}/ws/campaign/${char.campaign_id}` + (uid ? `?user_id=${uid}` : ''))
     ws.onmessage = (m) => {
       const msg = JSON.parse(m.data)
       if (msg.type !== 'event') return
@@ -446,6 +448,28 @@ export default function CharacterSheet() {
                 Perspic. pasiva {pas('insight', 'wis')}</span>
             </div>)
         })()}
+      </section>
+
+      <section className="card" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>
+        <h2>Experiencia</h2>
+        <div className="row">
+          <span>XP {d.xp || 0}
+            {derived?.next_level_xp &&
+              <span className="muted"> / {derived.next_level_xp}
+                {' '}para nivel {(d.classes || [])
+                  .reduce((a, c) => a + c.level, 0) + 1}</span>}
+          </span>
+          <input type="number" min="1" value={amount}
+                 onChange={(e) => setAmount(+e.target.value)}
+                 aria-label="XP a sumar" />
+          <button onClick={() =>
+            op('character.xp.add', { amount })}>+XP</button>
+          {derived?.next_level_xp != null &&
+            (d.xp || 0) >= derived.next_level_xp && (
+            <button className="primary" onClick={() =>
+              op('character.level_up', { hp_mode: 'fixed' })}>
+              Subir de nivel</button>)}
+        </div>
       </section>
 
       <section className="card" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>

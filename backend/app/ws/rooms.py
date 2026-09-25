@@ -11,23 +11,31 @@ from ..domain.events import Event
 
 class RoomManager:
     def __init__(self) -> None:
-        self._rooms: dict[str, set[WebSocket]] = {}
+        # campaign_id → {socket: rol} — 'dm'|'owner'|'player'|'local'
+        self._rooms: dict[str, dict[WebSocket, str]] = {}
 
-    async def join(self, campaign_id: str, ws: WebSocket) -> None:
+    async def join(self, campaign_id: str, ws: WebSocket,
+                   role: str = 'local') -> None:
         await ws.accept()
-        self._rooms.setdefault(campaign_id, set()).add(ws)
+        self._rooms.setdefault(campaign_id, {})[ws] = role
 
     def leave(self, campaign_id: str, ws: WebSocket) -> None:
         room = self._rooms.get(campaign_id)
         if room:
-            room.discard(ws)
+            room.pop(ws, None)
             if not room:
                 del self._rooms[campaign_id]
 
     async def broadcast(self, campaign_id: str, event: Event) -> None:
-        room = self._rooms.get(campaign_id, set())
+        """Reparte el evento a la sala. Si el payload marca
+        visibility=dm solo llega a sockets DM/owner/local — las
+        tiradas secretas no se filtran a los jugadores."""
+        room = self._rooms.get(campaign_id, {})
+        dm_only = (event.payload or {}).get("visibility") == "dm"
         dead = []
-        for ws in room:
+        for ws, role in room.items():
+            if dm_only and role not in ("dm", "owner", "local"):
+                continue
             try:
                 await ws.send_text(event.model_dump_json())
             except Exception:

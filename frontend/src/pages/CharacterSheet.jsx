@@ -387,6 +387,24 @@ export default function CharacterSheet() {
         </div>
         <p className="muted" style={{ fontSize: '.8rem' }}>
           ○ sin competencia · ● competente — pulsa para tirar</p>
+        {derived && (() => {
+          const prof = derived.proficiency_bonus
+          const profs = d.skill_proficiencies || []
+          const has = (s) => profs.includes(s) ||
+                             profs.includes(s.replace(/ /g, '-'))
+          const mod = (a) => Math.floor(((d.abilities?.[a] ?? 10) - 10) / 2)
+          const pas = (skill, ab) =>
+            10 + mod(ab) + (has(skill) ? prof : 0)
+          return (
+            <div className="row" style={{ flexWrap: 'wrap' }}>
+              <span className="coin">
+                Perc. pasiva {pas('perception', 'wis')}</span>
+              <span className="coin">
+                Invest. pasiva {pas('investigation', 'int')}</span>
+              <span className="coin">
+                Perspic. pasiva {pas('insight', 'wis')}</span>
+            </div>)
+        })()}
       </section>
 
       <section className="card" hidden={focus ? !hud.has('resumen') : tab !== 'resumen'}>

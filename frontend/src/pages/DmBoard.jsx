@@ -362,6 +362,7 @@ export default function DmBoard() {
 
       {combat && (
         <>
+        <div className="dm-combat-grid">
           <section className="card" hidden={dmTab !== 'combate'}>
             <h2>{combat.combat.name} — ronda {combat.combat.round}</h2>
             <div className="row">
@@ -592,6 +593,7 @@ export default function DmBoard() {
                   }}>Solicitar tirada</button>)}
               </div>
             </section>)}
+        </div>
         </>
       )}
     </main>

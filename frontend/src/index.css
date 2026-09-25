@@ -207,6 +207,16 @@ mark {
 /* etiquetas de procedencia */
 .tag-private { color: var(--private); }
 
+/* DM: tracker + panel contextual en 2 columnas en escritorio */
+@media (min-width: 1000px) {
+  .dm-combat-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 1rem;
+    align-items: start;
+  }
+}
+
 /* rejilla de características estilo hoja 2024 */
 .ability-grid {
   display: grid;

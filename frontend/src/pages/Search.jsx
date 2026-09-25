@@ -185,7 +185,12 @@ function QuickAccess() {
   const recs = JSON.parse(localStorage.getItem('dnd-recents') || '[]')
   const norm = (x) => typeof x === 'string'
     ? { id: x, name: x.split(':').pop(), type: '' } : x
-  if (!favs.length && !recs.length) return null
+  // colecciones nombradas: {nombre: [ids]} — el nombre se resuelve
+  // a la entidad en render
+  const cols = JSON.parse(localStorage.getItem('dnd-collections') || '{}')
+  const [col, setCol] = useState(null)
+  if (!favs.length && !recs.length &&
+      !Object.keys(cols).length) return null
   const block = (title, items) => items.length > 0 && (
     <section className="card">
       <h2>{title}</h2>
@@ -199,7 +204,41 @@ function QuickAccess() {
           </div>)})}
     </section>)
   return (<>
-    {block('★ Favoritos', favs)}
-    {block('Recientes', recs)}
+    {Object.keys(cols).length > 0 && (
+      <div className="row" role="group" aria-label="Colecciones">
+        {Object.keys(cols).map((c) => (
+          <button key={c} className="ghost"
+                  aria-pressed={col === c}
+                  style={{ borderColor: col === c ? 'var(--accent)'
+                                                  : undefined }}
+                  onClick={() => setCol(col === c ? null : c)}>
+            {c}</button>))}
+      </div>)}
+    {col && <CollectionBlock ids={cols[col] || []} name={col} />}
+    {!col && block('★ Favoritos', favs)}
+    {!col && block('Recientes', recs)}
   </>)
+}
+
+/** Una colección: resuelve ids a nombres de entidad. */
+function CollectionBlock({ ids, name }) {
+  const [items, setItems] = useState([])
+  useEffect(() => {
+    Promise.all(ids.map((id) =>
+      api.getEntity(id).then((e) =>
+        ({ id: e.id, name: e.name, type: e.entity_type }))
+        .catch(() => ({ id, name: id.split(':').pop(), type: '' }))))
+      .then(setItems)
+  }, [ids])
+  return (
+    <section className="card">
+      <h2>Col. {name}</h2>
+      {items.map((x) => (
+        <div key={x.id} className="row">
+          <Link to={`/content/${encodeURIComponent(x.id)}`}
+                style={{ flex: 1 }}>{x.name}</Link>
+          <span className="muted">{x.type}</span>
+        </div>))}
+      {!items.length && <p className="muted">Colección vacía.</p>}
+    </section>)
 }

@@ -11,7 +11,7 @@ const SHEET_TABS = [
 ]
 
 export default function CharacterSheet() {
-  const { id } = useParams()
+  const { id, tab: routeTab } = useParams()
   const [char, setChar] = useState(null)
   const [amount, setAmount] = useState(1)
   const [charDmgType, setCharDmgType] = useState('')
@@ -28,13 +28,15 @@ export default function CharacterSheet() {
   const [focus, setFocus] = useState(       // modo partida (HUD)
     searchParams.get('focus') === '1')
   const [tab, _setTab] = useState(() => {
-    const t = new URLSearchParams(window.location.search).get('tab')
+    const t = routeTab ||
+      new URLSearchParams(window.location.search).get('tab')
     return SHEET_TABS.some(([k]) => k === t) ? t : 'resumen'
   })
   const setTab = (t) => {           // pestaña compartible vía URL
     _setTab(t)
     const u = new URL(window.location)
-    u.searchParams.set('tab', t)
+    u.pathname = `/character/${id}/${t}`
+    u.searchParams.delete('tab')
     window.history.replaceState(null, '', u)
   }
   // HUD: qué grupos quedan visibles en vista rápida
@@ -198,6 +200,15 @@ export default function CharacterSheet() {
             setRollLog((l) => [`${r.expression} → ${r.kept.join('+')} = ${r.total}`, ...l].slice(0, 10))
             setRollRequest(null)
           }}>Tirar {rollRequest.expression}</button>
+          <button className="ghost" title="Solo la ve el DM"
+                  onClick={async () => {
+            const r = await api.characterRoll(
+              id, rollRequest.expression, 'check', false, true)
+            setRollLog((l) => [
+              `🔒 ${r.expression} → ${r.total} (privada)`, ...l]
+              .slice(0, 10))
+            setRollRequest(null)
+          }}>Privada</button>
           <button className="ghost" onClick={() => setRollRequest(null)}>Descartar</button>
         </section>
       )}
@@ -387,6 +398,36 @@ export default function CharacterSheet() {
         </div>
         <p className="muted" style={{ fontSize: '.8rem' }}>
           ○ sin competencia · ● competente — pulsa para tirar</p>
+        <details>
+          <summary className="muted" style={{ cursor: 'pointer' }}>
+            Edición avanzada (puntuaciones y nombre)</summary>
+          <div className="row">
+            <input defaultValue={char.name} aria-label="Nombre"
+                   onBlur={async (e) => {
+                     if (e.target.value.trim() &&
+                         e.target.value !== char.name) {
+                       await api.patchCharacter(
+                         id, { name: e.target.value.trim() })
+                       load()
+                     }
+                   }} />
+          </div>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            {STATS.map(([ab, label]) => (
+              <label key={ab} className="muted"
+                     style={{ fontSize: '.8rem' }}>
+                {label.slice(0, 3).toUpperCase()}
+                <input type="number" min="1" max="30"
+                       defaultValue={d.abilities?.[ab] ?? 10}
+                       style={{ maxWidth: 64, display: 'block' }}
+                       aria-label={`Puntuación de ${label}`}
+                       onBlur={(e) =>
+                         op('character.ability.set',
+                            { ability: ab,
+                              value: +e.target.value })} />
+              </label>))}
+          </div>
+        </details>
         {derived && (() => {
           const prof = derived.proficiency_bonus
           const profs = d.skill_proficiencies || []

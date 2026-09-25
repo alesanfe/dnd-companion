@@ -66,7 +66,8 @@ def _condition_mods(char: Character, roll_type: str):
 @router.post("/character/{character_id}/roll")
 async def character_roll(character_id: str, expression: str = "1d20",
                          roll_type: str = "check",
-                         use_inspiration: bool = False):
+                         use_inspiration: bool = False,
+                         secret: bool = False):
     """Tirada a través del motor de efectos: ventaja/desventaja y mods
     declarativos (efectos pasivos o before_roll) + reglas de condición.
     roll_type: attack|check|save|damage|save:dex|skill:x."""
@@ -144,13 +145,13 @@ async def character_roll(character_id: str, expression: str = "1d20",
     # si el PJ está en campaña, la tirada se anuncia a la sala WS
     if row["campaign_id"]:
         await _broadcast_roll(conn, row["campaign_id"], character_id,
-                              char.name, roll_type, result)
+                              char.name, roll_type, result, secret)
     return result
 
 
 async def _broadcast_roll(conn, campaign_id: str, character_id: str,
                           char_name: str, roll_type: str,
-                          result: dict) -> None:
+                          result: dict, secret: bool = False) -> None:
     now = datetime.now(timezone.utc)
     ev = Event(event_id=uuid.uuid4().hex, type=EventType.DICE_ROLL_CREATED,
                campaign_id=campaign_id, aggregate_id=character_id,
@@ -158,7 +159,11 @@ async def _broadcast_roll(conn, campaign_id: str, character_id: str,
                occurred_at=now,
                payload={"character": char_name, "roll_type": roll_type,
                         "expression": result["expression"],
-                        "total": result["total"]})
+                        "total": result["total"],
+                        "secret": secret,
+                        # el DM filtra; los clientes de jugador no
+                        # deben renderizar el total si secret=true
+                        "visibility": "dm" if secret else "all"})
     conn.execute(
         """INSERT INTO events
            (event_id, campaign_id, aggregate_id, aggregate_version,

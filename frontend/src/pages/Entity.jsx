@@ -22,7 +22,16 @@ export default function Entity() {
 
   // favoritos + recientes: compendio local, no del backend
   const [fav, setFav] = useState(() =>
-    (JSON.parse(localStorage.getItem('dnd-favs') || '[]')).includes(id))
+    (JSON.parse(localStorage.getItem('dnd-favs') || '[]'))
+      .some((f) => (f.id || f) === id))
+  const [colPick, setColPick] = useState(false)
+  const addToCollection = (col) => {
+    const cols = JSON.parse(
+      localStorage.getItem('dnd-collections') || '{}')
+    cols[col] = [...new Set([...(cols[col] || []), ent.id])]
+    localStorage.setItem('dnd-collections', JSON.stringify(cols))
+    setColPick(false)
+  }
   useEffect(() => {
     if (!ent) return
     const rec = JSON.parse(localStorage.getItem('dnd-recents') || '[]')
@@ -51,7 +60,25 @@ export default function Entity() {
                 aria-label="Guardar en favoritos"
                 onClick={toggleFav}>
           {fav ? '★ Guardado' : '☆ Guardar'}</button>
+        <button className="ghost" aria-expanded={colPick}
+                onClick={() => setColPick(!colPick)}>Colección</button>
       </div>
+      {colPick && (
+        <div className="card" role="dialog" aria-label="Añadir a colección">
+          {Object.keys(JSON.parse(
+              localStorage.getItem('dnd-collections') || '{}'))
+            .map((c) => (
+              <button key={c} className="ghost"
+                      onClick={() => addToCollection(c)}>{c}</button>))}
+          <div className="row">
+            <button onClick={() => {
+              const n = prompt('Nombre de la colección')
+              if (n?.trim()) addToCollection(n.trim())
+            }}>+ Nueva colección</button>
+            <button className="ghost"
+                    onClick={() => setColPick(false)}>Cerrar</button>
+          </div>
+        </div>)}
       <p className="muted">
         {ent.entity_type} · {ent.ruleset} · {ent.source_id}
         {!ent.is_redistributable &&

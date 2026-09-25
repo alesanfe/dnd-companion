@@ -207,6 +207,88 @@ mark {
 /* etiquetas de procedencia */
 .tag-private { color: var(--private); }
 
+/* barra inferior móvil */
+.mobile-nav { display: none; }
+@media (max-width: 700px) {
+  .mobile-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    z-index: 30;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .mobile-nav a, .mobile-nav > button.fab {
+    flex: 1;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 52px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: .8rem;
+    border-radius: 0;
+  }
+  .mobile-nav a.active { color: var(--accent); font-weight: 700; }
+  .mobile-nav .fab {
+    font-size: 1.6rem;
+    color: var(--bg);
+    background: var(--accent);
+    border-radius: 50%;
+    align-self: center;
+    max-width: 48px; max-height: 48px;
+    margin: 0 auto;
+    position: relative; top: -12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.4);
+  }
+  .fab-menu {
+    position: absolute;
+    bottom: 64px; left: 50%;
+    transform: translateX(-50%);
+    background: var(--card-raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: .4rem;
+    display: flex; flex-direction: column;
+    min-width: 220px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  }
+  .fab-menu button {
+    background: none; border: none; color: var(--text);
+    text-align: left; padding: .7rem .8rem;
+    min-height: 44px;
+  }
+  .app { padding-bottom: 64px; }   /* espacio para la barra */
+}
+
+/* DM shell: sidebar + área principal (desktop); nav superior en móvil */
+.dm-shell { display: block; }
+.dm-side nav { display: flex; gap: .3rem; flex-wrap: wrap; }
+@media (min-width: 1000px) {
+  .dm-shell {
+    display: grid;
+    grid-template-columns: 160px minmax(0, 1fr);
+    gap: 1.2rem;
+  }
+  .dm-side {
+    position: sticky; top: 70px;
+    align-self: start;
+  }
+  .dm-side nav { flex-direction: column; }
+  .dm-side nav button {
+    width: 100%; text-align: left;
+    background: none; border: none;
+    border-left: 3px solid transparent;
+    color: var(--muted);
+    padding: .6rem .7rem;
+    min-height: 44px;
+  }
+  .dm-side nav button[aria-selected='true'] {
+    color: var(--text);
+    border-left-color: var(--accent);
+    background: var(--card);
+  }
+}
+
 /* DM: tracker + panel contextual en 2 columnas en escritorio */
 @media (min-width: 1000px) {
   .dm-combat-grid {

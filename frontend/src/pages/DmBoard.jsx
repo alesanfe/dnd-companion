@@ -84,12 +84,22 @@ export default function DmBoard() {
   return (
     <main className="dm">
       <h1>Mesa del DM</h1>
-      <nav className="tabs" role="tablist" aria-label="Mesa DM">
-        {[['sesion', 'Sesión'], ['combate', 'Combate'],
-          ['campana', 'Campaña']].map(([k, label]) => (
-          <button key={k} role="tab" aria-selected={dmTab === k}
-                  onClick={() => setDmTab(k)}>{label}</button>))}
-      </nav>
+      <div className="dm-shell">
+      <aside className="dm-side">
+        <nav role="tablist" aria-label="Mesa DM">
+          {[['sesion', 'Sesión'], ['combate', 'Combate'],
+            ['campana', 'Campaña']].map(([k, label]) => (
+            <button key={k} role="tab" aria-selected={dmTab === k}
+                    onClick={() => setDmTab(k)}>{label}</button>))}
+        </nav>
+        {campaign && (
+          <p className="muted" style={{ fontSize: '.8rem' }}>
+            {campaign.name}
+            {combat && <> · ronda {combat.combat.round}</>}
+            {rollFeed.length > 0 && <> · {rollFeed.length} tiradas</>}
+          </p>)}
+      </aside>
+      <div className="dm-main">
       {err && <p className="error">{err}</p>}
 
       <section className="card" hidden={dmTab !== 'sesion'}>
@@ -158,8 +168,10 @@ export default function DmBoard() {
           {rollFeed.filter((r) => feedFilter === 'todas' ||
                 r.roll_type === feedFilter).map((r, i) => (
             <div key={i} className="row">
-              <span>{r.character}</span>
-              <span className="muted">{r.roll_type} · {r.expression}</span>
+              <span>{r.secret ? '🔒 ' : ''}{r.character}</span>
+              <span className="muted">
+                {r.secret ? 'privada · ' : ''}
+                {r.roll_type} · {r.expression}</span>
               <strong>{r.total}</strong>
             </div>
           ))}
@@ -596,6 +608,8 @@ export default function DmBoard() {
         </div>
         </>
       )}
+      </div>{/* dm-main */}
+      </div>{/* dm-shell */}
     </main>
   )
 }

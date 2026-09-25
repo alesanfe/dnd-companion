@@ -51,6 +51,9 @@ export const api = {
       method: 'POST', body: JSON.stringify({ username, password }),
     }),
   me: () => req('/api/auth/me'),
+  patchCharacter: (id, body) =>
+    req(`/api/characters/${id}`, {
+      method: 'PATCH', body: JSON.stringify(body) }),
   patchEntity: (campaignId, entityId, body) =>
     req(`/api/campaigns/${campaignId}/entities/${entityId}`, {
       method: 'PATCH', body: JSON.stringify(body),
@@ -106,10 +109,10 @@ export const api = {
         `?item_name=${encodeURIComponent(itemName)}&mode=${mode}` +
         (targetAc ? `&target_ac=${targetAc}` : ''), { method: 'POST' }),
   characterRoll: (characterId, expression, rollType = 'check',
-                  useInspiration = false) =>
+                  useInspiration = false, secret = false) =>
     req(`/api/operations/character/${characterId}/roll` +
         `?expression=${encodeURIComponent(expression)}&roll_type=${rollType}` +
-        `&use_inspiration=${useInspiration}`,
+        `&use_inspiration=${useInspiration}&secret=${secret}`,
         { method: 'POST' }),
   roll: (expression) =>
     req('/api/dice/roll', {

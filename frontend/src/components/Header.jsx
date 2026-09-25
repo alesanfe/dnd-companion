@@ -191,7 +191,7 @@ function SyncConflicts() {
       <ul style={{ margin: '.3rem 0', paddingLeft: '1rem' }}>
         {rows.map((r) => (
           <li key={r.operation_id}>
-            <Link to={`/character/${r.entity_id}?tab=actividad`}>
+            <Link to={`/character/${r.entity_id}/actividad`}>
               {r.operation_type}</Link>
             <span className="muted">
               {' '}· {r.timestamp?.slice(11, 19)}</span>

@@ -198,3 +198,32 @@ def test_pending_roll_requests():
     client.post(f"/api/operations/character/{char['id']}/roll",
                 params={"expression": "1d20", "roll_type": "save"})
     assert client.get(f"{url}?{ids}").json()["pending"] == []
+
+
+def test_death_saves_lifecycle():
+    """0 PG → salvaciones (1=2 fallos, 20=1PG); curar reinicia."""
+    cid = _mkchar()
+    ver = 1
+    r = _op(cid, ver, "character.hp.set", {"current": 0})
+    assert r.status_code == 200
+    ver = r.json()["version"]
+    # éxito (12) y fallo (8)
+    for roll in (12, 8):
+        r = _op(cid, ver, "character.death_save", {"roll": roll})
+        assert r.status_code == 200, r.text
+        ver = r.json()["version"]
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert d["death_saves"] == {"success": 1, "fail": 1}
+    # 1 natural = doble fallo → 3 fallos → muerte
+    r = _op(cid, ver, "character.death_save", {"roll": 1})
+    ver = r.json()["version"]
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert d["death_saves"]["fail"] == 3
+    assert "muerto" in [c.lower() for c in d["conditions"]]
+    # curar saca de 0 PG, limpia muerte y reinicia las salvaciones
+    r = _op(cid, ver, "character.hp.heal", {"amount": 5})
+    assert r.status_code == 200
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert d["hp"]["current"] == 5
+    assert d["death_saves"] == {"success": 0, "fail": 0}
+    assert "muerto" not in [c.lower() for c in d["conditions"]]

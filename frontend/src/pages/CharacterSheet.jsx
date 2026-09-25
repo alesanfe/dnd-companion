@@ -478,6 +478,23 @@ export default function CharacterSheet() {
           {hp.current} / {hp.max}
           {hp.temp > 0 && <span className="temp"> +{hp.temp} temp</span>}
         </div>
+        {hp.current === 0 && (
+          <div className="notice" role="alert">
+            <strong>¡A 0 PG — salvaciones de muerte!</strong>
+            <div className="row" style={{ alignItems: 'center' }}>
+              <span aria-label={`Éxitos: ${d.death_saves?.success || 0}`}>
+                {'✓'.repeat(d.death_saves?.success || 0)}
+                {'·'.repeat(3 - (d.death_saves?.success || 0))}</span>
+              <span aria-label={`Fallos: ${d.death_saves?.fail || 0}`}
+                    style={{ color: 'var(--danger)' }}>
+                {'✗'.repeat(d.death_saves?.fail || 0)}
+                {'·'.repeat(3 - (d.death_saves?.fail || 0))}</span>
+              <button className="primary" onClick={async () => {
+                const r = await api.roll('1d20')
+                await op('character.death_save', { roll: r.total })
+              }}>Tirar salvación</button>
+            </div>
+          </div>)}
         <div className="hp-bar" role="img"
              aria-label={`PG ${hp.current} de ${hp.max}`}>
           <div style={{

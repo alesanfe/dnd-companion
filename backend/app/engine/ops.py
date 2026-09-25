@@ -65,11 +65,47 @@ def hp_damage(char: Character, p: dict, ctx):
     return inv, [{"type": "character.hp.changed", "payload": payload}]
 
 
+@op("character.death_save")
+def death_save(char: Character, p: dict, ctx):
+    """Salvación de muerte (a 0 PG). El cliente pasa 'roll' (1d20 ya
+    tirado): ≥10 éxito, <10 fallo, 1 = doble fallo, 20 = se recupera
+    con 1 PG. Tres éxitos estabiliza, tres fallos es la muerte."""
+    if char.hp.current > 0:
+        raise ValueError("el personaje no está a 0 PG")
+    inv = _set_inverse(char)
+    roll = int(p["roll"])
+    result = None
+    if roll >= 20:
+        char.hp.current = 1
+        char.death_saves = {"success": 0, "fail": 0}
+        result = "20 natural — recupera 1 PG"
+    elif roll == 1:
+        char.death_saves["fail"] = min(3, char.death_saves["fail"] + 2)
+        result = "1 natural — doble fallo"
+    elif roll >= 10:
+        char.death_saves["success"] += 1
+        result = "éxito"
+    else:
+        char.death_saves["fail"] += 1
+        result = "fallo"
+    if char.death_saves["fail"] >= 3:
+        result += " — muerte"
+        if "muerto" not in char.conditions:
+            char.conditions.append("muerto")
+    return inv, [{"type": "character.hp.changed",
+                  "payload": {"death_save": roll, "result": result,
+                              **char.death_saves}}]
+
+
 @op("character.hp.heal")
 def hp_heal(char: Character, p: dict, ctx):
     inv = _set_inverse(char)
     amount = max(0, int(p["amount"]))
     char.hp.current = min(char.hp.max, char.hp.current + amount)
+    if char.hp.current > 0:   # curarse estabiliza: reinicia muerte
+        char.death_saves = {"success": 0, "fail": 0}
+        char.conditions = [c for c in char.conditions
+                           if c.lower() not in ("muerto", "dead")]
     return inv, [{"type": "character.hp.changed",
                   "payload": {"healed": amount, "current": char.hp.current}}]
 

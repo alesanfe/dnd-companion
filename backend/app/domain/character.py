@@ -110,6 +110,8 @@ class Character(BaseModel):
     xp: int = 0                             # puntos de experiencia
     concentrating_on: str | None = None     # conjuro en concentración
     inspiration: bool = False               # inspiración del DM
+    death_saves: dict[str, int] = Field(
+        default_factory=lambda: {"success": 0, "fail": 0})
 
     @property
     def total_level(self) -> int:

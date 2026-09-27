@@ -73,6 +73,8 @@ def _saves(d: dict, abilities: dict) -> dict[str, int]:
     """Salvaciones como total fijo; default = modificador de stat."""
     out = {}
     explicit = d.get("saving_throws") or d.get("save") or {}
+    if not isinstance(explicit, dict):
+        explicit = {}          # lista/str de otro schema → ignorar
     for a in ABILITIES:
         v = explicit.get(_LONG[a]) or explicit.get(a)
         if v is None:
@@ -130,23 +132,26 @@ _ACTION_SECTIONS = (
 )
 
 
+def _action_rows(acts, label: str, out: list) -> None:
+    """Normaliza acciones de una sección: desc | text | entries →
+    {name, category, text} limpio."""
+    if isinstance(acts, dict):      # 5etools: {header: [...]}
+        acts = [a for v in acts.values() for a in
+                (v if isinstance(v, list) else [v])]
+    for a in acts:
+        if not isinstance(a, dict):
+            continue
+        text = (a.get("desc") or a.get("text")
+                or " ".join(str(e) for e in (a.get("entries") or [])))
+        out.append({"name": a.get("name", "?"), "category": label,
+                    "text": _clean_text(text)})
+
+
 def _actions(d: dict) -> list[dict]:
     out = []
     for keys, label in _ACTION_SECTIONS:
         for key in keys:
-            acts = d.get(key) or []
-            if isinstance(acts, dict):      # 5etools: {header: [...]}
-                acts = [a for v in acts.values() for a in
-                        (v if isinstance(v, list) else [v])]
-            for a in acts:
-                if not isinstance(a, dict):
-                    continue
-                text = (a.get("desc") or a.get("text")
-                        or " ".join(str(e) for e in
-                                    (a.get("entries") or [])))
-                out.append({"name": a.get("name", "?"),
-                            "category": label,
-                            "text": _clean_text(text)})
+            _action_rows(d.get(key) or [], label, out)
     if not out:
         # hazards/trampas y bloques sin secciones: una acción
         # sintética "Efecto" con el texto — rollable (DC + dados).
@@ -199,8 +204,12 @@ def _skills(d: dict) -> dict[str, int]:
                     if isinstance(v, (int, float))})
     raw = d.get("skill")
     if isinstance(raw, str):
-        for m in re.finditer(r"([A-Za-zñ]+)\s*([+-]?\d+)", raw):
-            out[m.group(1).lower()] = int(m.group(2))
+        # 'Perception +12, Animal Handling +4' — nombres multi-palabra
+        for m in re.finditer(r"([A-Za-zñ][A-Za-zñ ]*?)\s*([+-]?\d+)",
+                             raw):
+            name = m.group(1).strip().lower()
+            if name:
+                out[name] = int(m.group(2))
     return out
 
 
@@ -222,17 +231,32 @@ def _spellcasting(d: dict) -> dict | None:
                          if clean_txt)
         if block:
             texts.append(block)
-        for sec in sc.get("will") or []:
-            names += re.findall(r"\{@spell ([^}|]+)", str(sec))
-        for lvl, sec in (sc.get("daily") or {}).items():
-            names += re.findall(r"\{@spell ([^}|]+)", str(sec))
-        for lvl, sec in (sc.get("spells") or {}).items():
-            if isinstance(sec, dict):
-                names += re.findall(r"\{@spell ([^}|]+)",
-                                    str(sec.get("spells", "")))
-        names += re.findall(r"\{@spell ([^}|]+)", json.dumps(sc))
+        names += _sc_spell_names(sc)
     return {"spells": sorted(set(names)), "text": " ".join(texts)} \
         if (names or texts) else None
+
+
+def _spell_names(text) -> list[str]:
+    return re.findall(r"\{@spell ([^}|]+)", str(text))
+
+
+def _each_section(node):
+    """Itera valores de dict / elementos de lista (o nada)."""
+    if isinstance(node, dict):
+        return node.values()
+    return node if isinstance(node, list) else []
+
+
+def _sc_spell_names(sc: dict) -> list[str]:
+    """Nombres de conjuro de un bloque spellcasting 5etools:
+    will[], daily{}, spells{} por nivel y barrido del JSON."""
+    names = _spell_names(sc.get("will") or [])
+    for sec in _each_section(sc.get("daily")):
+        names += _spell_names(sec)
+    for sec in _each_section(sc.get("spells")):
+        names += _spell_names(
+            sec.get("spells", "") if isinstance(sec, dict) else sec)
+    return names + _spell_names(json.dumps(sc))
 
 
 def normalize(data: dict | None) -> dict | None:
@@ -244,24 +268,16 @@ def normalize(data: dict | None) -> dict | None:
         "name": data.get("name"),
         "hp": _hp(data),
         "ac": _ac(data),
-        "cr": _cr_float(
-            (lambda c: c.get("cr") if isinstance(c, dict) else c)(
-                data.get("challenge_rating", data.get("cr")))
-            or (data.get("properties") or {}).get("Challenge Rating")),
+        "cr": _cr_of(data),
         "abilities": abilities,
         "saves": _saves(data, abilities),
         "initiative_mod": _mod(abilities["dex"]),
         "speed": _speed(data),
-        "type": (lambda t: t.get("type") if isinstance(t, dict)
-                 else ", ".join(t) if isinstance(t, list)
-                 else str(t or ""))(data.get("type")),
-        "size": (lambda s: ", ".join(s) if isinstance(s, list)
-                 else str(s or ""))(data.get("size")),
-        "environment": (lambda e: ", ".join(e) if isinstance(e, list)
-                        else str(e or ""))(data.get("environment")
-                                           or data.get("environments")),
-        "alignment": (lambda a: ", ".join(a) if isinstance(a, list)
-                      else str(a or ""))(data.get("alignment")),
+        "type": _type_of(data.get("type")),
+        "size": _flat(data.get("size")),
+        "environment": _flat(data.get("environment")
+                             or data.get("environments")),
+        "alignment": _flat(data.get("alignment")),
         "actions": _actions(data),
         "resistances": _pick(data, "damage_resistances", "resist"),
         "immunities": _pick(data, "damage_immunities", "immune"),
@@ -269,12 +285,36 @@ def normalize(data: dict | None) -> dict | None:
                                  "vulnerable"),
         "condition_immune": _pick(data, "condition_immunities",
                                   "conditionImmune"),
-        "senses": (lambda s: s.get("as_string", s) if isinstance(s, dict)
-                   else str(s or ""))(data.get("senses")),
+        "senses": _str_or_dict(data.get("senses")),
         "skills": _skills(data),
-        "languages": (lambda s: s.get("as_string", s)
-                      if isinstance(s, dict) else str(s or ""))(
-            data.get("languages")),
+        "languages": _str_or_dict(data.get("languages")),
         "spellcasting": _spellcasting(data),
         "raw": data,
     }
+
+
+def _flat(v) -> str:
+    """str | [str] → 'a, b' ; dict/None → texto o ''."""
+    return ", ".join(str(x) for x in v) if isinstance(v, list) \
+        else str(v or "")
+
+
+def _str_or_dict(v) -> str:
+    """{as_string:…} (open5e) o valor suelto → texto."""
+    if isinstance(v, dict):
+        return str(v.get("as_string") or v)
+    return str(v or "")
+
+
+def _type_of(v) -> str:
+    """type: str | [str] | {type:…} — los tres schemas conviven."""
+    if isinstance(v, dict):
+        return str(v.get("type") or "")
+    return _flat(v)
+
+
+def _cr_of(d: dict) -> float:
+    c = d.get("challenge_rating", d.get("cr"))
+    return _cr_float(
+        (c.get("cr") if isinstance(c, dict) else c)
+        or (d.get("properties") or {}).get("Challenge Rating"))

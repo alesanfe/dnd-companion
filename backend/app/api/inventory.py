@@ -54,20 +54,7 @@ def transfer(body: TransferIn):
         raise HTTPException(400, "item not found or quantity is 0")
 
     now = datetime.now(timezone.utc).isoformat()
-    item.quantity -= qty
-    moved = item.model_copy(update={"quantity": qty})
-    if item.quantity <= 0:
-        src.inventory.remove(item)
-    # merge si el destino ya tiene el mismo item (mismo id de contenido)
-    existing = next((i for i in dst.inventory
-                     if i.source_id and i.source_id == moved.source_id
-                     and i.source_id is not None
-                     and i.name == moved.name), None)
-    if existing:
-        existing.quantity += qty
-    else:
-        dst.inventory.append(
-            InventoryItem(**{**moved.model_dump(), "id": uuid.uuid4().hex}))
+    moved = _move_item(src, dst, item, qty)
 
     for row, char in ((src_row, src), (dst_row, dst)):
         conn.execute(
@@ -88,3 +75,24 @@ def transfer(body: TransferIn):
     conn.commit()
     return {"duplicate": False, "transfer_id": body.transfer_id,
             "moved": {"name": moved.name, "quantity": qty}}
+
+
+def _move_item(src: Character, dst: Character, item,
+               qty: int) -> object:
+    """Descuenta del origen y añade al destino — merge si el destino
+    ya tiene el mismo item (mismo source_id + nombre)."""
+    item.quantity -= qty
+    moved = item.model_copy(update={"quantity": qty})
+    if item.quantity <= 0:
+        src.inventory.remove(item)
+    existing = next((i for i in dst.inventory
+                     if i.source_id and i.source_id == moved.source_id
+                     and i.source_id is not None
+                     and i.name == moved.name), None)
+    if existing:
+        existing.quantity += qty
+    else:
+        dst.inventory.append(
+            InventoryItem(**{**moved.model_dump(),
+                             "id": uuid.uuid4().hex}))
+    return moved

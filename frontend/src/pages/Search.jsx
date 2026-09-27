@@ -2,9 +2,18 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
 import { useT } from '../i18n.jsx'
+import EntityPreview from '../components/EntityPreview.jsx'
+
+/* el excerpt del FTS viene del JSON de la entidad (homebrew
+   incluido) — escapar SIEMPRE antes de marcar, o es XSS */
+const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
+    "'": '&#39;' }[ch]))
+const markExcerpt = (s) =>
+  esc(s).replace(/\[([^\]]+)\]/g, '<mark>$1</mark>')
 
 export default function Search() {
-  const { t } = useT()
+  const { t, tf } = useT()
   // los filtros sobreviven al ir y volver del detalle (sessionStorage)
   const saved = JSON.parse(sessionStorage.getItem('dnd-search') || '{}')
   const [q, setQ] = useState(saved.q || '')
@@ -16,6 +25,7 @@ export default function Search() {
   const [parsed, setParsed] = useState(null)
   const [asked, setAsked] = useState(null)
   const [compare, setCompare] = useState([])   // ids a comparar (máx 2)
+  const [preview, setPreview] = useState(null) // id en el panel derecho
   const [err, setErr] = useState(null)
 
   useEffect(() => {
@@ -68,47 +78,52 @@ export default function Search() {
         <input value={q} onChange={(e) => setQ(e.target.value)}
                placeholder={t('search.placeholder')} autoFocus />
         <select value={type} onChange={(e) => setType(e.target.value)}
-                aria-label="Tipo de entidad">
-          <option value="">todo</option>
+                aria-label={t('search.typeAria')}>
+          <option value="">{t('search.allTypes')}</option>
           {['spell', 'monster', 'class', 'race', 'species', 'feat',
             'equipment', 'item', 'condition', 'rule', 'background',
             'trait'].map((t) => (
             <option key={t} value={t}>{t}</option>))}
         </select>
-        <select value={edition} onChange={(e) => setEdition(e.target.value)}
-                aria-label="Edición">
-          <option value="">2014+2024</option>
-          <option value="2014">2014</option>
-          <option value="2024">2024</option>
-        </select>
-        <select value={source} onChange={(e) => setSource(e.target.value)}
-                aria-label={t('search.source')}>
-          <option value="">{t('search.allSources')}</option>
-          {sources.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name} ({s.entities})
-            </option>))}
-        </select>
         <button type="submit">{t('search.button')}</button>
       </form>
-      {err && <p className="error">{err}</p>}
 
-      <div className="row">
-        <button onClick={async () => {
-          const r = await api.rulesAsk(q)
-          setAsked(r)
-        }}>{t('search.ask')}</button>
-      </div>
+      {/* progressive disclosure: edición, fuente y asistente quedan
+          fuera de la vista básica */}
+      <details className="adv">
+        <summary>{t('search.advanced')}</summary>
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <select value={edition} onChange={(e) => setEdition(e.target.value)}
+                  aria-label={t('search.edition')}>
+            <option value="">2014+2024</option>
+            <option value="2014">2014</option>
+            <option value="2024">2024</option>
+          </select>
+          <select value={source} onChange={(e) => setSource(e.target.value)}
+                  aria-label={t('search.source')}>
+            <option value="">{t('search.allSources')}</option>
+            {sources.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name} ({s.entities})
+              </option>))}
+          </select>
+          <button className="ghost" onClick={async () => {
+            const r = await api.rulesAsk(q)
+            setAsked(r)
+          }}>{t('search.ask')}</button>
+        </div>
+      </details>
+      {err && <p className="error">{err}</p>}
       {asked && (
         <section className="card">
           <h2>{t('search.assistant')}</h2>
           {!asked.evidence_found
-            ? <p>Sin evidencia en las fuentes instaladas.</p>
+            ? <p>{t('search.noEvidence')}</p>
             : asked.citations.map((c) => (
               <div key={c.entity_id} className="citation">
                 <strong>{c.name}</strong>
                 <span className="muted"> · {c.ruleset} · {c.citation.source_id} ({c.citation.license})</span>
-                {c.excerpt && <p className="excerpt" dangerouslySetInnerHTML={{ __html: c.excerpt }} />}
+                {c.excerpt && <p className="excerpt" dangerouslySetInnerHTML={{ __html: markExcerpt(c.excerpt) }} />}
               </div>
             ))}
         </section>
@@ -125,33 +140,41 @@ export default function Search() {
 
       {parsed && (
         <p className="muted">
-          tipo: {parsed.type || 'cualquiera'}
-          {parsed.terms.length > 0 && ` · texto: ${parsed.terms.join(' ')}`}
+          {t('search.parsedType')}: {parsed.type || t('search.anyType')}
+          {parsed.terms.length > 0 && ` · ${t('search.parsedText')}: ${parsed.terms.join(' ')}`}
           {Object.keys(parsed.filters).length > 0 &&
-            ` · filtros: ${JSON.stringify(parsed.filters)}`}
+            ` · ${t('search.parsedFilters')}: ${JSON.stringify(parsed.filters)}`}
         </p>
       )}
       {compare.length === 2 && <Compare ids={compare} />}
 
+      <div className="compendium">
       <ul className="results">
         {results.map((r) => (
           <li key={r.id}>
-            <label className="muted" style={{ fontSize: '.8em' }}>
+            <label className="muted" style={{ fontSize: '.8em' }}
+                   title={t('search.compare')}>
               <input type="checkbox"
                      checked={compare.includes(r.id)}
                      onChange={(e) => setCompare((prev) =>
                        e.target.checked
                          ? [...prev, r.id].slice(-2)
                          : prev.filter((x) => x !== r.id))} />
-              cmp
+              ≈
             </label>{' '}
+            <button className="linkish"
+                    aria-current={preview === r.id}
+                    onClick={() => setPreview(r.id)}>
+              <strong>{r.name}</strong></button>{' '}
             <Link to={`/content/${encodeURIComponent(r.id)}`}
+                  className="muted" title={t('common.details')}
+                  aria-label={tf('search.openAria', { name: r.name })}
                   onClick={() => sessionStorage.setItem(
                     'dnd-search-scroll', String(window.scrollY))}>
-              <strong>{r.name}</strong></Link>{' '}
+              ↗</Link>{' '}
             <span className="muted">
               {r.entity_type} · {r.ruleset} · {r.source_id}
-              {!r.is_redistributable && ' · contenido privado'}
+              {!r.is_redistributable && ` · ${t('search.private')}`}
             </span>
             {r.summary && (
               <p className="excerpt">
@@ -159,11 +182,15 @@ export default function Search() {
               </p>
             )}
             {r.excerpt && <p className="excerpt"
-              dangerouslySetInnerHTML={{ __html: r.excerpt.replace(
-                /\[([^\]]+)\]/g, '<mark>$1</mark>') }} />}
+              dangerouslySetInnerHTML={{ __html: markExcerpt(r.excerpt) }} />}
           </li>
         ))}
       </ul>
+      {preview && (
+        <aside className="card preview-pane" aria-label={t('search.previewAria')}>
+          <EntityPreview id={preview} />
+        </aside>)}
+      </div>
 
       <HomebrewForm />
     </main>
@@ -234,7 +261,7 @@ function QuickAccess({ onSearch, t }) {
     </section>)
   return (<>
     {Object.keys(cols).length > 0 && (
-      <div className="row" role="group" aria-label="Colecciones">
+      <div className="row" role="group" aria-label={t('search.colsAria')}>
         {Object.keys(cols).map((c) => (
           <button key={c} className="ghost"
                   aria-pressed={col === c}
@@ -273,50 +300,114 @@ function HomebrewForm() {
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({
     entity_type: 'item', name: '', ruleset: 'dnd5e-2014', desc: '' })
+  /* stats de monstruo homebrew — el normalizador de statblock los
+     lee igual que en 5e-bits/Open5e (armor_class int, hit_points,
+     cr '1/4', speed str, str..cha, actions[{name,desc}]) */
+  const [m, setM] = useState({ ac: '', hp: '', cr: '', speed: '',
+    size: '', mtype: '', align: '',
+    str: '', dex: '', con: '', int: '', wis: '', cha: '', actions: '' })
+  const setMf = (k) => (e) => setM({ ...m, [k]: e.target.value })
   const [msg, setMsg] = useState(null)
   if (!open) return (
     <button className="ghost" onClick={() => setOpen(true)}>
       {t('search.homebrew')}</button>)
   return (
     <section className="card" role="dialog"
-             aria-label="Crear contenido homebrew">
-      <h2>Contenido homebrew</h2>
+             aria-label={t('search.hbAria')}>
+      <h2>{t('search.hbTitle')}</h2>
       <div className="row">
-        <select value={form.entity_type} aria-label="Tipo"
+        <select value={form.entity_type} aria-label={t('search.hbType')}
                 onChange={(e) => setForm(
                   { ...form, entity_type: e.target.value })}>
           {['item', 'weapon', 'armor', 'spell', 'feat', 'monster',
             'trait', 'condition', 'background', 'species', 'rule']
             .map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
-        <select value={form.ruleset} aria-label="Ruleset"
+        <select value={form.ruleset} aria-label={t('search.hbRuleset')}
                 onChange={(e) => setForm(
                   { ...form, ruleset: e.target.value })}>
           <option value="dnd5e-2014">2014</option>
           <option value="dnd5e-2024">2024</option>
-          <option value="mixed">Mixto</option>
+          <option value="mixed">{t('search.hbMixed')}</option>
         </select>
-        <input value={form.name} placeholder="Nombre"
-               aria-label="Nombre del contenido"
+        <input value={form.name} placeholder={t('camp.name')}
+               aria-label={t('search.hbNameAria')}
                onChange={(e) => setForm(
                  { ...form, name: e.target.value })} />
       </div>
       <textarea value={form.desc} rows={2}
-                placeholder="Descripción / reglas caseras"
+                placeholder={t('search.hbDescPh')}
                 onChange={(e) => setForm(
                   { ...form, desc: e.target.value })} />
+      {form.entity_type === 'monster' && (<>
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <input type="number" value={m.ac} placeholder={t('hbm.ac')}
+                 aria-label={t('hbm.ac')} style={{ maxWidth: 80 }}
+                 onChange={setMf('ac')} />
+          <input type="number" value={m.hp} placeholder={t('hbm.hp')}
+                 aria-label={t('hbm.hp')} style={{ maxWidth: 80 }}
+                 onChange={setMf('hp')} />
+          <input value={m.cr} placeholder={t('hbm.cr')}
+                 aria-label={t('hbm.cr')} style={{ maxWidth: 80 }}
+                 onChange={setMf('cr')} />
+          <input value={m.speed} placeholder={t('hbm.speed')}
+                 aria-label={t('hbm.speed')} style={{ maxWidth: 130 }}
+                 onChange={setMf('speed')} />
+        </div>
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <input value={m.size} placeholder={t('hbm.size')}
+                 aria-label={t('hbm.size')} style={{ maxWidth: 100 }}
+                 onChange={setMf('size')} />
+          <input value={m.mtype} placeholder={t('hbm.type')}
+                 aria-label={t('hbm.type')} style={{ maxWidth: 130 }}
+                 onChange={setMf('mtype')} />
+          <input value={m.align} placeholder={t('hbm.align')}
+                 aria-label={t('hbm.align')} style={{ maxWidth: 80 }}
+                 onChange={setMf('align')} />
+        </div>
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          {['str', 'dex', 'con', 'int', 'wis', 'cha'].map((a) => (
+            <input key={a} type="number" value={m[a]} placeholder={a}
+                   aria-label={a} style={{ maxWidth: 58 }}
+                   onChange={setMf(a)} />))}
+        </div>
+        <textarea value={m.actions} rows={3}
+                  placeholder={t('hbm.actionsPh')}
+                  aria-label={t('hbm.actionsPh')}
+                  onChange={setMf('actions')} />
+      </>)}
       <div className="row">
         <button className="primary" disabled={!form.name.trim()}
                 onClick={async () => {
+          const data = form.desc ? { desc: form.desc } : {}
+          if (form.entity_type === 'monster') {
+            if (+m.ac) data.armor_class = +m.ac
+            if (+m.hp) data.hit_points = +m.hp
+            if (m.cr.trim()) data.cr = m.cr.trim()
+            if (m.speed.trim()) data.speed = m.speed.trim()
+            if (m.size.trim()) data.size = m.size.trim()
+            if (m.mtype.trim()) data.type = m.mtype.trim()
+            if (m.align.trim()) data.alignment = m.align.trim()
+            for (const a of ['str', 'dex', 'con', 'int', 'wis', 'cha'])
+              if (+m[a]) data[a] = +m[a]
+            const acts = m.actions.split('\n').map((l) => l.trim())
+              .filter(Boolean).map((l) => {
+                const i = Math.max(l.indexOf('. '), l.indexOf(': '))
+                return i > 0
+                  ? { name: l.slice(0, i), desc: l.slice(i + 2) }
+                  : { name: t('hbm.actionName'), desc: l }
+              })
+            if (acts.length) data.actions = acts
+          }
           const r = await api.createHomebrew({
             entity_type: form.entity_type,
             name: form.name.trim(),
             ruleset: form.ruleset,
-            data: form.desc ? { desc: form.desc } : {},
+            data,
             license: 'user-created',
           })
-          setMsg(`Creado: ${r.id}`)
-        }}>Guardar en el compendio</button>
+          setMsg(`${t('search.hbCreated')}: ${r.id}`)
+        }}>{t('search.hbSave')}</button>
         <button className="ghost" onClick={() => setOpen(false)}>
           {t('common.close')}</button>
       </div>
@@ -326,6 +417,7 @@ function HomebrewForm() {
 
 /** Una colección: resuelve ids a nombres de entidad. */
 function CollectionBlock({ ids, name }) {
+  const { t } = useT()
   const [items, setItems] = useState([])
   useEffect(() => {
     Promise.all(ids.map((id) =>
@@ -336,13 +428,13 @@ function CollectionBlock({ ids, name }) {
   }, [ids])
   return (
     <section className="card">
-      <h2>Col. {name}</h2>
+      <h2>{t('search.colPrefix')} {name}</h2>
       {items.map((x) => (
         <div key={x.id} className="row">
           <Link to={`/content/${encodeURIComponent(x.id)}`}
                 style={{ flex: 1 }}>{x.name}</Link>
           <span className="muted">{x.type}</span>
         </div>))}
-      {!items.length && <p className="muted">Colección vacía.</p>}
+      {!items.length && <p className="muted">{t('search.colEmpty')}</p>}
     </section>)
 }

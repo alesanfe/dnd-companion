@@ -17,6 +17,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..db.connections import content_db, state_db
+# Las reglas de condición viven en domain/conditions.py (compartidas
+# con los combatientes); aquí solo se consultan para el personaje.
+from ..domain.conditions import mods_for as _condition_mods_raw
 from ..domain.character import Character
 from ..domain.combat import Combat
 from ..domain.events import Event, EventType, OperationStatus
@@ -53,14 +56,67 @@ class OpContext:
         return self._state
 
 
-# Las reglas de condición viven en domain/conditions.py (compartidas
-# con los combatientes); aquí solo se consultan para el personaje.
-from ..domain.conditions import mods_for as _condition_mods_raw
+def _auto_modifier(char: Character, roll_type: str,
+                   applied: list) -> int:
+    """Modificador automático según tipo: check:dex, save:wis,
+    skill:x — incluye competencia en salvación/habilidad."""
+    extra = 0
+    base_type, _, detail = roll_type.partition(":")
+    detail = detail.strip().lower()
+    if base_type in ("check", "save") and detail:
+        extra += char.abilities.modifier(detail)
+        applied.append(f"{detail}: {char.abilities.modifier(detail):+d}")
+        if base_type == "save" and _norm(detail) in {
+                _norm(x) for x in char.save_proficiencies}:
+            extra += char.proficiency_bonus
+            applied.append(f"prof: +{char.proficiency_bonus}")
+    elif base_type == "skill" and detail:
+        ability = _SKILL_ABILITIES.get(
+            detail, _SKILL_ABILITIES.get(_norm(detail).replace(" ", "-"),
+                                         "int"))
+        extra += char.abilities.modifier(ability)
+        applied.append(f"{ability}({detail}): "
+                       f"{char.abilities.modifier(ability):+d}")
+        if _norm(detail) in {_norm(x) for x in char.skill_proficiencies}:
+            extra += char.proficiency_bonus
+            applied.append(f"prof: +{char.proficiency_bonus}")
+    return extra
+
+
+def _effect_modifiers(char: Character, roll_type: str, adv: bool,
+                      dis: bool, extra_mod: int, applied: list):
+    """Mods declarativos de efectos pasivos / before_roll que
+    aplican a esta tirada. Devuelve (adv, dis, extra_mod)."""
+    for eff in char.effects:
+        if eff.trigger is not None and eff.trigger.value != "before_roll":
+            continue
+        for o in eff.operations:
+            tgt = o.target or ""
+            if tgt not in (roll_type, f"*.{roll_type}", "*", "roll"):
+                continue
+            if o.op.value == "grant_advantage":
+                adv = True
+                applied.append(f"{eff.name}: ventaja")
+            elif o.op.value == "grant_disadvantage":
+                dis = True
+                applied.append(f"{eff.name}: desventaja")
+            elif o.op.value == "add_modifier" and o.value is not None:
+                extra_mod += int(o.value)
+                applied.append(f"{eff.name}: {int(o.value):+d}")
+    return adv, dis, extra_mod
 
 
 def _condition_mods(char: Character, roll_type: str):
-    """Deriva ventaja/desventaja/autofallo desde char.conditions."""
-    return _condition_mods_raw(char.conditions, roll_type)
+    """Deriva ventaja/desventaja/autofallo desde char.conditions,
+    leyendo el nivel de agotamiento de condition_stacks."""
+    return _condition_mods_raw(char.conditions, roll_type,
+                               char.condition_stacks)
+
+
+def _norm(s: str) -> str:
+    """Normaliza ids de habilidad: 'sleight of hand' ≡
+    'sleight-of-hand'."""
+    return s.strip().lower().replace("-", " ")
 
 
 @router.post("/character/{character_id}/roll")
@@ -80,61 +136,12 @@ async def character_roll(character_id: str, expression: str = "1d20",
     char = Character(**json.loads(row["data"]))
 
     expr = expression.strip().lower()
-    adv = dis = False
-    extra_mod = 0
-    applied = []
-    if use_inspiration and char.inspiration:
-        adv = True
-        applied.append("inspiración: ventaja")   # el cliente la consume
-        # via la op inspiration.set{value:false} tras la tirada
-
-    # modificador automático según tipo: check:dex, save:wis, skill:x
-    base_type, _, detail = roll_type.partition(":")
-    if base_type in ("check", "save") and detail:
-        extra_mod += char.abilities.modifier(detail)
-        applied.append(f"{detail}: {char.abilities.modifier(detail):+d}")
-        if base_type == "save" and detail in char.save_proficiencies:
-            extra_mod += char.proficiency_bonus
-            applied.append(f"prof: +{char.proficiency_bonus}")
-    elif base_type == "skill" and detail:
-        ability = _SKILL_ABILITIES.get(detail, "int")
-        extra_mod += char.abilities.modifier(ability)
-        applied.append(f"{ability}({detail}): "
-                       f"{char.abilities.modifier(ability):+d}")
-        if detail in char.skill_proficiencies:
-            extra_mod += char.proficiency_bonus
-            applied.append(f"prof: +{char.proficiency_bonus}")
-
-    for eff in char.effects:
-        # solo efectos pasivos o con trigger before_roll
-        if eff.trigger is not None and eff.trigger.value != "before_roll":
-            continue
-        for o in eff.operations:
-            tgt = o.target or ""
-            if tgt not in (roll_type, f"*.{roll_type}", "*", "roll"):
-                continue
-            if o.op.value == "grant_advantage":
-                adv = True; applied.append(f"{eff.name}: ventaja")
-            elif o.op.value == "grant_disadvantage":
-                dis = True; applied.append(f"{eff.name}: desventaja")
-            elif o.op.value == "add_modifier" and o.value is not None:
-                extra_mod += int(o.value)
-                applied.append(f"{eff.name}: {int(o.value):+d}")
-    c_adv, c_dis, fail, c_notes = _condition_mods(char, roll_type)
-    adv = adv or c_adv
-    dis = dis or c_dis
-    applied += c_notes
+    applied: list[str] = []
+    expr, fail = _augment_expr(char, expr, roll_type,
+                               use_inspiration, applied)
     if fail:
         return {"expression": expr, "rolls": [], "kept": [], "total": 0,
                 "auto_fail": True, "effects_applied": applied}
-    if adv and not dis and "adv" not in expr and "dis" not in expr \
-            and "d20" in expr:
-        expr += "adv"
-    elif dis and not adv and "adv" not in expr and "dis" not in expr \
-            and "d20" in expr:
-        expr += "dis"
-    if extra_mod:
-        expr += f"{extra_mod:+d}"
     try:
         r = dice_roll(expr)
     except ValueError as exc:
@@ -147,6 +154,34 @@ async def character_roll(character_id: str, expression: str = "1d20",
         await _broadcast_roll(conn, row["campaign_id"], character_id,
                               char.name, roll_type, result, secret)
     return result
+
+
+def _augment_expr(char, expr: str, roll_type: str,
+                  use_inspiration: bool,
+                  applied: list) -> tuple[str, bool]:
+    """Inspiración + modificadores declarativos + reglas de condición
+    sobre la expresión de dados. Devuelve (expr', auto_fail)."""
+    adv = bool(use_inspiration and char.inspiration)
+    if adv:
+        applied.append("inspiración: ventaja")   # el cliente la consume
+        # via la op inspiration.set{value:false} tras la tirada
+    extra_mod = _auto_modifier(char, roll_type, applied)
+    adv, dis, extra_mod = _effect_modifiers(char, roll_type, adv,
+                                            False, extra_mod, applied)
+    c_adv, c_dis, fail, c_notes = _condition_mods(char, roll_type)
+    adv = adv or c_adv
+    dis = dis or c_dis
+    applied += c_notes
+    if fail:
+        return expr, True
+    if "adv" not in expr and "dis" not in expr and "d20" in expr:
+        if adv and not dis:
+            expr += "adv"
+        elif dis and not adv:
+            expr += "dis"
+    if extra_mod:
+        expr += f"{extra_mod:+d}"
+    return expr, False
 
 
 async def _broadcast_roll(conn, campaign_id: str, character_id: str,
@@ -209,18 +244,7 @@ def character_attack(character_id: str, item_name: str,
                  if i.name.lower() == item_name.lower()), None)
     if item is None:
         raise HTTPException(404, "arma no en inventario")
-    w = {}
-    if item.source_id:
-        r = content_db().execute(
-            "SELECT data FROM content_entities WHERE id = ?",
-            (item.source_id,)).fetchone()
-        w = json.loads(r["data"]) if r else {}
-    props = [p.get("index") for p in w.get("properties", [])]
-    mod = char.abilities.modifier(
-        "dex" if "finesse" in props or "ranged" in
-        str(w.get("weapon_range", "")).lower() else "str")
-    hit_bonus = char.proficiency_bonus + mod
-    dmg_dice = (w.get("damage") or {}).get("damage_dice", "1d4")
+    mod, hit_bonus, dmg_dice = _weapon_stats(char, item)
 
     # condiciones: la mecánica es idéntica a /roll
     c_adv, c_dis, fail, c_notes = _condition_mods(char, "attack")
@@ -244,6 +268,23 @@ def character_attack(character_id: str, item_name: str,
         result["hit"]["hits"] = hit.total >= target_ac
         result["hit"]["target_ac"] = target_ac
     return result
+
+
+def _weapon_stats(char, item):
+    """(mod de característica, bonificador de impacto, dados de daño)
+    del arma — finesse/ranged → DES, el resto → FUE."""
+    w = {}
+    if item.source_id:
+        r = content_db().execute(
+            "SELECT data FROM content_entities WHERE id = ?",
+            (item.source_id,)).fetchone()
+        w = json.loads(r["data"]) if r else {}
+    props = [p.get("index") for p in w.get("properties", [])]
+    mod = char.abilities.modifier(
+        "dex" if "finesse" in props or "ranged" in
+        str(w.get("weapon_range", "")).lower() else "str")
+    return (mod, char.proficiency_bonus + mod,
+            (w.get("damage") or {}).get("damage_dice", "1d4"))
 
 
 _MODELS = {"character": Character, "combat": Combat}

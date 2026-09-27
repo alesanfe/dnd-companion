@@ -33,6 +33,7 @@ class EventType(str, Enum):
     CHARACTER_HP_CHANGED = "character.hp.changed"
     CHARACTER_CONDITION_APPLIED = "character.condition.applied"
     CHARACTER_CONDITION_REMOVED = "character.condition.removed"
+    CHARACTER_CONDITION_IMMUNE = "character.condition.immune"
     COMBAT_TURN_ADVANCED = "combat.turn.advanced"
     COMBAT_STARTED = "combat.started"
     COMBAT_ENDED = "combat.ended"
@@ -41,6 +42,7 @@ class EventType(str, Enum):
     RESOURCE_USAGE_CHANGED = "resource.usage.changed"
     ROLL_REQUESTED = "dice.roll.requested"          # DM pide tirada a jugador
     ENTITY_REVEALED = "campaign.entity.revealed"    # DM revela entidad
+    ENTITY_UPDATED = "campaign.entity.updated"      # alta/cambio/borrado
 
 
 class Event(BaseModel):

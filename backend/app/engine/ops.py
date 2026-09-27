@@ -8,9 +8,10 @@ change. Events describe what happened for WS broadcast + log.
 """
 from __future__ import annotations
 
+import json
 from typing import Callable
 
-from ..domain.character import Character
+from ..domain.character import Character, Narrative
 from ..domain.effects import Trigger
 from ..rules import rules
 from .dice import roll
@@ -27,8 +28,16 @@ def op(name: str):
 
 
 def _set_inverse(char: Character) -> dict:
+    # snapshot de salvaciones/condiciones: el daño puede generar
+    # fallos de muerte o "muerto" — el undo debe restaurarlos
     return {"operation_type": "character.hp.set",
-            "payload": {"current": char.hp.current, "temp": char.hp.temp}}
+            "payload": {"current": char.hp.current,
+                        "temp": char.hp.temp,
+                        "death_saves": dict(char.death_saves),
+                        "conditions": list(char.conditions),
+                        "condition_stacks": dict(char.condition_stacks),
+                        "condition_durations":
+                        dict(char.condition_durations)}}
 
 
 @op("character.hp.damage")
@@ -37,24 +46,17 @@ def hp_damage(char: Character, p: dict, ctx):
     amount = max(0, int(p["amount"]))
     # resistencia/vulnerabilidad/inmunidad declarativas por tipo de daño
     dtype = str(p.get("type", "")).lower()
-    mult, applied = 1.0, []
-    for eff in char.effects:
-        for o in eff.operations:
-            tgt = (o.target or "").lower()
-            if dtype and tgt not in (dtype, "*"):
-                continue
-            if o.op.value == "grant_immunity":
-                mult = 0.0; applied.append(f"{eff.name}: inmunidad")
-            elif o.op.value == "grant_resistance" and mult > 0.5:
-                mult = 0.5; applied.append(f"{eff.name}: resistencia")
-            elif o.op.value == "grant_vulnerability":
-                mult *= 2.0; applied.append(f"{eff.name}: vulnerabilidad")
+    mult, applied = _damage_mult(char, dtype)
     amount = int(amount * mult)
     absorbed = min(char.hp.temp, amount)
     char.hp.temp -= absorbed
-    char.hp.current = max(0, char.hp.current - (amount - absorbed))
+    dmg = amount - absorbed
+    was_zero = char.hp.current == 0
+    overflow = dmg - char.hp.current      # daño que sobra tras llegar a 0
+    char.hp.current = max(0, char.hp.current - dmg)
     payload = {"amount": amount, "temp_absorbed": absorbed,
                "current": char.hp.current}
+    _death_rules(char, dmg, was_zero, overflow, payload)
     if applied:
         payload["damage_effects"] = applied
         payload["damage_type"] = dtype
@@ -67,6 +69,50 @@ def hp_damage(char: Character, p: dict, ctx):
     return inv, [{"type": "character.hp.changed", "payload": payload}]
 
 
+def _damage_mult(char: Character, dtype: str) -> tuple[float, list]:
+    """Multiplicador por inmunidad/resistencia/vulnerabilidad
+    declarativas (grant_*) filtradas por tipo de daño o '*' →
+    (mult, [notas])."""
+    mult, applied = 1.0, []
+    for eff in char.effects:
+        for o in eff.operations:
+            tgt = (o.target or "").lower()
+            if dtype and tgt not in (dtype, "*"):
+                continue
+            if o.op.value == "grant_immunity":
+                mult = 0.0
+                applied.append(f"{eff.name}: inmunidad")
+            elif o.op.value == "grant_resistance" and mult > 0.5:
+                mult = 0.5
+                applied.append(f"{eff.name}: resistencia")
+            elif o.op.value == "grant_vulnerability":
+                mult *= 2.0
+                applied.append(f"{eff.name}: vulnerabilidad")
+    return mult, applied
+
+
+def _death_rules(char: Character, dmg: int, was_zero: bool,
+                 overflow: int, payload: dict) -> None:
+    """Daño masivo (restante ≥ PG máx) → muerte instantánea; golpeado
+    estando a 0 PG → un fallo de salvación de muerte."""
+    if dmg <= 0 or char.hp.max <= 0:
+        return
+    cs = rules()["combat"]
+    if overflow >= char.hp.max:
+        char.death_saves["fail"] = cs["death_save_fails"]
+        if "muerto" not in char.conditions:
+            char.conditions.append("muerto")
+        payload["instant_death"] = True
+    elif was_zero:
+        char.death_saves["fail"] = min(
+            cs["death_save_fails"], char.death_saves["fail"] + 1)
+        payload["death_fail_at_zero"] = char.death_saves["fail"]
+        if char.death_saves["fail"] >= cs["death_save_fails"] and \
+                "muerto" not in char.conditions:
+            char.conditions.append("muerto")
+            payload["instant_death"] = True
+
+
 @op("character.death_save")
 def death_save(char: Character, p: dict, ctx):
     """Salvación de muerte (a 0 PG). El cliente pasa 'roll' (1d20 ya
@@ -76,17 +122,17 @@ def death_save(char: Character, p: dict, ctx):
         raise ValueError("el personaje no está a 0 PG")
     inv = _set_inverse(char)
     cs = rules()["combat"]
-    roll = int(p["roll"])
+    d20 = int(p["roll"])
     result = None
-    if roll >= cs["death_save_crit_success"]:
+    if d20 >= cs["death_save_crit_success"]:
         char.hp.current = 1
         char.death_saves = {"success": 0, "fail": 0}
         result = "20 natural — recupera 1 PG"
-    elif roll <= cs["death_save_crit_fail"]:
+    elif d20 <= cs["death_save_crit_fail"]:
         char.death_saves["fail"] = min(
             cs["death_save_fails"], char.death_saves["fail"] + 2)
         result = "1 natural — doble fallo"
-    elif roll >= cs["death_save_dc"]:
+    elif d20 >= cs["death_save_dc"]:
         char.death_saves["success"] += 1
         result = "éxito"
     else:
@@ -97,7 +143,7 @@ def death_save(char: Character, p: dict, ctx):
         if "muerto" not in char.conditions:
             char.conditions.append("muerto")
     return inv, [{"type": "character.hp.changed",
-                  "payload": {"death_save": roll, "result": result,
+                  "payload": {"death_save": d20, "result": result,
                               **char.death_saves}}]
 
 
@@ -119,35 +165,123 @@ def hp_set(char: Character, p: dict, ctx):
     inv = _set_inverse(char)
     char.hp.current = max(0, min(char.hp.max, int(p["current"])))
     char.hp.temp = max(0, int(p.get("temp", char.hp.temp)))
+    if "death_saves" in p:               # restauración de undo
+        char.death_saves = dict(p["death_saves"])
+    if "conditions" in p:
+        char.conditions = list(p["conditions"])
+    if "condition_stacks" in p:
+        char.condition_stacks = dict(p["condition_stacks"])
+    if "condition_durations" in p:
+        char.condition_durations = dict(p["condition_durations"])
     return inv, [{"type": "character.hp.changed",
                   "payload": {"current": char.hp.current,
                               "temp": char.hp.temp}}]
 
 
+_COIN_CP = {"cp": 1, "sp": 10, "ep": 50, "gp": 100, "pp": 1000}
+
+
+@op("character.currency.convert")
+def currency_convert(char: Character, p: dict, ctx):
+    """Cambia monedas entre tipos (10sp→1gp, 50cp→5sp). La vuelta
+    se queda en la moneda de origen. Reversible por snapshot."""
+    src, dst = p["from"], p["to"]
+    if src not in _COIN_CP or dst not in _COIN_CP or src == dst:
+        raise ValueError("conversión de moneda inválida")
+    amount = int(p["amount"])
+    if amount <= 0 or char.purse.get(src, 0) < amount:
+        raise ValueError("monedas insuficientes")
+    inv = {"operation_type": "character.currency.set",
+           "payload": {"purse": dict(char.purse)}}
+    total_cp = amount * _COIN_CP[src]
+    gained = total_cp // _COIN_CP[dst]
+    if gained <= 0:
+        raise ValueError("conversión vacía — no llega a una moneda")
+    change_cp = total_cp - gained * _COIN_CP[dst]
+    char.purse[src] -= amount
+    char.purse[src] += change_cp // _COIN_CP[src]
+    char.purse[dst] = char.purse.get(dst, 0) + gained
+    return inv, [{"type": "inventory.item.transferred",
+                  "payload": {"converted": f"{amount}{src} → "
+                                          f"{gained}{dst}"}}]
+
+
 @op("character.condition.apply")
 def condition_apply(char: Character, p: dict, ctx):
+    """Aplica una condición; `stacks` es un delta de niveles
+    (agotamiento +1/-1). Re-aplicar una condición existente toma
+    snapshot para no borrarla al deshacer."""
     cond = p["condition"]
     rounds = int(p["rounds"]) if p.get("rounds") else None
-    inv = {"operation_type": "character.condition.remove",
-           "payload": {"condition": cond}}
-    if cond not in char.conditions:
-        char.conditions.append(cond)
+    delta = int(p["stacks"]) if p.get("stacks") is not None else None
+    # inmunidad a condiciones declarativa: grant_immunity con
+    # target 'condition:<nombre>' o 'condition:*' (la inversa de
+    # condition.remove lleva force=True para que deshacer sea fiel)
+    if not p.get("force") and _immune_to(char, cond):
+        return {"operation_type": "character.condition.remove",
+                "payload": {"condition": cond}}, [
+            {"type": "character.condition.immune",
+             "payload": {"condition": cond}}]
+    if delta is not None and delta < 0 and \
+            char.condition_stacks.get(cond, 0) <= 0:
+        raise ValueError("condición sin niveles que quitar")
+    if cond in char.conditions or delta is not None:
+        inv = _set_inverse(char)
+    else:
+        inv = {"operation_type": "character.condition.remove",
+               "payload": {"condition": cond}}
+    if delta is not None and delta < 0:
+        _shrink_condition(char, cond, delta)
+    else:
+        if cond not in char.conditions:
+            char.conditions.append(cond)
+        if delta:
+            char.condition_stacks[cond] = \
+                char.condition_stacks.get(cond, 0) + delta
     if rounds:
         char.condition_durations[cond] = rounds
     return inv, [{"type": "character.condition.applied",
-                  "payload": {"condition": cond, "rounds": rounds}}]
+                  "payload": {"condition": cond, "rounds": rounds,
+                              "stacks":
+                              char.condition_stacks.get(cond, 0)}}]
+
+
+def _immune_to(char: Character, cond: str) -> bool:
+    """grant_immunity con target 'condition:<nombre>' o
+    'condition:*' — p.ej. heroísmo contra asustado."""
+    immune = {str(o.target or "").lower()
+              for eff in char.effects for o in eff.operations
+              if o.op.value == "grant_immunity"}
+    return f"condition:{cond}".lower() in immune or \
+        "condition:*" in immune
+
+
+def _shrink_condition(char: Character, cond: str, delta: int) -> None:
+    """Quita niveles de condición (agotamiento -1); a 0 se limpia
+    del todo — duración y lista de condiciones incluidas."""
+    new = char.condition_stacks.get(cond, 0) + delta
+    if new <= 0:
+        char.condition_stacks.pop(cond, None)
+        char.condition_durations.pop(cond, None)
+        if cond in char.conditions:
+            char.conditions.remove(cond)
+    else:
+        char.condition_stacks[cond] = new
 
 
 @op("character.condition.remove")
 def condition_remove(char: Character, p: dict, ctx):
     cond = p["condition"]
     had_rounds = char.condition_durations.get(cond)
+    had_stacks = char.condition_stacks.get(cond)
     inv = {"operation_type": "character.condition.apply",
-           "payload": {"condition": cond,
-                       **({"rounds": had_rounds} if had_rounds else {})}}
+           "payload": {"condition": cond, "force": True,
+                       **({"rounds": had_rounds} if had_rounds else {}),
+                       **({"stacks": had_stacks} if had_stacks else {})}}
     if cond in char.conditions:
         char.conditions.remove(cond)
     char.condition_durations.pop(cond, None)
+    char.condition_stacks.pop(cond, None)
     return inv, [{"type": "character.condition.removed",
                   "payload": {"condition": cond}}]
 
@@ -192,13 +326,45 @@ def resource_restore(char: Character, p: dict, ctx):
                   "payload": {"resource_id": res.id, "current": res.current}}]
 
 
+def _slots_for(char: Character, lvl: str, pool: str | None):
+    """El pool de espacios a usar: 'pact' = pacto del brujo,
+    'regular' = normal; sin pool → pacto si existe ese nivel."""
+    if pool == "pact":
+        return char.pact_slots
+    if pool == "regular" or not char.pact_slots:
+        return char.spell_slots
+    return char.pact_slots if lvl in char.pact_slots else char.spell_slots
+
+
 @op("character.spell_slot.use")
 def slot_use(char: Character, p: dict, ctx):
     lvl = str(p["level"])
-    slot = char.spell_slots.setdefault(lvl, {"total": 0, "used": 0})
+    count = int(p.get("count", 1))
+    pool = _slots_for(char, lvl, p.get("pool"))
+    slot = pool.setdefault(lvl, {"total": 0, "used": 0})
     inv = {"operation_type": "character.spell_slot.restore",
-           "payload": {"level": int(lvl), "count": 1}}
-    slot["used"] = min(slot["total"], slot["used"] + 1)
+           "payload": {"level": int(lvl), "pool": p.get("pool"),
+                       "count": min(count, slot["total"] - slot["used"])}}
+    slot["used"] = min(slot["total"], slot["used"] + count)
+    return inv, [{"type": "resource.usage.changed",
+                  "payload": {"spell_slot": lvl, "used": slot["used"],
+                              "pool": "pact" if pool is char.pact_slots
+                                      else "regular"}}]
+
+
+@op("character.spell_slot.restore")
+def slot_restore(char: Character, p: dict, ctx):
+    """Recupera `count` espacios de conjuro gastados (recuperación
+    arcana, descanso, corrección manual). Reversible."""
+    lvl = str(p["level"])
+    count = int(p.get("count", 1))
+    slot = _slots_for(char, lvl, p.get("pool")).get(lvl)
+    if not slot or slot["used"] <= 0:
+        raise ValueError("nada que recuperar")
+    inv = {"operation_type": "character.spell_slot.use",
+           "payload": {"level": int(lvl), "pool": p.get("pool"),
+                       "count": min(count, slot["used"])}}
+    slot["used"] = max(0, slot["used"] - count)
     return inv, [{"type": "resource.usage.changed",
                   "payload": {"spell_slot": lvl, "used": slot["used"]}}]
 
@@ -237,6 +403,10 @@ def hit_die_unspend(char: Character, p: dict, ctx):
 def rest_short(char: Character, p: dict, ctx):
     before = char.model_dump()
     _restore_resources(char, {"short"})
+    # magia de pacto (brujo): sus espacios se recuperan en descanso
+    # corto — todas las demás tradiciones solo en largo
+    for slot in char.pact_slots.values():
+        slot["used"] = 0
     _run_trigger(char, Trigger.ON_SHORT_REST)
     return _restore_inverse(before), [{"type": "character.hp.changed",
                                        "payload": {"rest": "short"}}]
@@ -249,13 +419,25 @@ def rest_long(char: Character, p: dict, ctx):
     char.hp.temp = 0
     for slot in char.spell_slots.values():
         slot["used"] = 0
+    for slot in char.pact_slots.values():
+        slot["used"] = 0
     # recupera la mitad de los dados de golpe (mín 1) por nivel total
     regain = max(1, char.total_level // 2)
     for pool in char.hit_dice:
         take = min(regain, pool.total - pool.remaining)
         pool.remaining += take
         regain -= take
-    _restore_resources(char, {"short", "long"})
+    # amanecer también se recupera con el descanso largo
+    _restore_resources(char, {"short", "long", "dawn"})
+    # las condiciones apilables (agotamiento) bajan 1 nivel por
+    # descanso largo; a 0 se retira la condición
+    for cond in list(char.condition_stacks):
+        char.condition_stacks[cond] -= 1
+        if char.condition_stacks[cond] <= 0:
+            del char.condition_stacks[cond]
+            char.condition_durations.pop(cond, None)
+            if cond in char.conditions:
+                char.conditions.remove(cond)
     _run_trigger(char, Trigger.ON_LONG_REST)
     return _restore_inverse(before), [{"type": "character.hp.changed",
                                        "payload": {"rest": "long",
@@ -290,29 +472,10 @@ def level_up(char: Character, p: dict, ctx):
 
     # ¿clase existente o multiclase nueva?
     from ..domain.classinfo import hit_die as _class_hit_die
-    entry = next((c for c in char.classes if c.class_id == class_id), None)
     cls_data = _content(ctx, class_id)
     hit_die = _class_hit_die(cls_data or {})
-    if entry is None:
-        from ..domain.character import ClassLevel, HitDicePool
-        char.classes.append(ClassLevel(class_id=class_id, level=1))
-        char.hit_dice.append(HitDicePool(die=f"d{hit_die}", total=1,
-                                         remaining=1))
-        new_level = 1
-    else:
-        entry.level += 1
-        new_level = entry.level
-        pool = next((hd for hd in char.hit_dice
-                     if hd.die == f"d{hit_die}"), None)
-        if pool:
-            pool.total += 1
-            pool.remaining += 1
-        else:
-            from ..domain.character import HitDicePool
-            char.hit_dice.append(HitDicePool(die=f"d{hit_die}", total=1,
-                                             remaining=1))
+    new_level = _bump_class(char, class_id, hit_die)
 
-    # HP: fijo = hit_die/2 + 1 + CON ; tirado = rolled + CON
     con_mod = char.abilities.modifier("con")
     if p.get("hp_mode") == "roll" and p.get("rolled"):
         gain = int(p["rolled"]) + con_mod
@@ -324,37 +487,85 @@ def level_up(char: Character, p: dict, ctx):
     # prof bonus + spell slots del nuevo nivel (si la content DB lo tiene)
     source, class_index = class_id.split(":", 1)
     lvl = _content(ctx, f"{source}:{class_index}-{new_level}")
-    if lvl:
-        char.proficiency_bonus = int(lvl.get("prof_bonus",
-                                             char.proficiency_bonus))
-        sc = lvl.get("spellcasting") or {}
-        for n in range(1, 10):
-            slots = sc.get(f"spell_slots_level_{n}", 0)
-            if slots:
-                char.spell_slots[str(n)] = {"total": slots, "used": 0}
+    _apply_level_row(char, class_id, lvl)
 
-    # Rasgos ganados en este nivel — dos vías:
-    #  5e-bits: entidad 'level' con features:[{name}]
-    #  5etools: entidades 'class-feature' con className+level
-    gained: list[str] = []
-    for f in (lvl or {}).get("features") or []:
-        gained.append(f.get("name") if isinstance(f, dict) else str(f))
+    # Rasgos ganados en este nivel (clase + subclase) → char.features
+    gained = _level_features(ctx, char, lvl, cls_data, class_id,
+                             new_level)
+    for name in gained:
+        if name and name not in char.features:
+            char.features.append(name)
+
+    res_gained = _level_resources(char, lvl)
+
+    _run_trigger(char, Trigger.ON_LEVEL_UP)
+    return _restore_inverse(before), [
+        {"type": "character.hp.changed",
+         "payload": {"level_up": class_id, "level": new_level,
+                     "hp_max": char.hp.max,
+                     "features_gained": gained,
+                     "resources_updated": res_gained,
+                     # mejora de característica NUEVA en este nivel:
+                     # ability_score_bonuses es acumulado — sube solo
+                     # en niveles de ASI (4, 8, 12, 16, 19)
+                     "asi_available": _asi_gained(ctx, class_id,
+                                                  new_level)}}]
+
+
+def _bump_class(char: Character, class_id: str, hit_die: int) -> int:
+    """+1 nivel en la clase (o entrada nueva en multiclase) y su dado
+    de golpe. Devuelve el nivel resultante."""
+    from ..domain.character import ClassLevel, HitDicePool
+    entry = next((c for c in char.classes if c.class_id == class_id),
+                 None)
+    if entry is None:
+        char.classes.append(ClassLevel(class_id=class_id, level=1))
+        pool = None
+        new_level = 1
+    else:
+        entry.level += 1
+        new_level = entry.level
+        pool = next((hd for hd in char.hit_dice
+                     if hd.die == f"d{hit_die}"), None)
+    if pool:
+        pool.total += 1
+        pool.remaining += 1
+    else:
+        char.hit_dice.append(HitDicePool(die=f"d{hit_die}", total=1,
+                                         remaining=1))
+    return new_level
+
+
+def _apply_level_row(char: Character, class_id: str,
+                     lvl: dict | None) -> None:
+    """Fila 'level' de la clase: proficiency bonus y espacios de
+    conjuro (brujo → pool de pacto, recarga en descanso corto)."""
+    if not lvl:
+        return
+    char.proficiency_bonus = int(lvl.get("prof_bonus",
+                                         char.proficiency_bonus))
+    sc = lvl.get("spellcasting") or {}
+    target = (char.pact_slots
+              if class_id.split(":")[-1].replace("-", " ") == "warlock"
+              else char.spell_slots)
+    for n in range(1, 10):
+        slots = sc.get(f"spell_slots_level_{n}", 0)
+        if slots:
+            target[str(n)] = {"total": slots, "used": 0}
+
+
+def _level_features(ctx, char, lvl, cls_data, class_id,
+                    new_level) -> list[str]:
+    """Nombres de rasgos ganados en este nivel — dos vías:
+     5e-bits: entidad 'level' con features:[{name}]
+     5etools: entidades 'class-feature' con className+level.
+    Si la clase tiene subclass_id, sus features llevan
+    subclassShortName = nombre de la subclase (5etools)."""
+    gained = [f.get("name") if isinstance(f, dict) else str(f)
+              for f in (lvl or {}).get("features") or []]
     cls_name = (cls_data or {}).get("name")
     if cls_name and ctx is not None:
-        try:
-            rows = ctx.content_db().execute(
-                """SELECT data FROM content_entities
-                   WHERE entity_type = 'class-feature'
-                   AND json_extract(data, '$.level') = ?
-                   AND lower(json_extract(data, '$.className')) =
-                       lower(?)""",
-                (new_level, cls_name)).fetchall()
-            gained += [json.loads(r["data"]).get("name", "?")
-                       for r in rows]
-        except Exception:      # noqa: BLE001 - features best-effort
-            pass
-    # Rasgos de SUBCLASE: si la clase tiene subclass_id, sus features
-    # llevan subclassShortName = nombre de la subclase (5etools).
+        gained += _feature_names(ctx, new_level, "className", cls_name)
     sub_id = next(
         (c.subclass_id for c in char.classes if c.class_id == class_id),
         None)
@@ -363,29 +574,82 @@ def level_up(char: Character, p: dict, ctx):
             srow = ctx.content_db().execute(
                 "SELECT name FROM content_entities WHERE id = ?",
                 (sub_id,)).fetchone()
-            sub_name = srow["name"] if srow else None
-            if sub_name:
-                rows = ctx.content_db().execute(
-                    """SELECT data FROM content_entities
-                       WHERE entity_type = 'class-feature'
-                       AND json_extract(data, '$.level') = ?
-                       AND lower(json_extract(data,
-                             '$.subclassShortName')) = lower(?)""",
-                    (new_level, sub_name)).fetchall()
-                gained += [json.loads(r["data"]).get("name", "?")
-                           for r in rows]
-        except Exception:      # noqa: BLE001 - subclass features best-effort
-            pass
-    for name in gained:
-        if name and name not in char.features:
-            char.features.append(name)
+        except Exception:   # noqa: BLE001 - subclass feats best-effort
+            srow = None
+        sub_name = srow["name"] if srow else None
+        if sub_name:
+            gained += _feature_names(ctx, new_level,
+                                     "subclassShortName", sub_name)
+    return gained
 
-    _run_trigger(char, Trigger.ON_LEVEL_UP)
-    return _restore_inverse(before), [
-        {"type": "character.hp.changed",
-         "payload": {"level_up": class_id, "level": new_level,
-                     "hp_max": char.hp.max,
-                     "features_gained": gained}}]
+
+def _feature_names(ctx, new_level: int, field: str,
+                   value: str) -> list[str]:
+    """Entidades 'class-feature' del nivel filtradas por
+    $.className o $.subclassShortName (5etools) — best-effort."""
+    try:
+        rows = ctx.content_db().execute(
+            f"""SELECT data FROM content_entities
+                WHERE entity_type = 'class-feature'
+                AND json_extract(data, '$.level') = ?
+                AND lower(json_extract(data, '$.{field}')) =
+                    lower(?)""",
+            (new_level, value)).fetchall()
+        return [json.loads(r["data"]).get("name", "?") for r in rows]
+    except Exception:      # noqa: BLE001 - features best-effort
+        return []
+
+
+def _level_resources(char, lvl) -> list[str]:
+    """Contadores de clase del nivel → recursos rastreables.
+    class_specific (5e-bits/Open5e): rage_count, ki_points,
+    sorcery_points… — valores enteros >0 que se gastan y se
+    recuperan (furias, dados de superioridad, puntos de ki).
+    Devuelve las claves añadidas este nivel."""
+    _SHORT_KEYS = ("ki_points", "superiority_dice", "action_surge",
+                   "second_wind", "channel_divinity", "martial_arts")
+    res_gained: list[str] = []
+    for key, val in ((lvl or {}).get("class_specific") or {}).items():
+        if not isinstance(val, int) or val <= 0:
+            continue
+        if key.endswith("_dice") and "superiority" not in key:
+            continue          # brutal_critical_dice = daño, no usos
+        if not any(tag in key for tag in
+                   ("count", "points", "uses", "dice")):
+            continue
+        rid = f"cls.{key}"
+        reset = ("short" if any(k in key for k in _SHORT_KEYS)
+                 else "long")
+        res = next((r for r in char.resources if r.id == rid), None)
+        if res is None:
+            from ..domain.character import Resource
+            char.resources.append(Resource(
+                id=rid, name=key.replace("_", " ").title(),
+                current=val, max=val, reset_on=reset))
+            res_gained.append(key)
+        elif res.max != val:
+            # el tope sube con el nivel — concede los usos nuevos
+            res.current = min(val, res.current + max(0, val - res.max))
+            res.max = val
+    return res_gained
+
+
+def _asi_gained(ctx, class_id: str, level: int) -> bool:
+    """¿El nivel alcanzado otorga una mejora de característica?
+    ability_score_bonuses en la entidad 'level' es acumulado:
+    true si es mayor que en el nivel anterior."""
+    if ctx is None or level < 2:
+        return False
+    source, class_index = class_id.split(":", 1)
+
+    def _ab(lv: int) -> int:
+        row = _content(ctx, f"{source}:{class_index}-{lv}")
+        return int((row or {}).get("ability_score_bonuses") or 0)
+
+    try:
+        return _ab(level) > _ab(level - 1)
+    except Exception:
+        return False
 
 
 def _item_damage(item_data: dict) -> str | None:
@@ -438,16 +702,38 @@ def character_attack(char: Character, p: dict, ctx):
             "damage_expr": dmg_expr, "damage_total": dmg.total}}]
 
 
+def _item_weight(sp: dict) -> float:
+    """Peso en libras desde datos de entidad: 'weight' numérico
+    (5e-bits/Open5e) o texto '6 lb.' (5etools properties)."""
+    import re
+    for k in ("weight", "weight_lb"):
+        try:
+            return float(sp.get(k) or 0)
+        except (TypeError, ValueError):
+            continue
+    for k in ("Weight", "weight"):
+        v = (sp.get("properties") or {}).get(k) or sp.get(k)
+        if isinstance(v, str):
+            m = re.search(r"[\d.]+", v)
+            if m:
+                return float(m.group(0))
+    return 0.0
+
+
 @op("character.inventory.add")
 def inventory_add(char: Character, p: dict, ctx):
     import uuid as _uuid
     from ..domain.character import InventoryItem
+    weight = p.get("weight")
+    if weight is None and p.get("source_id"):
+        weight = _item_weight(_content(ctx, p["source_id"]) or {})
     item = InventoryItem(
         id=p.get("id") or _uuid.uuid4().hex,
         name=p["name"],
         quantity=int(p.get("quantity", 1)),
         equipped=bool(p.get("equipped", False)),
         source_id=p.get("source_id"),
+        weight=float(weight or 0),
     )
     char.inventory.append(item)
     return {"operation_type": "character.inventory.remove",
@@ -537,13 +823,12 @@ def shop_buy(char: Character, p: dict, ctx):
     en la transacción de la operación."""
     if ctx is None or ctx.state_db() is None:
         raise ValueError("shop.buy requiere contexto de estado")
-    import json as _json
     row = ctx.state_db().execute(
         "SELECT data FROM campaign_entities WHERE id = ?",
         (p["shop_id"],)).fetchone()
     if row is None:
         raise ValueError("tienda no encontrada")
-    shop = _json.loads(row["data"])
+    shop = json.loads(row["data"])
     stock = shop.get("stock", [])
     entry = next((s for s in stock if s.get("name") == p["item"]), None)
     if entry is None or entry.get("quantity", 0) < 1:
@@ -557,7 +842,7 @@ def shop_buy(char: Character, p: dict, ctx):
     entry["quantity"] -= 1
     ctx.state_db().execute(
         "UPDATE campaign_entities SET data = ? WHERE id = ?",
-        (_json.dumps(shop), p["shop_id"]))
+        (json.dumps(shop), p["shop_id"]))
     # inversa real: devuelve objeto, repone stock y reembolsa monedas
     inv = {"operation_type": "character.shop.refund",
            "payload": {"shop_id": p["shop_id"], "item": p["item"],
@@ -597,81 +882,148 @@ def effect_remove(char: Character, p: dict, ctx):
          "payload": {"effect": eff.name}}]
 
 
+@op("character.spell.prepare")
+def spell_prepare(char: Character, p: dict, ctx):
+    """Marca un conjuro conocido como preparado (clases que
+    preparan tras descanso largo). Los trucos no se preparan."""
+    sid = p["spell_id"]
+    if sid not in char.spells_known:
+        raise ValueError("conjuro desconocido")
+    sp = _content(ctx, sid) or {}
+    lvl = int(sp.get("level")
+              or (sp.get("properties") or {}).get("Level") or 0)
+    if lvl == 0:
+        raise ValueError("los trucos siempre están listos — no se preparan")
+    if sid in char.spells_prepared:
+        raise ValueError("conjuro ya preparado")
+    char.spells_prepared.append(sid)
+    return {"operation_type": "character.spell.unprepare",
+            "payload": {"spell_id": sid}}, [
+        {"type": "resource.usage.changed",
+         "payload": {"spell_prepared": sid}}]
+
+
+@op("character.spell.unprepare")
+def spell_unprepare(char: Character, p: dict, ctx):
+    sid = p["spell_id"]
+    if sid not in char.spells_prepared:
+        raise ValueError("conjuro no preparado")
+    char.spells_prepared.remove(sid)
+    return {"operation_type": "character.spell.prepare",
+            "payload": {"spell_id": sid}}, [
+        {"type": "resource.usage.changed",
+         "payload": {"spell_unprepared": sid}}]
+
+
 @op("character.spell.cast")
 def spell_cast(char: Character, p: dict, ctx):
     """Lanza un conjuro: consume espacio (si level>0), marca
     concentración si el conjuro la requiere. Reversible via snapshot."""
     spell_id = p["spell_id"]
-    level = int(p.get("level", 0))
     sp = _content(ctx, spell_id) or {}
-    spell_level = int(sp.get("level")
-                      or (sp.get("properties") or {}).get("Level") or 0)
-    # upcasting válido; no se puede lanzar un conjuro por debajo de su nivel
-    if level and level < spell_level:
-        raise ValueError(
-            f"espacio insuficiente: {sp.get('name')} es de nivel {spell_level}")
-    if not level:
-        level = spell_level
+    level, spell_level = _cast_level(sp, int(p.get("level", 0)))
+    # clases que preparan: solo se lanzan conjuros preparados
+    # (la lista vacía = lanzador "conocido" como brujo/hechicero)
+    if (spell_level > 0 and char.spells_prepared
+            and spell_id not in char.spells_prepared):
+        raise ValueError("conjuro no preparado — prepáralo tras un "
+                         "descanso largo")
     before = char.model_dump()
     if level > 0:
-        slot = char.spell_slots.setdefault(
-            str(level), {"total": 0, "used": 0})
+        pool = _slots_for(char, str(level), p.get("pool"))
+        slot = pool.setdefault(str(level), {"total": 0, "used": 0})
         if slot["used"] >= slot["total"]:
             raise ValueError(f"sin espacios de nivel {level}")
         slot["used"] += 1
-    # concentración: "yes" (5e-bits/open5e), true, o flag en
-    # duration[] (5etools: duration:[{concentration:true}])
-    conc = sp.get("concentration")
-    needs_conc = conc in (True, "yes", "Yes") or any(
-        d.get("concentration") for d in sp.get("duration") or []
-        if isinstance(d, dict))
-    if needs_conc:
+    if _needs_conc(sp):
         char.concentrating_on = sp.get("name", spell_id)
 
-    # Datos de juego del conjuro desde su entidad: CD de salvación
-    # (8 + prof + mod de lanzamiento de la clase), tirada de ataque de
-    # conjuro y daño escalado al nivel del espacio consumido.
-    payload = {"spell_cast": sp.get("name", spell_id),
-               "level": level,
-               "concentration": char.concentrating_on}
-    cast_ability = None
-    if char.classes:
-        cls_data = _content(ctx, char.classes[0].class_id) or {}
-        from ..domain.classinfo import spellcasting_ability
-        cast_ability = spellcasting_ability(cls_data)
-    spell_dc = None
-    if cast_ability:
-        spell_dc = rules()["combat"]["spell_dc_base"] + \
-            char.proficiency_bonus + \
-            char.abilities.modifier(cast_ability)
-    if spell_dc and (sp.get("savingThrow") or sp.get("saves")
-                     or sp.get("saving_throws") or sp.get("dc")):
-        payload["spell_dc"] = spell_dc
-    needs_attack = sp.get("attack") or sp.get("spellAttack") \
-        or (sp.get("meta") or {}).get("attack") \
+    return _restore_inverse(before), [
+        {"type": "resource.usage.changed",
+         "payload": _spell_cast_payload(char, sp, spell_id, level,
+                                        spell_level, ctx)}]
+
+
+def _cast_level(sp: dict, level: int) -> tuple[int, int]:
+    """(nivel de espacio, nivel del conjuro). Upcasting válido; no
+    se puede lanzar un conjuro por debajo de su nivel."""
+    spell_level = int(sp.get("level")
+                      or (sp.get("properties") or {}).get("Level") or 0)
+    if level and level < spell_level:
+        raise ValueError(
+            f"espacio insuficiente: {sp.get('name')} es de nivel "
+            f"{spell_level}")
+    return level or spell_level, spell_level
+
+
+def _needs_conc(sp: dict) -> bool:
+    """Concentración: "yes" (5e-bits/open5e), true, o flag en
+    duration[] (5etools: duration:[{concentration:true}])."""
+    return sp.get("concentration") in (True, "yes", "Yes") or any(
+        d.get("concentration") for d in sp.get("duration") or []
+        if isinstance(d, dict))
+
+
+def _cast_ability(char: Character, ctx) -> str | None:
+    """Característica de lanzamiento de la clase principal."""
+    if not char.classes:
+        return None
+    cls_data = _content(ctx, char.classes[0].class_id) or {}
+    from ..domain.classinfo import spellcasting_ability
+    return spellcasting_ability(cls_data)
+
+
+def _needs_attack(sp: dict) -> bool:
+    """El conjuro usa tirada de ataque (flag o 'spell attack' en el
+    texto — multi-schema)."""
+    return bool(
+        sp.get("attack") or sp.get("spellAttack")
+        or (sp.get("meta") or {}).get("attack")
         or "spell attack" in str(sp.get("desc")
-                                 or sp.get("entries") or "")
-    if needs_attack and cast_ability:
-        atk = roll("1d20")
-        atk_mod = char.proficiency_bonus + char.abilities.modifier(
-            cast_ability)
-        payload.update(spell_attack_roll=atk.total,
-                       spell_attack_total=atk.total + atk_mod,
-                       spell_attack_mod=atk_mod)
-    # daño escalado por espacio: damage_at_slot_level{slot:dice}
+                                 or sp.get("entries") or ""))
+
+
+def _slot_damage_expr(sp: dict, level: int, spell_level: int):
+    """Daño escalado por espacio: damage_at_slot_level{slot:dice}
+    (o por nivel de personaje) → expresión de dados."""
     dmg_map = {}
     for d in sp.get("damage") or []:
         if isinstance(d, dict) and d.get("damage_at_slot_level"):
             dmg_map.update(d["damage_at_slot_level"])
         elif isinstance(d, dict) and d.get("damage_at_character_level"):
             dmg_map.update(d["damage_at_character_level"])
-    expr = dmg_map.get(str(level)) or dmg_map.get(
-        str(spell_level)) or sp.get("dmg1")
+    return dmg_map.get(str(level)) or dmg_map.get(str(spell_level)) \
+        or sp.get("dmg1")
+
+
+def _spell_cast_payload(char: Character, sp: dict, spell_id: str,
+                        level: int, spell_level: int, ctx) -> dict:
+    """Datos de juego del conjuro desde su entidad: CD de salvación
+    (8 + prof + mod de lanzamiento de la clase), tirada de ataque de
+    conjuro y daño escalado al nivel del espacio consumido."""
+    payload = {"spell_cast": sp.get("name", spell_id),
+               "level": level,
+               "concentration": char.concentrating_on}
+    cast_ability = _cast_ability(char, ctx)
+    spell_dc = (rules()["combat"]["spell_dc_base"]
+                + char.proficiency_bonus
+                + char.abilities.modifier(cast_ability)
+                ) if cast_ability else None
+    if spell_dc and (sp.get("savingThrow") or sp.get("saves")
+                     or sp.get("saving_throws") or sp.get("dc")):
+        payload["spell_dc"] = spell_dc
+    if cast_ability and _needs_attack(sp):
+        atk = roll("1d20")
+        atk_mod = char.proficiency_bonus + char.abilities.modifier(
+            cast_ability)
+        payload.update(spell_attack_roll=atk.total,
+                       spell_attack_total=atk.total + atk_mod,
+                       spell_attack_mod=atk_mod)
+    expr = _slot_damage_expr(sp, level, spell_level)
     if expr:
         payload.update(damage_expr=str(expr),
                        damage_total=roll(str(expr)).total)
-    return _restore_inverse(before), [
-        {"type": "resource.usage.changed", "payload": payload}]
+    return payload
 
 
 @op("character.concentration.break")
@@ -700,7 +1052,6 @@ def shop_refund(char: Character, p: dict, ctx):
     reembolsa las monedas — todo en la transacción de la operación."""
     if ctx is None or ctx.state_db() is None:
         raise ValueError("shop.refund requiere contexto de estado")
-    import json as _json
     item = next((i for i in char.inventory if i.name == p["item"]), None)
     if item is None:
         raise ValueError("objeto no encontrado para devolver")
@@ -713,14 +1064,14 @@ def shop_refund(char: Character, p: dict, ctx):
         "SELECT data FROM campaign_entities WHERE id = ?",
         (p["shop_id"],)).fetchone()
     if row:
-        shop = _json.loads(row["data"])
+        shop = json.loads(row["data"])
         for s in shop.get("stock", []):
             if s.get("name") == p["item"]:
                 s["quantity"] = s.get("quantity", 0) + 1
                 break
         ctx.state_db().execute(
             "UPDATE campaign_entities SET data = ? WHERE id = ?",
-            (_json.dumps(shop), p["shop_id"]))
+            (json.dumps(shop), p["shop_id"]))
     return {"operation_type": "character.shop.buy",
             "payload": {"shop_id": p["shop_id"], "item": p["item"]}}, [
         {"type": "inventory.item.transferred",
@@ -730,7 +1081,9 @@ def shop_refund(char: Character, p: dict, ctx):
 @op("character.journal.add")
 def journal_add(char: Character, p: dict, ctx):
     """Entrada de diario/crónicas — reversible."""
-    entry = p["entry"]
+    entry = p.get("entry") or p.get("text")
+    if not entry or not isinstance(entry, str):
+        raise ValueError("entrada de diario vacía")
     char.narrative.journal.append(entry)
     return {"operation_type": "character.journal.pop",
             "payload": {}}, [
@@ -740,7 +1093,9 @@ def journal_add(char: Character, p: dict, ctx):
 
 @op("character.journal.pop")
 def journal_pop(char: Character, p: dict, ctx):
-    entry = char.narrative.journal.pop() if char.narrative.journal else None
+    if not char.narrative.journal:
+        raise ValueError("diario vacío — nada que quitar")
+    entry = char.narrative.journal.pop()
     return {"operation_type": "character.journal.add",
             "payload": {"entry": entry}}, []
 
@@ -763,6 +1118,47 @@ def ability_set(char: Character, p: dict, ctx):
             int(p["value"]))
     return inv, [{"type": "resource.usage.changed",
                   "payload": {"ability": ability, "value": p["value"]}}]
+
+
+@op("character.asi.apply")
+def asi_apply(char: Character, p: dict, ctx):
+    """Mejora de característica por nivel (ASI): +2 a una o +1 a cada
+    una de dos (payload: {a1, a2?, amount}). Solo si hay mejoras
+    disponibles según la tabla de la clase — feats no lo descuentan:
+    elegir una dote sustituye a la mejora (asi.spent)."""
+    amount = int(p.get("amount", 2))
+    a1, a2 = p["ability"], p.get("ability2")
+    if a2 and amount != 1:
+        raise ValueError("+1 a cada una: amount=1 con dos características")
+    if not a2 and amount not in (1, 2):
+        raise ValueError("la mejora es +1 o +2")
+    before = char.asi_used
+    inv = {"operation_type": "character.state.restore",
+           "payload": {"data": char.model_dump()}}
+    from ..domain.character import _ABILITY_ALIASES as _AL
+    for ab in (a1, a2):
+        if not ab:
+            continue
+        key = _AL.get(ab.lower(), ab.lower())
+        setattr(char.abilities, key,
+                min(30, getattr(char.abilities, key) + amount))
+    char.asi_used += amount * (2 if a2 else 1)  # +1+1 = 2 puntos
+    return inv, [{"type": "resource.usage.changed",
+                  "payload": {"asi": {"ability": a1, "ability2": a2,
+                                      "amount": amount,
+                                      "asi_used": char.asi_used,
+                                      "asi_used_before": before}}}]
+
+
+@op("character.asi.spent")
+def asi_spent(char: Character, p: dict, ctx):
+    """Marca una mejora como gastada al elegir una dote en su lugar."""
+    inv = {"operation_type": "character.state.restore",
+           "payload": {"data": char.model_dump()}}
+    char.asi_used += 2                     # una dote = una mejora (+2)
+    return inv, [{"type": "resource.usage.changed",
+                  "payload": {"asi_spent": True,
+                              "asi_used": char.asi_used}}]
 
 
 @op("character.resource.add")
@@ -863,12 +1259,143 @@ def item_unequip(char: Character, p: dict, ctx):
          "payload": {"unequipped": item.name}}]
 
 
+def _item(char: Character, item_id: str):
+    it = next((i for i in char.inventory if i.id == item_id), None)
+    if it is None:
+        raise ValueError("objeto no encontrado")
+    return it
+
+
+@op("character.item.charge.set")
+def item_charge_set(char: Character, p: dict, ctx):
+    """Configura cargas de un objeto (varita, pergamino…).
+    `max` fija el tope
+    `current` opcional (por defecto = max, recarga
+    completa). `max: 0` desactiva las cargas. Reversible."""
+    it = _item(char, p["item_id"])
+    old = {"charges": it.charges, "charges_max": it.charges_max}
+    new_max = int(p["max"])
+    if new_max <= 0:
+        it.charges = it.charges_max = None
+    else:
+        it.charges_max = new_max
+        it.charges = min(new_max,
+                         int(p.get("current", new_max)))
+    return {"operation_type": "character.item.charge.restore",
+            "payload": {"item_id": it.id, **old}}, [
+        {"type": "inventory.item.charged",
+         "payload": {"item": it.name,
+                     "charges": it.charges,
+                     "charges_max": it.charges_max}}]
+
+
+@op("character.item.charge.use")
+def item_charge_use(char: Character, p: dict, ctx):
+    it = _item(char, p["item_id"])
+    amount = int(p.get("amount", 1))
+    if it.charges is None or it.charges < amount:
+        raise ValueError("sin cargas suficientes")
+    it.charges -= amount
+    return {"operation_type": "character.item.charge.restore",
+            "payload": {"item_id": it.id,
+                        "charges": it.charges + amount,
+                        "charges_max": it.charges_max}}, [
+        {"type": "inventory.item.charged",
+         "payload": {"item": it.name, "charges": it.charges,
+                     "charges_max": it.charges_max}}]
+
+
+@op("character.item.charge.restore")
+def item_charge_restore(char: Character, p: dict, ctx):
+    """Restaura cargas a un valor absoluto (descanso, recarga,
+    corrección). Reversible."""
+    it = _item(char, p["item_id"])
+    old = {"charges": it.charges, "charges_max": it.charges_max}
+    it.charges = p.get("charges")
+    it.charges_max = p.get("charges_max", it.charges_max)
+    return {"operation_type": "character.item.charge.restore",
+            "payload": {"item_id": it.id, **old}}, [
+        {"type": "inventory.item.charged",
+         "payload": {"item": it.name, "charges": it.charges,
+                     "charges_max": it.charges_max}}]
+
+
+@op("character.item.weight.set")
+def item_weight_set(char: Character, p: dict, ctx):
+    """Peso en libras del objeto (capacidad de carga)."""
+    it = _item(char, p["item_id"])
+    old = it.weight
+    it.weight = max(0.0, float(p["weight"]))
+    return {"operation_type": "character.item.weight.set",
+            "payload": {"item_id": it.id, "weight": old}}, [
+        {"type": "inventory.item.transferred",
+         "payload": {"weight": it.name, "value": it.weight}}]
+
+
+@op("character.spellbook.add")
+def spellbook_add(char: Character, p: dict, ctx):
+    """Añade un conjuro a un libro organizativo (dominio, dones…).
+    Crea el libro si no existe. Reversible."""
+    name = p["name"].strip()
+    sid = p["spell_id"]
+    book = char.spellbooks.setdefault(name, [])
+    if sid in book:
+        raise ValueError("conjuro ya en el libro")
+    book.append(sid)
+    return {"operation_type": "character.spellbook.remove",
+            "payload": {"name": name, "spell_id": sid}}, [
+        {"type": "resource.usage.changed",
+         "payload": {"spellbook": name, "added": sid}}]
+
+
+@op("character.spellbook.remove")
+def spellbook_remove(char: Character, p: dict, ctx):
+    name = p["name"]
+    book = char.spellbooks.get(name)
+    sid = p["spell_id"]
+    if not book or sid not in book:
+        raise ValueError("conjuro no está en el libro")
+    book.remove(sid)
+    if not book:
+        del char.spellbooks[name]
+    return {"operation_type": "character.spellbook.add",
+            "payload": {"name": name, "spell_id": sid}}, [
+        {"type": "resource.usage.changed",
+         "payload": {"spellbook": name, "removed": sid}}]
+
+
+@op("character.spellbook.delete")
+def spellbook_delete(char: Character, p: dict, ctx):
+    name = p["name"]
+    book = char.spellbooks.pop(name, None)
+    if book is None:
+        raise ValueError("libro no encontrado")
+    inv = {"operation_type": "character.spellbook.restore",
+           "payload": {"name": name, "spells": book}}
+    return inv, [{"type": "resource.usage.changed",
+                  "payload": {"spellbook_deleted": name}}]
+
+
+@op("character.spellbook.restore")
+def spellbook_restore(char: Character, p: dict, ctx):
+    name = p["name"]
+    prev = char.spellbooks.get(name, [])
+    char.spellbooks[name] = list(p.get("spells") or [])
+    return {"operation_type": "character.spellbook.restore",
+            "payload": {"name": name, "spells": prev}}, [
+        {"type": "resource.usage.changed",
+         "payload": {"spellbook_restored": name}}]
+
+
 @op("character.spell.learn")
 def spell_learn(char: Character, p: dict, ctx):
     sid = p["spell_id"]
     if sid in char.spells_known:
         raise ValueError("conjuro ya conocido")
     char.spells_known.append(sid)
+    # restauración desde undo de forget conserva "preparado"
+    if p.get("prepared") and sid not in char.spells_prepared:
+        char.spells_prepared.append(sid)
     return {"operation_type": "character.spell.forget",
             "payload": {"spell_id": sid}}, [
         {"type": "resource.usage.changed",
@@ -901,9 +1428,15 @@ def spell_forget(char: Character, p: dict, ctx):
     sid = p["spell_id"]
     if sid not in char.spells_known:
         raise ValueError("conjuro no conocido")
+    was_prepared = sid in char.spells_prepared
     char.spells_known.remove(sid)
+    if was_prepared:
+        char.spells_prepared.remove(sid)
+    # deshacer restaura también el estado "preparado"
     return {"operation_type": "character.spell.learn",
-            "payload": {"spell_id": sid}}, []
+            "payload": {"spell_id": sid,
+                        **({"prepared": True}
+                           if was_prepared else {})}}, []
 
 
 @op("character.feat.learn")
@@ -994,6 +1527,46 @@ def subclass_set(char: Character, p: dict, ctx):
          "payload": {"subclass_set": p["subclass_id"]}}]
 
 
+@op("character.identity.set")
+def identity_set(char: Character, p: dict, ctx):
+    """Edita identidad de cabecera de la hoja oficial: name, alignment,
+    player_name, speed, species_id, background_id — reversible.
+    field='speeds' actualiza una velocidad extra {fly: 40} (0 la quita)."""
+    field = p["field"]
+    allowed = {"name", "alignment", "player_name", "speed",
+               "species_id", "background_id", "speeds", "senses"}
+    if field not in allowed:
+        raise ValueError(f"campo no editable: {field}")
+    inv = {"operation_type": "character.identity.set",
+           "payload": {"field": field, "value": getattr(char, field)}}
+    if field == "speeds":
+        prev = dict(char.speeds)
+        for kind, v in (p.get("value") or {}).items():
+            v = int(v)
+            if v > 0:
+                char.speeds[kind] = v
+            else:
+                char.speeds.pop(kind, None)
+        inv = {"operation_type": "character.speeds.set",
+               "payload": {"speeds": prev}}
+        return inv, [{"type": "resource.usage.changed",
+                      "payload": {"identity": "speeds"}}]
+    value = int(p["value"]) if field == "speed" else p.get("value", "")
+    setattr(char, field, value)
+    return inv, [{"type": "resource.usage.changed",
+                  "payload": {"identity": field}}]
+
+
+@op("character.speeds.set")
+def speeds_set(char: Character, p: dict, ctx):
+    """Restaura el mapa completo de velocidades (inversa de
+    identity.set field=speeds)."""
+    prev = dict(char.speeds)
+    char.speeds = {k: int(v) for k, v in (p.get("speeds") or {}).items()}
+    return {"operation_type": "character.speeds.set",
+            "payload": {"speeds": prev}}, []
+
+
 @op("character.language.add")
 def language_add(char: Character, p: dict, ctx):
     name = p["name"].strip().lower()
@@ -1030,13 +1603,16 @@ def reward_remove(char: Character, p: dict, ctx):
 
 @op("character.proficiency.add")
 def proficiency_add(char: Character, p: dict, ctx):
-    """Añade competencia: kind = skill|save (usa las listas
-    especializadas que alimentan las tiradas automáticas)."""
+    """Añade competencia: kind = skill|save|other (skill/save alimentan
+    las tiradas automáticas
+    'other' cubre armaduras, armas y
+    herramientas como en la caja 'otras competencias' de la hoja)."""
     kind, name = p["kind"], p["name"].lower()
     lst = {"skill": char.skill_proficiencies,
-           "save": char.save_proficiencies}.get(kind)
+           "save": char.save_proficiencies,
+           "other": char.other_proficiencies}.get(kind)
     if lst is None:
-        raise ValueError("kind debe ser skill|save")
+        raise ValueError("kind debe ser skill|save|other")
     if name in lst:
         raise ValueError("ya competente")
     lst.append(name)
@@ -1049,7 +1625,8 @@ def proficiency_add(char: Character, p: dict, ctx):
 def proficiency_remove(char: Character, p: dict, ctx):
     kind, name = p["kind"], p["name"].lower()
     lst = {"skill": char.skill_proficiencies,
-           "save": char.save_proficiencies}.get(kind)
+           "save": char.save_proficiencies,
+           "other": char.other_proficiencies}.get(kind)
     if lst is None or name not in lst:
         raise ValueError("competencia no encontrada")
     lst.remove(name)
@@ -1062,9 +1639,11 @@ def narrative_set(char: Character, p: dict, ctx):
     """Edita campos de trasfondo narrativo (personality, ideals, bonds,
     flaws, appearance, backstory) — reversible."""
     field = p["field"]
+    if field not in Narrative.model_fields or field == "journal":
+        raise ValueError(f"campo narrativo no editable: {field}")
     inv = {"operation_type": "character.narrative.set",
            "payload": {"field": field,
-                       "value": getattr(char.narrative, field, None)}}
+                       "value": getattr(char.narrative, field)}}
     setattr(char.narrative, field, p.get("value", ""))
     return inv, [{"type": "resource.usage.changed",
                   "payload": {"narrative": field}}]
@@ -1104,14 +1683,13 @@ def craft(char: Character, p: dict, ctx):
 
 def _content(ctx, entity_id: str) -> dict | None:
     """Lee una entidad de la content DB (None si no hay ctx/DB)."""
-    import json as _json
     try:
         row = ctx.content_db().execute(
             "SELECT data FROM content_entities WHERE id = ?",
             (entity_id,)).fetchone()
     except Exception:
         return None
-    return _json.loads(row["data"]) if row else None
+    return json.loads(row["data"]) if row else None
 
 
 def _resource(char: Character, rid: str):

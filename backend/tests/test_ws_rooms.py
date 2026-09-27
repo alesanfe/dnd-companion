@@ -59,7 +59,6 @@ def test_public_roll_reaches_everyone():
 
 def test_secret_roll_http_payload_flagged():
     """El endpoint marca visibility=dm cuando secret=True."""
-    import uuid
     from fastapi.testclient import TestClient
     from app.main import app
     c = TestClient(app)

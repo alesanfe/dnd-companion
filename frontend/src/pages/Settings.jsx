@@ -1,0 +1,215 @@
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { api } from '../api.js'
+import { pendingOps } from '../db.js'
+import { clearAuth, currentUser, getPrefs, setAuth, setPref }
+  from '../session.js'
+import { useT } from '../i18n.jsx'
+
+/** Ajustes consolidados: cuenta, apariencia, accesibilidad y
+    estado de sincronización — antes repartidos en el header. */
+export default function Settings() {
+  const { t, lang, setLang } = useT()
+  const [user, setUser] = useState(currentUser())
+  const [creds, setCreds] = useState({ u: '', p: '' })
+  const [prefs, setPrefs] = useState(getPrefs())
+  const [online, setOnline] = useState(navigator.onLine)
+  const [pending, setPending] = useState(0)
+
+  useEffect(() => {
+    const tick = async () => {
+      setOnline(navigator.onLine)
+      setPending((await pendingOps()).length)
+    }
+    tick()
+    window.addEventListener('online', tick)
+    window.addEventListener('offline', tick)
+    return () => {
+      window.removeEventListener('online', tick)
+      window.removeEventListener('offline', tick)
+    }
+  }, [])
+
+  const auth = async (fn) => {
+    const r = await fn(creds.u, creds.p)
+    setAuth(r.token, { user_id: r.user_id, username: creds.u })
+    setUser(currentUser()); setCreds({ u: '', p: '' })
+  }
+  const pref = (k, v) => { setPref(k, v); setPrefs(getPrefs()) }
+
+  return (
+    <main>
+      <h1>{t('set.title')}</h1>
+
+      <section className="card">
+        <h2>{t('set.account')}</h2>
+        {user ? (
+          <div className="row">
+            <span style={{ flex: 1 }}>{user.username}</span>
+            <button className="ghost" onClick={async () => {
+              // revoca el token en el servidor antes de limpiar
+              // local — si falla la red se limpia igual
+              try { await api.logout() } catch { /* offline */ }
+              clearAuth(); setUser(null)
+            }}>{t('account.logout')}</button>
+          </div>) : (
+          <>
+            <div className="row">
+              <input placeholder={t('account.user')} value={creds.u}
+                     onChange={(e) =>
+                       setCreds({ ...creds, u: e.target.value })} />
+              <input placeholder={t('account.pass')} type="password"
+                     value={creds.p}
+                     onChange={(e) =>
+                       setCreds({ ...creds, p: e.target.value })} />
+            </div>
+            <div className="row">
+              <button onClick={() => auth(api.login)}>
+                {t('account.login')}</button>
+              <button className="ghost" onClick={() => auth(api.register)}>
+                {t('account.register')}</button>
+            </div>
+            <p className="muted">{t('set.accountHint')}</p>
+          </>)}
+      </section>
+
+      <section className="card set-list">
+        <h2>{t('set.appearance')}</h2>
+        <label>{t('set.lang')}
+          <select value={lang} onChange={(e) => setLang(e.target.value)}>
+            <option value="es">Español</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+        <label>{t('set.theme')}
+          <select value={prefs.theme}
+                  onChange={(e) => pref('theme', e.target.value)}>
+            <option value="dark">{t('set.themeDark')}</option>
+            <option value="light">{t('set.themeLight')}</option>
+            <option value="sepia">{t('set.themeSepia')}</option>
+            <option value="hc">{t('set.themeHc')}</option>
+          </select>
+        </label>
+        <label>{t('set.font')}
+          <select value={prefs.font}
+                  onChange={(e) => pref('font', e.target.value)}>
+            <option value="sm">{t('set.fontSm')}</option>
+            <option value="md">{t('set.fontMd')}</option>
+            <option value="lg">{t('set.fontLg')}</option>
+            <option value="xl">{t('set.fontXl')}</option>
+          </select>
+        </label>
+        <label>{t('set.density')}
+          <select value={prefs.density}
+                  onChange={(e) => pref('density', e.target.value)}>
+            <option value="comfortable">{t('set.densComfort')}</option>
+            <option value="normal">{t('set.densNormal')}</option>
+            <option value="compact">{t('set.densCompact')}</option>
+          </select>
+        </label>
+        <label>
+          <input type="checkbox" checked={prefs.motion === 'off'}
+                 onChange={(e) =>
+                   pref('motion', e.target.checked ? 'off' : 'on')} />
+          {' '}{t('set.motion')}
+        </label>
+        <label>
+          <input type="checkbox" checked={prefs.dyslexia === 'on'}
+                 onChange={(e) =>
+                   pref('dyslexia', e.target.checked ? 'on' : 'off')} />
+          {' '}{t('set.dyslexia')}
+        </label>
+      </section>
+
+      <section className="card" id="sync">
+        <h2>{t('set.sync')}</h2>
+        <div className="row">
+          <span className={online ? '' : 'muted'}>
+            {online ? t('sync.online') : t('sync.offline')}</span>
+          {pending > 0
+            ? <span className="muted">{pending} {t('sync.pending')}</span>
+            : <span className="muted">{t('charlist.synced')} ✓</span>}
+        </div>
+        <SyncConflicts />
+      </section>
+
+      <PackagesCard />
+    </main>
+  )
+}
+
+/** Paquetes de contenido instalables (manifest + entidades) —
+    las fuentes instaladas salen como 'pkg:<id>' en el compendio. */
+function PackagesCard() {
+  const { t, tf } = useT()
+  const [pkgs, setPkgs] = useState(null)
+  const [msg, setMsg] = useState(null)
+  const load = () => api.listPackages()
+    .then((r) => setPkgs(r.packages || []))
+    .catch(() => setPkgs([]))
+  useEffect(() => { load() }, [])
+  const onFile = async (e) => {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    if (!f) return
+    try {
+      const body = JSON.parse(await f.text())
+      const r = await api.installPackage(body)
+      setMsg(`✓ ${r.package}: ${r.entities} ${t('pkg.entities')}`)
+      load()
+    } catch (ex) { setMsg(`⚠ ${ex.message}`) }
+  }
+  return (
+    <section className="card">
+      <h2>{t('pkg.title')}</h2>
+      <label className="ghost" role="button" tabIndex={0}
+             style={{ cursor: 'pointer' }}>
+        {t('pkg.install')}
+        <input type="file" accept=".json" hidden onChange={onFile} />
+      </label>
+      {msg && <p className="muted" role="status">{msg}</p>}
+      {(pkgs || []).map((p) => (
+        <div key={p.id} className="row">
+          <span style={{ flex: 1 }}>
+            <strong>{p.name}</strong>{' '}
+            <span className="muted">v{p.version}</span></span>
+          <span className="chip">{p.license}</span>
+          {!p.distribution_allowed && (
+            <span className="chip" title={t('pkg.privateTitle')}>
+              {t('pkg.private')}</span>)}
+        </div>))}
+      {pkgs?.length === 0 && <p className="muted">{t('pkg.empty')}</p>}
+      <p className="muted" style={{ fontSize: '.8rem' }}>
+        {t('pkg.hint')}</p>
+    </section>
+  )
+}
+
+/** Operaciones rechazadas por optimistic locking — revisar a mano. */
+function SyncConflicts() {
+  const { t, tf } = useT()
+  const [rows, setRows] = useState(null)
+  useEffect(() => {
+    api.opConflicts()
+      .then((r) => setRows(r.conflicts || []))
+      .catch(() => setRows([]))
+  }, [])
+  if (!rows?.length) return null
+  return (
+    <div role="alert">
+      <strong>⚠ {tf('set.conflicts', { n: rows.length })}
+      </strong>
+      <span className="muted">
+        {t('set.conflictsHint')}</span>
+      <ul style={{ margin: '.3rem 0', paddingLeft: '1rem' }}>
+        {rows.map((r) => (
+          <li key={r.operation_id}>
+            <Link to={`/character/${r.entity_id}/actividad`}>
+              {r.operation_type}</Link>
+            <span className="muted">
+              {' '}· {r.timestamp?.slice(11, 19)}</span>
+          </li>))}
+      </ul>
+    </div>
+  )
+}

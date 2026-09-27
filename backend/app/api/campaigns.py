@@ -17,6 +17,24 @@ from ..ws.rooms import manager
 
 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
 
+_DM_ROLES = ("owner", "co_dm")
+
+
+def _require_role(conn, campaign_id: str, user: dict | None,
+                  roles: tuple = _DM_ROLES + ("player", "guest")) -> None:
+    """Si la campaña tiene dueño, exige membresía con el rol pedido;
+    campañas locales (owner_id NULL, sin cuentas) quedan abiertas."""
+    row = conn.execute(
+        "SELECT owner_id FROM campaigns WHERE id = ?",
+        (campaign_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "campaign not found")
+    if row["owner_id"] is None:
+        return                     # modo local: sin autenticación
+    role = member_role(campaign_id, (user or {}).get("user_id"))
+    if role not in roles:
+        raise HTTPException(403, "sin permiso en esta campaña")
+
 
 class CampaignCreate(BaseModel):
     name: str
@@ -96,10 +114,18 @@ def join_campaign(body: JoinIn,
 
 
 @router.delete("/{campaign_id}/entities/{entity_id}")
-def delete_entity(campaign_id: str, entity_id: str):
+async def delete_entity(campaign_id: str, entity_id: str,
+                  user: dict | None = Depends(optional_user)):
     """Borra una entidad de campaña (y sus relaciones)."""
     conn = state_db()
-    cur = conn.execute(
+    _require_role(conn, campaign_id, user, _DM_ROLES)
+    row = conn.execute(
+        "SELECT name, kind, visibility FROM campaign_entities "
+        "WHERE id = ? AND campaign_id = ?",
+        (entity_id, campaign_id)).fetchone()
+    if row is None:
+        raise HTTPException(404, "entity not found")
+    conn.execute(
         "DELETE FROM campaign_entities WHERE id = ? AND campaign_id = ?",
         (entity_id, campaign_id))
     conn.execute(
@@ -107,14 +133,33 @@ def delete_entity(campaign_id: str, entity_id: str):
         "AND (from_id = ? OR to_id = ?)",
         (campaign_id, entity_id, entity_id))
     conn.commit()
-    if cur.rowcount == 0:
-        raise HTTPException(404, "entity not found")
+    await _notify_entity(campaign_id, entity_id, ["deleted"],
+                         row["visibility"], row["kind"], row["name"])
     return {"deleted": entity_id}
 
 
+async def _notify_entity(campaign_id: str, entity_id: str,
+                         changed: list[str], visibility: str,
+                         kind: str = "", name: str = "") -> None:
+    """Broadcast ligero para refresco de clientes (pestaña Mapa del
+    jugador, tablero del DM). visibility='dm' → solo sockets DM,
+    así una entidad oculta no se delata a los jugadores."""
+    from ..domain.events import Event, EventType
+    ev = Event(event_id=uuid.uuid4().hex,
+               type=EventType.ENTITY_UPDATED,
+               campaign_id=campaign_id, aggregate_id=entity_id,
+               aggregate_version=0, actor_id="dm",
+               occurred_at=datetime.now(timezone.utc),
+               payload={"kind": kind, "name": name,
+                        "changed": changed, "visibility": visibility})
+    await manager.broadcast(campaign_id, ev)
+
+
 @router.delete("/{campaign_id}/sessions/{session_id}")
-def delete_session(campaign_id: str, session_id: str):
+def delete_session(campaign_id: str, session_id: str,
+                   user: dict | None = Depends(optional_user)):
     conn = state_db()
+    _require_role(conn, campaign_id, user, _DM_ROLES)
     cur = conn.execute(
         "DELETE FROM sessions WHERE id = ? AND campaign_id = ?",
         (session_id, campaign_id))
@@ -231,6 +276,8 @@ def campaign_state(campaign_id: str):
         "combats": [{**dict(c), "data": json.loads(c["data"])}
                     for c in combats],
         "events": [dict(e) for e in events],
+        # presencia actual en la sala WS (resync tras reconexión)
+        "presence": manager.present(campaign_id),
     }
 
 
@@ -247,14 +294,15 @@ class EntityIn(BaseModel):
 
 
 @router.post("/{campaign_id}/entities", status_code=201)
-def create_entity(campaign_id: str, body: EntityIn,
+async def create_entity(campaign_id: str, body: EntityIn,
                   user: dict | None = Depends(optional_user)):
+    conn = state_db()
+    _require_role(conn, campaign_id, user)
     role = member_role(campaign_id, (user or {}).get("user_id"))
-    if user is not None and role not in ("owner", "co_dm") \
+    if role is not None and role not in ("owner", "co_dm") \
             and body.visibility == "dm":
         raise HTTPException(
             403, "solo el DM puede crear entidades ocultas")
-    conn = state_db()
     eid = uuid.uuid4().hex
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
@@ -266,6 +314,8 @@ def create_entity(campaign_id: str, body: EntityIn,
          body.visibility, json.dumps(body.known_to),
          body.reveal_condition, now, now))
     conn.commit()
+    await _notify_entity(campaign_id, eid, ["created"],
+                         body.visibility, body.kind, body.name)
     return {"id": eid}
 
 
@@ -303,9 +353,11 @@ def list_entities(campaign_id: str, kind: str | None = None,
 
 
 @router.post("/{campaign_id}/entities/{entity_id}/reveal")
-async def reveal_entity(campaign_id: str, entity_id: str):
+async def reveal_entity(campaign_id: str, entity_id: str,
+                        user: dict | None = Depends(optional_user)):
     """El DM revela la entidad a todos los jugadores — evento WS."""
     conn = state_db()
+    _require_role(conn, campaign_id, user, _DM_ROLES)
     now = datetime.now(timezone.utc).isoformat()
     cur = conn.execute(
         """UPDATE campaign_entities
@@ -350,8 +402,10 @@ class RelationshipIn(BaseModel):
 
 
 @router.post("/{campaign_id}/relationships", status_code=201)
-def create_relationship(campaign_id: str, body: RelationshipIn):
+def create_relationship(campaign_id: str, body: RelationshipIn,
+                        user: dict | None = Depends(optional_user)):
     conn = state_db()
+    _require_role(conn, campaign_id, user, _DM_ROLES)
     rid = uuid.uuid4().hex
     conn.execute(
         """INSERT INTO relationships
@@ -366,15 +420,39 @@ def create_relationship(campaign_id: str, body: RelationshipIn):
 
 
 @router.get("/{campaign_id}/relationships")
-def list_relationships(campaign_id: str, entity_id: str | None = None):
+def list_relationships(campaign_id: str, entity_id: str | None = None,
+                       viewer: str | None = None,
+                       user: dict | None = Depends(optional_user)):
+    """Mismo filtro que las entidades: un jugador solo ve las
+    relaciones públicas — las de DM no se filtran."""
     conn = state_db()
+    uid = (user or {}).get("user_id")
+    if user is not None:
+        is_dm = member_role(campaign_id, uid) in ("owner", "co_dm")
+    else:
+        is_dm = (viewer or "dm") == "dm"  # compat modo local
     sql = "SELECT * FROM relationships WHERE campaign_id = ?"
     params: list = [campaign_id]
     if entity_id:
         sql += " AND (from_id = ? OR to_id = ?)"
         params += [entity_id, entity_id]
+    if not is_dm:
+        sql += " AND visibility != 'dm'"
     rows = conn.execute(sql, params).fetchall()
     return {"relationships": [dict(r) for r in rows]}
+
+
+@router.delete("/{campaign_id}/relationships/{rel_id}", status_code=204)
+def delete_relationship(campaign_id: str, rel_id: str,
+                        user: dict | None = Depends(optional_user)):
+    conn = state_db()
+    _require_role(conn, campaign_id, user, _DM_ROLES)
+    cur = conn.execute(
+        "DELETE FROM relationships WHERE id = ? AND campaign_id = ?",
+        (rel_id, campaign_id))
+    if cur.rowcount == 0:
+        raise HTTPException(404, "relationship not found")
+    conn.commit()
 
 
 class EntityPatch(BaseModel):
@@ -386,9 +464,11 @@ class EntityPatch(BaseModel):
 
 
 @router.patch("/{campaign_id}/entities/{entity_id}")
-def patch_entity(campaign_id: str, entity_id: str, body: EntityPatch):
+async def patch_entity(campaign_id: str, entity_id: str, body: EntityPatch,
+                       user: dict | None = Depends(optional_user)):
     """Actualiza campos de una entidad (orden de escena, estado, notas…)."""
     conn = state_db()
+    _require_role(conn, campaign_id, user)
     row = conn.execute(
         "SELECT * FROM campaign_entities WHERE id = ? AND campaign_id = ?",
         (entity_id, campaign_id)).fetchone()
@@ -396,14 +476,18 @@ def patch_entity(campaign_id: str, entity_id: str, body: EntityPatch):
         raise HTTPException(404, "entity not found")
     sets, params = [], []
     if body.name is not None:
-        sets.append("name = ?"); params.append(body.name)
+        sets.append("name = ?")
+        params.append(body.name)
     if body.data is not None:
         merged = {**json.loads(row["data"]), **body.data}
-        sets.append("data = ?"); params.append(json.dumps(merged))
+        sets.append("data = ?")
+        params.append(json.dumps(merged))
     if body.visibility is not None:
-        sets.append("visibility = ?"); params.append(body.visibility)
+        sets.append("visibility = ?")
+        params.append(body.visibility)
     if body.known_to is not None:
-        sets.append("known_to = ?"); params.append(json.dumps(body.known_to))
+        sets.append("known_to = ?")
+        params.append(json.dumps(body.known_to))
     if body.reveal_condition is not None:
         sets.append("reveal_condition = ?")
         params.append(body.reveal_condition)
@@ -415,8 +499,11 @@ def patch_entity(campaign_id: str, entity_id: str, body: EntityPatch):
         f"UPDATE campaign_entities SET {', '.join(sets)} WHERE id = ?",
         params)
     conn.commit()
-    return {"id": entity_id,
-            "changed": [s.split(" = ")[0] for s in sets[:-2]]}
+    changed = [s.split(" = ")[0] for s in sets[:-2]]
+    await _notify_entity(campaign_id, entity_id, changed,
+                         body.visibility or row["visibility"],
+                         row["kind"], row["name"])
+    return {"id": entity_id, "changed": changed}
 
 
 # --- Sesiones y línea temporal ---------------------------------------
@@ -429,8 +516,10 @@ class SessionIn(BaseModel):
 
 
 @router.post("/{campaign_id}/sessions", status_code=201)
-def create_session(campaign_id: str, body: SessionIn):
+def create_session(campaign_id: str, body: SessionIn,
+                   user: dict | None = Depends(optional_user)):
     conn = state_db()
+    _require_role(conn, campaign_id, user, _DM_ROLES)
     sid = uuid.uuid4().hex
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
@@ -473,15 +562,19 @@ class SessionPatch(BaseModel):
 
 
 @router.patch("/{campaign_id}/sessions/{session_id}")
-def patch_session(campaign_id: str, session_id: str, body: SessionPatch):
+def patch_session(campaign_id: str, session_id: str, body: SessionPatch,
+                  user: dict | None = Depends(optional_user)):
     conn = state_db()
+    _require_role(conn, campaign_id, user, _DM_ROLES)
     if body.status and body.status not in ("prep", "active", "done"):
         raise HTTPException(400, "status inválido")
     sets, params = [], []
     if body.status:
-        sets.append("status = ?"); params.append(body.status)
+        sets.append("status = ?")
+        params.append(body.status)
     if body.title:
-        sets.append("title = ?"); params.append(body.title)
+        sets.append("title = ?")
+        params.append(body.title)
     if not sets:
         return {"id": session_id, "changed": []}
     cur = conn.execute(
@@ -521,12 +614,14 @@ def timeline(campaign_id: str):
 
 
 @router.post("/{campaign_id}/scenes/{scene_id}/start", status_code=201)
-def start_scene_combat(campaign_id: str, scene_id: str):
+def start_scene_combat(campaign_id: str, scene_id: str,
+                       user: dict | None = Depends(optional_user)):
     """Inicia el combate preparado en una escena: crea el Combat con el
     nombre de la escena y añade los monstruos de data.monsters
     (content entity ids) como combatientes."""
     from ..domain.combat import Combat, Combatant
     conn = state_db()
+    _require_role(conn, campaign_id, user, _DM_ROLES)
     row = conn.execute(
         "SELECT data FROM campaign_entities WHERE id = ? AND campaign_id = ? "
         "AND kind = 'scene'", (scene_id, campaign_id)).fetchone()
@@ -677,8 +772,11 @@ class RollRequestIn(BaseModel):
 
 
 @router.post("/{campaign_id}/roll-request", status_code=202)
-async def request_roll(campaign_id: str, body: RollRequestIn):
+async def request_roll(campaign_id: str, body: RollRequestIn,
+                       user: dict | None = Depends(optional_user)):
     """El DM pide una tirada; llega como evento a la sala WS."""
+    conn = state_db()
+    _require_role(conn, campaign_id, user, _DM_ROLES)
     from ..domain.events import Event, EventType
     event = Event(
         event_id=uuid.uuid4().hex,
@@ -691,7 +789,6 @@ async def request_roll(campaign_id: str, body: RollRequestIn):
         payload={"expression": body.expression, "reason": body.reason,
                  "secret": body.secret},
     )
-    conn = state_db()
     conn.execute(
         """INSERT INTO events
            (event_id, campaign_id, aggregate_id, aggregate_version,

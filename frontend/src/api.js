@@ -68,7 +68,7 @@ export async function flushQueue() {
     try {
       const r = await fetch('/api/operations', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(op.payload),
       })
       await markOp(op.id, r.ok ? 'synced' : 'rejected')
@@ -92,6 +92,7 @@ export const api = {
       method: 'POST', body: JSON.stringify({ username, password }),
     }),
   me: () => req('/api/auth/me'),
+  logout: () => req('/api/auth/logout', { method: 'POST' }),
   patchCharacter: (id, body) =>
     req(`/api/characters/${id}`, {
       method: 'PATCH', body: JSON.stringify(body) }),
@@ -105,6 +106,20 @@ export const api = {
     req(`/api/campaigns/${campaignId}/sessions`, {
       method: 'POST', body: JSON.stringify(body),
     }),
+  patchSession: (campaignId, sessionId, body) =>
+    req(`/api/campaigns/${campaignId}/sessions/${sessionId}`, {
+      method: 'PATCH', body: JSON.stringify(body),
+    }),
+  getCampaign: (id) => req(`/api/campaigns/${id}`),
+  deleteCharacter: (id) =>
+    req(`/api/characters/${id}`, { method: 'DELETE' }),
+  deleteEntity: (campaignId, entityId) =>
+    req(`/api/campaigns/${campaignId}/entities/${entityId}`,
+        { method: 'DELETE' }),
+  exportVtt: (campaignId) =>
+    req(`/api/campaigns/${campaignId}/export-vtt`),
+  addParty: (combatId) =>
+    req(`/api/combat/${combatId}/add-party`, { method: 'POST' }),
   timeline: (campaignId) =>
     req(`/api/campaigns/${campaignId}/timeline`),
   listCharacters: () => req('/api/characters'),
@@ -146,6 +161,9 @@ export const api = {
         `?character_ids=${characterIds.join(',')}`),
   exportCampaign: (campaignId) =>
     req(`/api/campaigns/${campaignId}/export`),
+  importCampaign: (bundle) =>
+    req('/api/campaigns/import',
+        { method: 'POST', body: JSON.stringify(bundle) }),
   startScene: (campaignId, sceneId) =>
     req(`/api/campaigns/${campaignId}/scenes/${sceneId}/start`,
         { method: 'POST' }),
@@ -182,8 +200,17 @@ export const api = {
     req('/api/combat', {
       method: 'POST', body: JSON.stringify({ name, campaign_id, ruleset }),
     }),
+  listCombats: (campaignId, status) =>
+    req(`/api/combat?campaign_id=${campaignId}` +
+        (status ? `&status=${status}` : '')),
   getCombat: (id, reveal = true) =>
     req(`/api/combat/${id}?reveal_hp=${reveal}`),
+  deleteCombat: (id) =>
+    req(`/api/combat/${id}`, { method: 'DELETE' }),
+  listPackages: () => req('/api/packages'),
+  installPackage: (pkg) =>
+    req('/api/packages/install',
+        { method: 'POST', body: JSON.stringify(pkg) }),
   /** Cambio de estado vía operación idempotente. Si no hay red,
       encola en IndexedDB y se reenvía al volver (offline-first). */
   applyOp: async (entity, operationType, payload, kind = 'character') => {
@@ -210,6 +237,7 @@ export const api = {
     }
   },
   opHistory: (entityId) => req(`/api/operations?entity_id=${entityId}`),
+  opConflicts: () => req('/api/operations/conflicts'),
   undoOp: (opId) => req(`/api/operations/undo/${opId}`, { method: 'POST' }),
   exportCharacter: (id) => req(`/api/characters/${id}/export`),
   importCharacter: (character) => req('/api/characters/import', {
@@ -217,8 +245,10 @@ export const api = {
   }),
   combatDifficulty: (combatId) =>
     req(`/api/encounters/for-combat/${combatId}`),
-  commandSearch: (q) =>
-    req(`/api/content/command?q=${encodeURIComponent(q)}`),
+  commandSearch: (q, source) =>
+    req(`/api/content/command?q=${encodeURIComponent(q)}` +
+        (source ? `&source=${encodeURIComponent(source)}` : '')),
+  characterActions: (id) => req(`/api/characters/${id}/actions`),
   rulesTables: () => req('/api/rules/tables'),
   rulesAsk: (question, ruleset) =>
     req('/api/rules/ask', {
@@ -244,9 +274,14 @@ export const api = {
     req(`/api/campaigns/${campaignId}/relationships`, {
       method: 'POST', body: JSON.stringify(body),
     }),
-  listRelationships: (campaignId, entityId) =>
-    req(`/api/campaigns/${campaignId}/relationships` +
-        (entityId ? `?entity_id=${entityId}` : '')),
+  listMembers: (campaignId) =>
+    req(`/api/campaigns/${campaignId}/members`),
+  deleteRelationship: (campaignId, relId) =>
+    req(`/api/campaigns/${campaignId}/relationships/${relId}`,
+        { method: 'DELETE' }),
+  listRelationships: (campaignId, entityId, viewer = 'dm') =>
+    req(`/api/campaigns/${campaignId}/relationships?viewer=${viewer}` +
+        (entityId ? `&entity_id=${entityId}` : '')),
   requestRoll: (campaignId, body) =>
     req(`/api/campaigns/${campaignId}/roll-request`, {
       method: 'POST', body: JSON.stringify(body),

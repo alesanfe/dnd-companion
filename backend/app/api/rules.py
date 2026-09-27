@@ -91,7 +91,7 @@ def ask(body: AskIn):
 def _fts_query(question: str) -> str:
     """Convierte lenguaje natural en query FTS5 segura (OR de términos)."""
     stop = {"de", "la", "el", "en", "que", "un", "una", "como", "cómo",
-            "qué", "se", "a", "y", "o", "con", "por", "para", "the", "a",
+            "qué", "se", "a", "y", "o", "con", "por", "para", "the",
             "of", "how", "what", "is", "does", "do", "can", "i", "my"}
     terms = [t.strip("¿?¡!.,;:()\"'") for t in question.lower().split()]
     terms = [t for t in terms if len(t) > 2 and t not in stop]

@@ -105,9 +105,9 @@ def background_languages(bg: dict) -> list[str]:
         if isinstance(grp, dict):
             out.extend(k for k, v in grp.items()
                        if v is True and k != "choose")
-    for l in bg.get("languages") or []:
-        if isinstance(l, str):
-            out.append(l)
+    for lang in bg.get("languages") or []:
+        if isinstance(lang, str):
+            out.append(lang)
     return out
 
 

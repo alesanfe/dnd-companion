@@ -40,6 +40,15 @@ def _hp_inverse(c: Combatant) -> dict:
                         "temp": c.hp_temp}}
 
 
+def _char_ref(c: Combatant) -> dict:
+    """Marca los eventos de combate que tocan una ficha de personaje:
+    la UI de la hoja filtra por aggregate_id=character_id para
+    recargar cuando el DM daña/cura al PJ desde el tablero."""
+    if c.kind == "character" and c.ref_id:
+        return {"character_id": c.ref_id}
+    return {}
+
+
 def _sync_character(c: Combatant, ctx) -> None:
     """Si el combatiente es una ficha de personaje, propaga el HP a la
     tabla characters dentro de la misma transacción."""
@@ -68,7 +77,10 @@ def next_turn(combat: Combat, p: dict, ctx):
     order = combat.ordered()
     if not order:
         raise ValueError("no hay combatientes")
-    inv = {"operation_type": "combat.prev_turn", "payload": {}}
+    # snapshot: al cerrar ronda expiran condiciones — prev_turn no
+    # podría restaurarlas (duración y lista ya mutadas)
+    inv = {"operation_type": "combat.state.restore",
+           "payload": {"data": combat.model_dump()}}
     combat.turn_index += 1
     expired: list[str] = []
     if combat.turn_index >= len(order):
@@ -101,6 +113,8 @@ def prev_turn(combat: Combat, p: dict, ctx):
     if combat.turn_index < 0:
         combat.turn_index = len(order) - 1
         combat.round = max(1, combat.round - 1)
+    # volver atrás no restaura las condiciones que expiraron al
+    # cerrar la ronda — para eso está el snapshot de next_turn
     return inv, [{"type": "combat.turn.advanced",
                   "payload": {"round": combat.round,
                               "active": combat.active.name}}]
@@ -128,23 +142,8 @@ def combat_restore(combat: Combat, p: dict, ctx):
 def combatant_add(combat: Combat, p: dict, ctx):
     """Añade un combatiente. Con content_entity_id copia el stat block
     del bestiario (HP medio, CA, iniciativa = d20 + mod DES)."""
-    data = {}
-    if p.get("content_entity_id"):
-        row = ctx.content_db().execute(
-            "SELECT data FROM content_entities WHERE id = ?",
-            (p["content_entity_id"],)).fetchone()
-        if row:
-            data = json.loads(row["data"])
-    char_hp = None
-    if p.get("kind") == "character" and p.get("ref_id"):
-        try:
-            srow = ctx.state_db().execute(
-                "SELECT data FROM characters WHERE id = ?",
-                (p["ref_id"],)).fetchone()
-            if srow:
-                char_hp = json.loads(srow["data"]).get("hp")
-        except (AttributeError, Exception):
-            char_hp = None
+    data = _entity_data(ctx, p.get("content_entity_id"))
+    char_hp = _char_hp(ctx, p) if p.get("kind") == "character" else None
     # Normaliza cualquier schema de fuente (5e-bits, Open5e v1/v2,
     # 5etools, codexMUNDI, dnd-data) al bloque canónico.
     block = statblock.normalize(data) or p.get("stat_block")
@@ -152,6 +151,8 @@ def combatant_add(combat: Combat, p: dict, ctx):
     if init is None:
         init = roll("1d20").total + (
             (block or {}).get("initiative_mod", 0))
+    hp_max = (p.get("hp_max") or (char_hp or {}).get("max")
+              or (block or {}).get("hp", 1))
     c = Combatant(
         id=uuid.uuid4().hex,
         kind=p.get("kind", "monster" if data else "npc"),
@@ -159,9 +160,8 @@ def combatant_add(combat: Combat, p: dict, ctx):
         ref_id=p.get("ref_id") or p.get("content_entity_id"),
         initiative=int(init),
         hp_current=(p.get("hp_max") or (char_hp or {}).get("current")
-                    or (block or {}).get("hp", 1)),
-        hp_max=(p.get("hp_max") or (char_hp or {}).get("max")
-                or (block or {}).get("hp", 1)),
+                    or hp_max),
+        hp_max=hp_max,
         hp_temp=(char_hp or {}).get("temp", 0),
         ac=p.get("ac") or (block or {}).get("ac", 10),
         stat_block=block,
@@ -171,6 +171,30 @@ def combatant_add(combat: Combat, p: dict, ctx):
            "payload": {"combatant_id": c.id}}
     return inv, [{"type": "combat.turn.advanced",
                   "payload": {"added": c.name, "initiative": c.initiative}}]
+
+
+def _entity_data(ctx, entity_id: str | None) -> dict:
+    """JSON de la entidad de contenido (bestiario) — {} si falta."""
+    if not entity_id:
+        return {}
+    row = ctx.content_db().execute(
+        "SELECT data FROM content_entities WHERE id = ?",
+        (entity_id,)).fetchone()
+    return json.loads(row["data"]) if row else {}
+
+
+def _char_hp(ctx, p: dict):
+    """PG del personaje referenciado (kind=character) — None si no
+    existe o el dato no es recuperable."""
+    if not p.get("ref_id"):
+        return None
+    try:
+        srow = ctx.state_db().execute(
+            "SELECT data FROM characters WHERE id = ?",
+            (p["ref_id"],)).fetchone()
+        return json.loads(srow["data"]).get("hp") if srow else None
+    except (AttributeError, Exception):
+        return None
 
 
 @op("combatant.remove")
@@ -217,7 +241,7 @@ def combatant_damage(combat: Combat, p: dict, ctx):
     _sync_character(c, ctx)
     return inv, [{"type": "character.hp.changed",
                   "payload": {"combatant": c.name, "amount": amount,
-                              "state": hp_state(c),
+                              "state": hp_state(c), **_char_ref(c),
                               **({"note": note} if note else {})}}]
 
 
@@ -235,7 +259,7 @@ def combatant_heal(combat: Combat, p: dict, ctx):
     _sync_character(c, ctx)
     return inv, [{"type": "character.hp.changed",
                   "payload": {"combatant": c.name, "healed": amount,
-                              "state": hp_state(c)}}]
+                              "state": hp_state(c), **_char_ref(c)}}]
 
 
 @op("combatant.death_save")
@@ -261,7 +285,7 @@ def combatant_death_save(combat: Combat, p: dict, ctx):
     return inv, [{"type": "character.hp.changed",
                   "payload": {"combatant": c.name,
                               "death_save": key,
-                              "outcome": outcome}}]
+                              "outcome": outcome, **_char_ref(c)}}]
 
 
 @op("combatant.death_save_roll")
@@ -299,7 +323,7 @@ def combatant_death_save_roll(combat: Combat, p: dict, ctx):
     _sync_character(c, ctx)
     return inv, [{"type": "character.hp.changed",
                   "payload": {"combatant": c.name, "death_save_roll": r.total,
-                              "outcome": outcome}}]
+                              "outcome": outcome, **_char_ref(c)}}]
 
 
 @op("combatant.death_save.set")
@@ -326,7 +350,11 @@ def combatant_hp_set(combat: Combat, p: dict, ctx):
     c.hp_current = max(0, min(c.hp_max, int(p["current"])))
     c.hp_temp = max(0, int(p.get("temp", c.hp_temp)))
     _sync_character(c, ctx)
-    return inv, []
+    return inv, [{"type": "character.hp.changed",
+                  "payload": {"combatant": c.name,
+                              "current": c.hp_current,
+                              "temp": c.hp_temp,
+                              "state": hp_state(c), **_char_ref(c)}}]
 
 
 @op("combatant.initiative.roll")
@@ -370,8 +398,15 @@ def combatant_initiative(combat: Combat, p: dict, ctx):
 def combatant_cond_apply(combat: Combat, p: dict, ctx):
     """`rounds` (opcional) fija duración: expira al cerrar esa ronda."""
     c = _find(combat, p["combatant_id"])
-    inv = {"operation_type": "combatant.condition.remove",
-           "payload": {"combatant_id": c.id, "condition": p["condition"]}}
+    if p["condition"] in c.conditions:
+        # ya presente: solo cambia la duración — snapshot para que el
+        # undo no elimine una condición preexistente
+        inv = {"operation_type": "combat.state.restore",
+               "payload": {"data": combat.model_dump()}}
+    else:
+        inv = {"operation_type": "combatant.condition.remove",
+               "payload": {"combatant_id": c.id,
+                           "condition": p["condition"]}}
     if p["condition"] not in c.conditions:
         c.conditions.append(p["condition"])
     if p.get("rounds"):
@@ -443,7 +478,7 @@ def combatant_action_roll(combat: Combat, p: dict, ctx):
     m_dc = re.search(r"DC\s*(\d+)", text, re.IGNORECASE)
     m_dmg = re.search(r"(\d+d\d+(?:\s*[+-]\s*\d+)?)", text)
 
-    adv, dis, fail, notes = mods_for(c.conditions, "attack")
+    adv, dis, _fail, notes = mods_for(c.conditions, "attack")
     ev = {"type": "dice.roll.created", "payload": {
         "combatant": c.name, "action": action.get("name", "?"),
         **({"notes": notes} if notes else {})}}
@@ -514,10 +549,14 @@ def noop(entity, p: dict, ctx):
 @op("combatant.condition.remove")
 def combatant_cond_remove(combat: Combat, p: dict, ctx):
     c = _find(combat, p["combatant_id"])
+    cond = p["condition"]
+    had_rounds = c.condition_durations.get(cond)
     inv = {"operation_type": "combatant.condition.apply",
-           "payload": {"combatant_id": c.id, "condition": p["condition"]}}
-    if p["condition"] in c.conditions:
-        c.conditions.remove(p["condition"])
+           "payload": {"combatant_id": c.id, "condition": cond,
+                       **({"rounds": had_rounds} if had_rounds else {})}}
+    if cond in c.conditions:
+        c.conditions.remove(cond)
+    c.condition_durations.pop(cond, None)
     return inv, [{"type": "character.condition.removed",
                   "payload": {"combatant": c.name,
                               "condition": p["condition"]}}]

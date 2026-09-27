@@ -95,7 +95,8 @@ def list_combats(campaign_id: str | None = None,
            "FROM combats WHERE 1=1")
     params: list = []
     if campaign_id:
-        sql += " AND campaign_id = ?"; params.append(campaign_id)
+        sql += " AND campaign_id = ?"
+        params.append(campaign_id)
     if status:
         sql += " AND json_extract(data,'$.status') = ?"
         params.append(status)

@@ -29,21 +29,19 @@ def canon(condition: str) -> str:
     return _ALIASES.get(c, c)
 
 
-def mods_for(conditions: list[str], roll_type: str):
+def mods_for(conditions: list[str], roll_type: str,
+             stacks: dict | None = None):
     """(adv, dis, fail, notes) para una tirada dadas las condiciones.
     'exhaustion N' escala: nivel 3+ también da desventaja en ataques
-    y salvaciones (regla SRD de niveles de agotamiento)."""
+    y salvaciones (regla SRD de niveles de agotamiento). El nivel
+    puede venir del nombre ('exhaustion 3') o del mapa `stacks`
+    (condition_stacks del personaje)."""
     adv = dis = fail = False
     notes: list[str] = []
     base = roll_type.split(":")[0]
     for cond in conditions or []:
         c = canon(cond)
-        level = 0
-        if c.startswith("exhaustion"):
-            try:
-                level = int(c.rsplit(" ", 1)[1])
-            except (IndexError, ValueError):
-                level = 1
+        level = _exhaustion_level(c, stacks)
         rule = dict(CONDITION_ROLLS.get(c, {}))
         if level >= 3:
             rule["dis"] = set(rule.get("dis", ())) | {"attack", "save"}
@@ -52,15 +50,32 @@ def mods_for(conditions: list[str], roll_type: str):
                 dis = True
         if not rule:
             continue
-        if not rule:
-            continue
         if any(roll_type == t or base == t for t in rule.get("adv", ())):
-            adv = True; notes.append(f"{cond}: ventaja")
+            adv = True
+            notes.append(f"{cond}: ventaja")
         if any(roll_type == t or base == t for t in rule.get("dis", ())):
-            dis = True; notes.append(f"{cond}: desventaja")
+            dis = True
+            notes.append(f"{cond}: desventaja")
         if roll_type in rule.get("fail", ()):
-            fail = True; notes.append(f"{cond}: fallo automático")
+            fail = True
+            notes.append(f"{cond}: fallo automático")
     return adv, dis, fail, notes
+
+
+def _exhaustion_level(c: str, stacks: dict | None) -> int:
+    """Nivel de agotamiento: 'exhaustion N' del nombre canónico o
+    del mapa de stacks del personaje (es/en)."""
+    if not c.startswith("exhaustion"):
+        return 0
+    try:
+        level = int(c.rsplit(" ", 1)[1])
+    except (IndexError, ValueError):
+        level = 1
+    if stacks:
+        level = max(level, int(stacks.get(c, 0)
+                               or stacks.get("exhaustion", 0)
+                               or stacks.get("agotamiento", 0)))
+    return level
 
 
 def is_incapacitated(conditions: list[str]) -> str | None:

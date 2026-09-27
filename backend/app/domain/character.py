@@ -65,6 +65,9 @@ class InventoryItem(BaseModel):
     equipped: bool = False
     attuned: bool = False
     source_id: str | None = None   # provenance si viene de content DB
+    charges: int | None = None     # varitas/pergamino/objetos con cargas
+    charges_max: int | None = None
+    weight: float = 0.0            # libras por unidad — capacidad de carga
 
 
 class Narrative(BaseModel):
@@ -76,9 +79,17 @@ class Narrative(BaseModel):
     backstory: str = ""
     allies: str = ""
     goals: str = ""
+    appearance: str = ""           # texto libre + campos estructurados ↓
+    age: str = ""                  # hoja oficial pág.2
+    height: str = ""
+    weight: str = ""
+    eyes: str = ""
+    skin: str = ""
+    hair: str = ""
     journal: list[str] = Field(default_factory=list)
     secrets: str = ""              # solo jugador + DM
     portrait_url: str | None = None
+    org_symbol: str | None = None  # emblema de aliados/organización
 
 
 class Character(BaseModel):
@@ -86,6 +97,12 @@ class Character(BaseModel):
     ruleset: Ruleset = Ruleset.DND5E_2014
     species_id: str | None = None  # content entity id
     background_id: str | None = None
+    alignment: str = ""            # LG, NG, CG, LN, N, CN, LE, NE, CE
+    player_name: str = ""          # jugador/a en mesa (hoja oficial)
+    speed: int = 30                # pies — velocidad andando, editable
+    speeds: dict[str, int] = Field(default_factory=dict)
+    # velocidades adicionales: fly, swim, climb, burrow
+    senses: str = ""               # visión ciega/temblor… (caja "Senses")
     classes: list[ClassLevel] = Field(default_factory=list)
     abilities: AbilityScores = Field(default_factory=AbilityScores)
     hp: HitPoints = Field(default_factory=HitPoints)
@@ -93,15 +110,25 @@ class Character(BaseModel):
     resources: list[Resource] = Field(default_factory=list)
     spell_slots: dict[str, dict[str, int]] = Field(default_factory=dict)
     # {'1': {'total': 2, 'used': 0}, ...}
+    pact_slots: dict[str, dict[str, int]] = Field(default_factory=dict)
+    # magia de pacto del brujo — pool separado, recarga en corto
     spells_known: list[str] = Field(default_factory=list)   # entity ids
+    spells_prepared: list[str] = Field(default_factory=list)  # subset, casters
+    # que preparan (clérigo, druida, paladín, mago…); vacío = todos listos
+    spellbooks: dict[str, list[str]] = Field(default_factory=dict)
+    # listas organizativas extra (dominio, dones, grimorio del DM…)
     feats_known: list[str] = Field(default_factory=list)    # entity ids
     features: list[str] = Field(default_factory=list)  # rasgos de clase
     languages: list[str] = Field(default_factory=list)
     rewards: list[str] = Field(default_factory=list)  # dones/boons (ids)
     skill_proficiencies: list[str] = Field(default_factory=list)
     save_proficiencies: list[str] = Field(default_factory=list)
+    other_proficiencies: list[str] = Field(default_factory=list)
+    # armaduras, armas y herramientas — caja "otras competencias"
     conditions: list[str] = Field(default_factory=list)
     condition_durations: dict[str, int] = Field(default_factory=dict)
+    condition_stacks: dict[str, int] = Field(default_factory=dict)
+    # niveles por condición — agotamiento (1-6), homebrew apilable
     # {'poisoned': 3} → expira al pasar 3 rondas fuera de combate
     effects: list[Effect] = Field(default_factory=list)     # activos/pasivos
     inventory: list[InventoryItem] = Field(default_factory=list)
@@ -110,6 +137,7 @@ class Character(BaseModel):
     narrative: Narrative = Field(default_factory=Narrative)
     proficiency_bonus: int = 2
     xp: int = 0                             # puntos de experiencia
+    asi_used: int = 0                       # mejoras de característica gastadas
     concentrating_on: str | None = None     # conjuro en concentración
     inspiration: bool = False               # inspiración del DM
     death_saves: dict[str, int] = Field(

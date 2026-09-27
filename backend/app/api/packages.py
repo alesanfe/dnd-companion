@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from ..db.connections import content_db
@@ -32,7 +32,6 @@ class Manifest(BaseModel):
 class PackageIn(BaseModel):
     manifest: Manifest
     content: dict[str, list[dict]] = Field(default_factory=dict)
-    # {'spell': [{...}], 'monster': [{...}]}
 
 
 @router.post("/install", status_code=201)
@@ -67,6 +66,8 @@ def install_package(body: PackageIn):
                    VALUES (?,?,?,?,?,?,?,?,?)""",
                 (eid, entity_type, str(name), ruleset, source_id,
                  m.version, m.license, int(m.distribution_allowed), blob))
+            conn.execute(
+                "DELETE FROM content_fts WHERE entity_id = ?", (eid,))
             conn.execute(
                 "INSERT INTO content_fts (entity_id, name, body) "
                 "VALUES (?,?,?)", (eid, str(name), blob))

@@ -13,6 +13,13 @@ from ..db.connections import content_db, state_db
 from ..domain.character import (
     AbilityScores, Character, ClassLevel, HitDicePool, HitPoints,
 )
+from ..domain.classinfo import (
+    background_languages as _background_languages,
+    background_skills as _background_skills,
+    hit_die as _hit_die,
+    save_profs as _save_profs,
+    species_asi as _species_asi,
+    species_traits as _species_traits)
 from ..domain.ruleset import Ruleset
 from ..engine.engine import resolve_stat
 
@@ -61,15 +68,6 @@ def _content_row(entity_id: str) -> dict | None:
         "SELECT data FROM content_entities WHERE id = ?",
         (entity_id,)).fetchone()
     return json.loads(row["data"]) if row else None
-
-
-from ..domain.classinfo import (
-    background_languages as _background_languages,
-    background_skills as _background_skills,
-    hit_die as _hit_die,
-    save_profs as _save_profs,
-    species_asi as _species_asi,
-    species_traits as _species_traits)
 
 
 @router.post("/create-from-options", status_code=201)
@@ -169,6 +167,12 @@ def list_characters(campaign_id: str | None = None):
         d["class_names"] = [
             (c.get("name") or c.get("class_id", "").split(":")[-1]
              ).replace("-", " ") for c in classes]
+        # vista de grupo (party tracker): vitales para las tarjetas
+        d["player_name"] = data.get("player_name") or ""
+        d["hp_temp"] = (data.get("hp") or {}).get("temp") or 0
+        d["conditions"] = data.get("conditions") or []
+        d["condition_stacks"] = data.get("condition_stacks") or {}
+        d["concentrating_on"] = data.get("concentrating_on")
         out.append(d)
     return {"characters": out}
 
@@ -274,7 +278,6 @@ def contextual_actions(character_id: str):
     if row is None:
         raise HTTPException(404, "character not found")
     char = Character(**json.loads(row["data"]))
-    content = content_db()
 
     groups: dict[str, list] = {
         "action": [], "bonus_action": [], "reaction": [],
@@ -289,8 +292,15 @@ def contextual_actions(character_id: str):
 
     str_mod = char.abilities.modifier("str")
     dex_mod = char.abilities.modifier("dex")
+    _weapon_actions(char, groups, str_mod, dex_mod)
+    _spell_actions(char, groups)
+    _effect_actions(char, groups)
 
-    # armas del inventario → ataques con bonificador calculado
+    return {"character_id": character_id, "actions": groups}
+
+
+def _weapon_actions(char, groups, str_mod, dex_mod) -> None:
+    """Armas del inventario → ataques con bonificador calculado."""
     for item in char.inventory:
         if not item.source_id:
             continue
@@ -310,7 +320,9 @@ def contextual_actions(character_id: str):
             "damage": f"{dmg}{mod:+d}",
         })
 
-    # conjuros conocidos → agrupados por tiempo de lanzamiento
+
+def _spell_actions(char, groups) -> None:
+    """Conjuros conocidos → agrupados por tiempo de lanzamiento."""
     for sid in char.spells_known:
         sp = _content_row(sid)
         if not sp:
@@ -327,7 +339,9 @@ def contextual_actions(character_id: str):
         groups[g].append({"name": f"Conjuro: {sp.get('name')}",
                           "source": sid, "casting_time": ct})
 
-    # efectos que conceden acciones (p.ej. haste, rogue cunning action)
+
+def _effect_actions(char, groups) -> None:
+    """Efectos que conceden acciones (p.ej. haste, cunning action)."""
     for eff in char.effects:
         for o in eff.operations:
             if o.op.value == "grant_action":
@@ -336,8 +350,6 @@ def contextual_actions(character_id: str):
             elif o.op.value == "grant_reaction":
                 groups["reaction"].append(
                     {"name": eff.name, "source": eff.source or eff.id})
-
-    return {"character_id": character_id, "actions": groups}
 
 
 @router.get("/{character_id}/derived/{stat}")
@@ -369,28 +381,78 @@ def derived_all(character_id: str):
     content = content_db()
     dex_mod = char.abilities.modifier("dex")
     wis_mod = char.abilities.modifier("wis")
+    ac_total, ac_parts = _armor_class(char, content, dex_mod)
 
-    # CA: armadura equipada del inventario (por source_id → equipo SRD)
+    # conjuros: característica de lanzamiento según la clase
+    # (multi-schema — classinfo cubre 5e-bits/5etools/open5e)
+    cast_ability = "int"
+    if char.classes:
+        from ..domain.classinfo import spellcasting_ability
+        cls = _content_row(char.classes[0].class_id) or {}
+        cast_ability = spellcasting_ability(cls) or "int"
+    cast_mod = char.abilities.modifier(cast_ability)
+    from ..rules import rules
+    cbase = rules()["combat"]
+    pp = cbase["passive_score_base"] + wis_mod + (
+        char.proficiency_bonus
+        if "perception" in char.skill_proficiencies else 0)
+    return {
+        "armor_class": {"total": ac_total, "breakdown": ac_parts},
+        "initiative": dex_mod,
+        "passive_perception": pp,
+        "spell_save_dc": cbase["spell_dc_base"] +
+                         char.proficiency_bonus + cast_mod,
+        "spell_attack": char.proficiency_bonus + cast_mod,
+        "spellcasting_ability": cast_ability,
+        # tope 2014/2024: nivel total + mod de lanzamiento (mín. 1)
+        "prepared_limit": max(1, char.total_level + cast_mod),
+        "proficiency_bonus": char.proficiency_bonus,
+        # umbral del siguiente nivel (tabla level_xp) y cuánto falta
+        "next_level_xp": _next_level_xp(char.total_level),
+        "xp_to_next": _xp_to_next(char.total_level, char.xp),
+        # regla de agotamiento: penalizadores activos por nivel
+        "exhaustion": _exhaustion(char),
+        "asi_available": _asi_available(char),
+        # defensas concedidas por efectos activos (resistencia al
+        # fuego del dragonborn, inmunidad de conjuro, vulnerabilidad)
+        "defenses": _defenses(char),
+    }
+
+
+def _armor_piece(content, it):
+    """Pieza equipada → (kind, valor, tope de DES) o None.
+    kind: 'armor' (reemplaza base) o 'shield' (suma bonus)."""
+    r = content.execute(
+        "SELECT data FROM content_entities WHERE id = ?",
+        (it.source_id,)).fetchone()
+    eq = json.loads(r["data"]) if r else {}
+    cat = (eq.get("equipment_category") or {}).get("index", "")
+    ac = eq.get("armor_class") or {}
+    if cat == "armor":
+        return ("armor", ac.get("base", 10),
+                ac.get("max_bonus") if ac.get("dex_bonus") else 0)
+    if cat == "shield" or "shield" in it.name.lower():
+        return ("shield", ac.get("base", 2), None)
+    return None
+
+
+def _armor_class(char, content, dex_mod: int):
+    """CA: armadura equipada del inventario (por source_id → equipo
+    SRD) + escudo + efectos add_modifier. Devuelve (total, partes)."""
     ac_base, ac_dex_max, ac_parts = 10, None, [("base", 10)]
     for it in char.inventory:
         if not it.equipped or not it.source_id:
             continue
-        r = content.execute(
-            "SELECT data FROM content_entities WHERE id = ?",
-            (it.source_id,)).fetchone()
-        eq = json.loads(r["data"]) if r else {}
-        cat = (eq.get("equipment_category") or {}).get("index", "")
-        if cat == "armor":
-            base = (eq.get("armor_class") or {}).get("base", 10)
-            ac_base = base
-            ac_parts = [(it.name, base)]
-            ac_dex_max = ((eq.get("armor_class") or {}).get("max_bonus")
-                          if (eq.get("armor_class") or {}).get("dex_bonus")
-                          else 0)
-        elif cat == "shield" or "shield" in it.name.lower():
-            bonus = (eq.get("armor_class") or {}).get("base", 2)
-            ac_base += bonus
-            ac_parts.append((it.name, bonus))
+        piece = _armor_piece(content, it)
+        if piece is None:
+            continue
+        kind, val, dex_max = piece
+        if kind == "armor":
+            ac_base, ac_dex_max = val, dex_max
+            ac_parts = [(it.name, val)]
+        else:
+            ac_base += val
+            ac_parts.append((it.name, val))
     dex_applied = dex_mod if ac_dex_max is None else min(dex_mod,
                                                          ac_dex_max)
     if dex_applied:
@@ -400,40 +462,84 @@ def derived_all(character_id: str):
             if o.op.value == "add_modifier" and o.target == "armor_class":
                 ac_base += int(o.value or 0)
                 ac_parts.append((eff.name, int(o.value or 0)))
-
-    # conjuros: característica de lanzamiento según la clase
-    cast_ability = "int"
-    if char.classes:
-        cls = _content_row(char.classes[0].class_id) or {}
-        cast_ability = ((cls.get("spellcasting") or {})
-                        .get("spellcasting_ability") or {}
-                        ).get("index", "int")
-    cast_mod = char.abilities.modifier(cast_ability)
-    from ..rules import rules
-    cbase = rules()["combat"]
-    pp = cbase["passive_score_base"] + wis_mod + (
-        char.proficiency_bonus
-        if "perception" in char.skill_proficiencies else 0)
-    return {
-        "armor_class": {"total": ac_base + dex_applied,
-                        "breakdown": ac_parts},
-        "initiative": dex_mod,
-        "passive_perception": pp,
-        "spell_save_dc": cbase["spell_dc_base"] +
-                         char.proficiency_bonus + cast_mod,
-        "spell_attack": char.proficiency_bonus + cast_mod,
-        "spellcasting_ability": cast_ability,
-        "proficiency_bonus": char.proficiency_bonus,
-        "next_level_xp": _next_level_xp(char.total_level, char.xp),
-    }
+    return ac_base + dex_applied, ac_parts
 
 
-def _next_level_xp(level: int, xp: int) -> int | None:
-    """XP acumulado por nivel — tabla SRD del rules pack."""
+def _defenses(char) -> dict:
+    """Union de los grant_* declarativos por tipo de daño
+    (target = tipo: fire, bludgeoning, * = todos). El prefijo
+    'condition:<nombre>' marca inmunidad a una condición."""
+    out = {"resistances": set(), "vulnerabilities": set(),
+           "immunities": set(), "condition_immunities": set()}
+    key = {"grant_resistance": "resistances",
+           "grant_vulnerability": "vulnerabilities",
+           "grant_immunity": "immunities"}
+    for eff in char.effects:
+        for o in eff.operations:
+            tgt = str(o.target or "*").lower()
+            if o.op.value == "grant_immunity" and \
+                    tgt.startswith("condition:"):
+                out["condition_immunities"].add(tgt.split(":", 1)[1])
+            elif o.op.value in key:
+                out[key[o.op.value]].add(tgt)
+    return {k: sorted(v) for k, v in out.items()}
+
+
+def _next_level_xp(level: int) -> int | None:
+    """XP acumulado necesario para el siguiente nivel (umbral)."""
     from ..domain.xp import level_xp_table
     if level >= 20:
         return None
-    return level_xp_table()[level] - xp
+    return level_xp_table()[level]
+
+
+def _xp_to_next(level: int, xp: int) -> int | None:
+    t = _next_level_xp(level)
+    return None if t is None else max(0, t - xp)
+
+
+_EXHAUSTION = [                        # niveles 1-6, acumulativos
+    "desventaja en pruebas de característica",
+    "velocidad reducida a la mitad",
+    "desventaja en ataques y salvaciones",
+    "PG máximos reducidos a la mitad",
+    "velocidad 0",
+    "muerte",
+]
+
+
+def _exhaustion(char) -> list[str]:
+    lvl = (char.condition_stacks.get("exhaustion")
+           or char.condition_stacks.get("agotamiento") or 0)
+    return _EXHAUSTION[:min(lvl, 6)]
+
+
+def _asi_available(char) -> int:
+    """Mejoras de característica ganadas − gastadas (puntos).
+    Cada nivel con ability_score_bonuses en la tabla de la clase
+    otorga 2 puntos de mejora (+2, +1/+1 o una dote)."""
+    content = content_db()
+    earned = 0
+    for cl in char.classes:
+        idx = cl.class_id.split(":")[-1]
+        cls_name = (_content_row(cl.class_id) or {}).get("name", idx)
+        try:
+            n = content.execute(
+                """SELECT MAX(json_extract(data, '$.ability_score_bonuses'))
+                   FROM content_entities
+                   WHERE entity_type = 'level'
+                   AND lower(COALESCE(
+                         json_extract(data, '$.class.index'),
+                         json_extract(data, '$.class.name'),
+                         json_extract(data, '$.class_id'),
+                         json_extract(data, '$.className'), ''))
+                       IN (?, ?)
+                   AND json_extract(data, '$.level') <= ?""",
+                (idx, str(cls_name).lower(), cl.level)).fetchone()[0]
+            earned += (n or 0) * 2   # ab es acumulado por clase
+        except Exception:
+            pass
+    return max(0, earned - char.asi_used)
 
 
 @router.get("/{character_id}")

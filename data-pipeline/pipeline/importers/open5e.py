@@ -104,7 +104,7 @@ def import_open5e(
                             f"{doc.get('title') or doc_slug} — "
                             f"{doc.get('organization') or ''} "
                             f"({lic})").strip(),
-                        original_url=f"https://open5e.com",
+                        original_url="https://open5e.com",
                         distribution_allowed=True)
                     seen_sources.add(src_id)
                 rs = ruleset or _DOC_RULESET.get(doc_slug, "mixed")

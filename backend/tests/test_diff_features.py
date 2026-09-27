@@ -180,7 +180,6 @@ def test_contextual_actions_groups_spells_and_weapons():
     # arma + conjuros
     _op(cid, _version(cid), "character.inventory.add",
         {"name": "Daga", "source_id": "srd-2014:dagger"})
-    d = client.get(f"/api/characters/{cid}").json()
     # añade spells_known directamente en data via un wrapper de update?
     # spells_known se rellena vía wizard avanzado; comprobamos lo básico:
     acts = client.get(f"/api/characters/{cid}/actions").json()["actions"]
@@ -260,7 +259,6 @@ def test_character_roll_applies_advantage_effect():
         "operations": [{"op": "grant_advantage", "target": "check"}],
     }]
     # escribe effects directamente — no hay op pública aún para añadirlos
-    import sqlite3
     from app.db.connections import state_db
     conn = state_db()
     conn.execute("UPDATE characters SET data = ? WHERE id = ?",
@@ -743,7 +741,7 @@ def test_condition_duration_expires_on_round():
     v = client.get(f"/api/combat/{combat['id']}").json()["version"]
     # cerrar la ronda: 2 turnos
     _combat_op(combat["id"], v, "combat.next_turn", {})
-    r = _combat_op(combat["id"], v + 1, "combat.next_turn", {})
+    _combat_op(combat["id"], v + 1, "combat.next_turn", {})
     c = client.get(f"/api/combat/{combat['id']}").json()["combat"]
     a = next(x for x in c["combatants"] if x["id"] == aid)
     assert "stunned" not in a["conditions"]
@@ -828,8 +826,8 @@ def test_delete_entity_and_session():
 
 def test_campaign_export_import_roundtrip():
     camp = client.post("/api/campaigns", json={"name": "EX"}).json()["id"]
-    eid = client.post(f"/api/campaigns/{camp}/entities", json={
-        "kind": "npc", "name": "Tabernero"}).json()["id"]
+    client.post(f"/api/campaigns/{camp}/entities", json={
+        "kind": "npc", "name": "Tabernero"})
     cid = _mkchar()
     client.patch(f"/api/characters/{cid}", json={"campaign_id": camp})
     ex = client.get(f"/api/campaigns/{camp}/export").json()
@@ -857,3 +855,135 @@ def test_patch_and_delete_character():
     assert client.get(f"/api/characters/{cid}").json()["name"] == "Renombrado"
     assert client.delete(f"/api/characters/{cid}").status_code == 200
     assert client.get(f"/api/characters/{cid}").status_code == 404
+
+
+# --- sentidos y defensas (hoja oficial: cajas Senses/Defenses) ---------
+
+def test_senses_defaults_and_identity_set():
+    """Personajes antiguos sin 'senses' cargan con default; el campo
+    se edita por character.identity.set (reversible)."""
+    cid = _mkchar()
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert d.get("senses", "") == ""
+    _op(cid, _version(cid), "character.identity.set",
+        {"field": "senses", "value": "darkvision 60 ft"})
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert d["senses"] == "darkvision 60 ft"
+
+
+def test_derived_defenses_from_effects():
+    """Los grant_* declarativos se agregan en /derived.defenses por
+    tipo de daño (target), como en la hoja oficial."""
+    import json as _j
+    from app.db.connections import state_db
+    cid = _mkchar()
+    conn = state_db()
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    d["effects"] = [
+        {"id": "e1", "name": "Piel de piedra", "trigger": None,
+         "operations": [{"op": "grant_resistance",
+                         "target": "bludgeoning"}]},
+        {"id": "e2", "name": "Anillo", "trigger": None,
+         "operations": [{"op": "grant_immunity", "target": "fire"},
+                        {"op": "grant_vulnerability",
+                         "target": "cold"}]},
+        {"id": "e3", "name": "Aura", "trigger": None,
+         "operations": [{"op": "grant_resistance", "target": "*"}]},
+    ]
+    conn.execute("UPDATE characters SET data = ? WHERE id = ?",
+                 (_j.dumps(d), cid))
+    conn.commit()
+    conn.close()                      # no retener el lock de SQLite
+    drv = client.get(f"/api/characters/{cid}/derived").json()
+    assert drv["defenses"]["resistances"] == ["*", "bludgeoning"]
+    assert drv["defenses"]["immunities"] == ["fire"]
+    assert drv["defenses"]["vulnerabilities"] == ["cold"]
+
+
+def test_derived_defenses_empty_by_default():
+    cid = _mkchar()
+    drv = client.get(f"/api/characters/{cid}/derived").json()
+    assert drv["defenses"] == {"resistances": [],
+                              "vulnerabilities": [],
+                              "immunities": [],
+                              "condition_immunities": []}
+
+
+def test_relationships_visibility_filter():
+    """Las relaciones 'dm' no se filtran a jugadores; las públicas sí."""
+    camp = client.post("/api/campaigns", json={"name": "R"}).json()
+    cid = camp["id"]
+    e1 = client.post(f"/api/campaigns/{cid}/entities", json={
+        "kind": "npc", "name": "A", "data": {}}).json()["id"]
+    e2 = client.post(f"/api/campaigns/{cid}/entities", json={
+        "kind": "npc", "name": "B", "data": {}}).json()["id"]
+    client.post(f"/api/campaigns/{cid}/relationships", json={
+        "from_id": e1, "to_id": e2, "type": "hates",
+        "visibility": "dm"})
+    client.post(f"/api/campaigns/{cid}/relationships", json={
+        "from_id": e1, "to_id": e2, "type": "knows",
+        "visibility": "public"})
+    dm = client.get(f"/api/campaigns/{cid}/relationships",
+                    params={"viewer": "dm"}).json()["relationships"]
+    pl = client.get(f"/api/campaigns/{cid}/relationships",
+                    params={"viewer": "player"}).json()["relationships"]
+    assert len(dm) == 2
+    assert [r["type"] for r in pl] == ["knows"]
+    # borrado: 204 y desaparece del listado
+    rid = dm[0]["id"]
+    assert client.delete(
+        f"/api/campaigns/{cid}/relationships/{rid}").status_code == 204
+    assert client.delete(
+        f"/api/campaigns/{cid}/relationships/{rid}").status_code == 404
+    rest = client.get(f"/api/campaigns/{cid}/relationships",
+                      params={"viewer": "dm"}).json()["relationships"]
+    assert len(rest) == 1
+
+
+def test_condition_immunity_blocks_apply_and_undoes():
+    """grant_immunity con target 'condition:<nombre>' bloquea la
+    aplicación de la condición; deshacer un remove sigue restaurando
+    (force interno)."""
+    import json as _j
+    from app.db.connections import state_db
+    cid = _mkchar()
+    conn = state_db()
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    d["effects"] = [{"id": "pal", "name": "Aura de protección",
+                     "trigger": None,
+                     "operations": [{"op": "grant_immunity",
+                                     "target": "condition:frightened"}]}]
+    conn.execute("UPDATE characters SET data = ? WHERE id = ?",
+                 (_j.dumps(d), cid))
+    conn.commit()
+    conn.close()                      # no retener el lock de SQLite
+    r = _op(cid, _version(cid), "character.condition.apply",
+            {"condition": "frightened"})
+    assert r.status_code == 200
+    ev = r.json()["events"][0]
+    assert ev["type"] == "character.condition.immune"
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert "frightened" not in d["conditions"]
+    # una condición no cubierta por la inmunidad sí se aplica
+    _op(cid, _version(cid), "character.condition.apply",
+        {"condition": "prone"})
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert "prone" in d["conditions"]
+    drv = client.get(f"/api/characters/{cid}/derived").json()
+    assert drv["defenses"]["condition_immunities"] == ["frightened"]
+
+
+def test_player_hides_dm_map_entity():
+    """Los mapas con visibility='dm' no llegan al listado de jugador;
+    al revelarlos sí (mapa en vivo para la mesa)."""
+    camp = client.post("/api/campaigns", json={"name": "M"}).json()["id"]
+    r = client.post(f"/api/campaigns/{camp}/entities", json={
+        "kind": "map", "name": "Cripta", "visibility": "dm",
+        "data": {"cols": 8, "rows": 8, "cell_ft": 5,
+                 "tokens": [], "fog": ["0,0"], "marks": {}}})
+    eid = r.json()["id"]
+    url = f"/api/campaigns/{camp}/entities?viewer=player&kind=map"
+    assert client.get(url).json()["entities"] == []
+    client.post(f"/api/campaigns/{camp}/entities/{eid}/reveal")
+    ents = client.get(url).json()["entities"]
+    assert len(ents) == 1 and ents[0]["name"] == "Cripta"

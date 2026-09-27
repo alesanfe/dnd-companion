@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
@@ -9,6 +10,34 @@ from pydantic import BaseModel
 from ..db.connections import content_db
 
 router = APIRouter(prefix="/api/content", tags=["content"])
+
+
+def _fts_query(q: str) -> str | None:
+    """Normaliza texto de usuario a una query FTS5 segura: cada
+    término va entre comillas (phrase) — neutraliza operadores
+    (NEAR, NOT, *, paréntesis…) y caracteres que romperían MATCH."""
+    terms = re.findall(r"[\w]+", q, flags=re.UNICODE)
+    if not terms:
+        return None
+    return " ".join(f'"{t}"' for t in terms)
+
+
+def _class_names_of(cls) -> list[str]:
+    """Lista de clases del conjuro, multi-schema:
+    [..{index|name}] · {fromClassList/fromSubclass: [{name|
+    class.name}]}."""
+    if isinstance(cls, list):
+        return [(c.get("index") or c.get("name") or "")
+                for c in cls if isinstance(c, dict)]
+    names: list[str] = []
+    if isinstance(cls, dict):
+        for grp in ("fromClassList", "fromSubclass"):
+            for c in cls.get(grp) or []:
+                if isinstance(c, dict):
+                    n = c.get("name") or (c.get("class") or {}).get("name")
+                    if n:
+                        names.append(n)
+    return names
 
 
 def _spell_for_class(data: dict, cls_name: str) -> bool:
@@ -19,17 +48,7 @@ def _spell_for_class(data: dict, cls_name: str) -> bool:
     want = cls_name.lower()
     if isinstance(cls, str):
         return want in cls.lower()
-    names: list[str] = []
-    if isinstance(cls, list):
-        names = [(c.get("index") or c.get("name") or "")
-                 for c in cls if isinstance(c, dict)]
-    elif isinstance(cls, dict):
-        for grp in ("fromClassList", "fromSubclass"):
-            for c in cls.get(grp) or []:
-                if isinstance(c, dict):
-                    n = c.get("name") or (c.get("class") or {}).get("name")
-                    if n:
-                        names.append(n)
+    names = _class_names_of(cls)
     if not names:
         # schema sin lista (dnd-data): match suelto por texto
         blob = json.dumps(data.get("desc") or data.get("entries")
@@ -48,6 +67,9 @@ def search(
     limit: int = Query(20, le=100),
 ):
     conn = content_db()
+    fts = _fts_query(q)
+    if fts is None:
+        return {"results": []}
     sql = """
         SELECT e.id, e.entity_type, e.name, e.ruleset, e.license,
                e.is_redistributable, e.source_id, e.data,
@@ -56,7 +78,7 @@ def search(
         JOIN content_entities e ON e.id = f.entity_id
         WHERE content_fts MATCH ?
     """
-    params: list = [q]
+    params: list = [fts]
     if entity_type:
         sql += " AND e.entity_type = ?"
         params.append(entity_type)
@@ -156,51 +178,55 @@ def _cr_float(cr) -> float:
         return -1
 
 
+def _match_level(data: dict, val: str) -> bool:
+    try:
+        return data.get("level") == int(val)
+    except ValueError:
+        return False
+
+
+def _match_cr(data: dict, val: str) -> bool:
+    cr = _cr_float(data.get("challenge_rating"))
+    if ".." in val:
+        lo, hi = val.split("..", 1)
+        return _cr_float(lo) <= cr <= _cr_float(hi)
+    return cr == _cr_float(val)
+
+
+def _match_school(data: dict, val: str) -> bool:
+    school = data.get("school") or {}
+    return val.lower() in str(
+        school.get("index") or school.get("name", "")).lower()
+
+
+_FILTERS = {
+    "level": _match_level,
+    "cr": _match_cr,
+    "school": _match_school,
+    "concentration": lambda data, val:
+        bool(data.get("concentration")) == (val == "true"),
+    "type": lambda data, val:
+        val.lower() in str(data.get("type", "")).lower(),
+    "class": lambda data, val:
+        val.lower() in [str(c.get("name", "")).lower()
+                        for c in data.get("classes", [])],
+    "resistance": lambda data, val:
+        val.lower() in [str(r).lower()
+                        for r in data.get("damage_resistances", [])],
+}
+
+
 def _match_filters(data: dict, filters: dict[str, str]) -> bool:
-    """Filtros key:value sobre el JSON de la entidad."""
-    for key, val in filters.items():
-        if key == "level":
-            try:
-                if data.get("level") != int(val):
-                    return False
-            except ValueError:
-                return False
-        elif key == "cr":
-            cr = _cr_float(data.get("challenge_rating"))
-            if ".." in val:
-                lo, hi = val.split("..", 1)
-                if not (_cr_float(lo) <= cr <= _cr_float(hi)):
-                    return False
-            elif cr != _cr_float(val):
-                return False
-        elif key == "school":
-            school = data.get("school") or {}
-            if val.lower() not in str(
-                    school.get("index") or school.get("name", "")).lower():
-                return False
-        elif key == "concentration":
-            if bool(data.get("concentration")) != (val == "true"):
-                return False
-        elif key == "type":
-            if val.lower() not in str(data.get("type", "")).lower():
-                return False
-        elif key == "class":
-            names = [str(c.get("name", "")).lower()
-                     for c in data.get("classes", [])]
-            if val.lower() not in names:
-                return False
-        elif key == "resistance":
-            res = [str(r).lower() for r in
-                   data.get("damage_resistances", [])]
-            if val.lower() not in res:
-                return False
-        else:
-            return False                      # filtro desconocido
-    return True
+    """Filtros key:value sobre el JSON de la entidad. Un filtro
+    desconocido rechaza la entidad."""
+    return all(
+        key in _FILTERS and _FILTERS[key](data, val)
+        for key, val in filters.items())
 
 
 @router.get("/command")
 def command_search(q: str = Query(..., min_length=2),
+                   source: str | None = None,
                    limit: int = Query(20, le=100)):
     """Búsqueda por comandos:
       /spell fire level:3 concentration:true
@@ -235,10 +261,14 @@ def command_search(q: str = Query(..., min_length=2),
     if ruleset:
         sql += " AND e.ruleset = ?"
         params.append(ruleset)
-    if terms:
+    if source:
+        sql += " AND e.source_id = ?"
+        params.append(source)
+    fts = _fts_query(" ".join(terms))
+    if fts:
         sql += (" AND e.id IN (SELECT entity_id FROM content_fts "
                 "WHERE content_fts MATCH ?)")
-        params.append(" ".join(terms))
+        params.append(fts)
     sql += " ORDER BY e.name LIMIT ?"
     params.append(limit * 4)                 # margen para filtrado Python
 

@@ -1,6 +1,7 @@
 // Sesión local: token Bearer + preferencias de accesibilidad.
 const K = { token: 'dc.token', user: 'dc.user', theme: 'dc.theme',
-            font: 'dc.font', motion: 'dc.motion', density: 'dc.density' }
+            font: 'dc.font', motion: 'dc.motion', density: 'dc.density',
+            dyslexia: 'dc.dyslexia' }
 
 export function getToken() { return localStorage.getItem(K.token) }
 export function currentUser() {
@@ -20,7 +21,8 @@ export function getPrefs() {
   return { theme: localStorage.getItem(K.theme) || 'dark',
            font: localStorage.getItem(K.font) || 'md',
            motion: localStorage.getItem(K.motion) || 'on',
-           density: localStorage.getItem(K.density) || 'normal' }
+           density: localStorage.getItem(K.density) || 'normal',
+           dyslexia: localStorage.getItem(K.dyslexia) || 'off' }
 }
 export function setPref(key, value) {
   localStorage.setItem(K[key] ?? key, value)
@@ -32,5 +34,6 @@ export function applyPrefs(p) {
   el.dataset.font = p.font
   el.dataset.motion = p.motion
   el.dataset.density = p.density
+  el.dataset.dyslexia = p.dyslexia
 }
 applyPrefs(getPrefs())

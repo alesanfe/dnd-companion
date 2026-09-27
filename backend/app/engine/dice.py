@@ -46,19 +46,23 @@ def roll(expression: str, rng: random.Random | None = None) -> RollResult:
     keep = m.group("keep")
 
     rolls = [rng.randint(1, sides) for _ in range(count)]
-    kept = list(rolls)
-
-    if keep == "adv" and sides == 20:
-        rolls.append(rng.randint(1, sides))
-        kept = [max(rolls)]
-    elif keep == "dis" and sides == 20:
-        rolls.append(rng.randint(1, sides))
-        kept = [min(rolls)]
-    elif keep and keep.startswith("kh"):
-        n = int(keep[2:])
-        kept = sorted(rolls, reverse=True)[:n]
-    elif keep and keep.startswith("kl"):
-        n = int(keep[2:])
-        kept = sorted(rolls)[:n]
+    kept = _apply_keep(keep, rolls, count, sides, rng)
 
     return RollResult(expression, rolls, kept, mod, sum(kept) + mod)
+
+
+def _apply_keep(keep: str | None, rolls: list[int], count: int,
+                sides: int, rng: random.Random) -> list[int]:
+    """Filtra los dados que cuentan: adv/dis (extra dado sobre d20)
+    y kh/kl (mantener n mayores/menores)."""
+    if keep in ("adv", "dis"):
+        if sides != 20:
+            raise ValueError("adv/dis solo tiene sentido en d20")
+        rolls.append(rng.randint(1, sides))
+        return [max(rolls) if keep == "adv" else min(rolls)]
+    if keep and keep.startswith(("kh", "kl")):
+        n = int(keep[2:])
+        if n < 1 or n > count:
+            raise ValueError(f"{keep} sobre {count} dados")
+        return sorted(rolls, reverse=keep[1] == "h")[:n]
+    return list(rolls)

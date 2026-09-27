@@ -1,0 +1,191 @@
+import { api } from '../../api.js'
+
+/** Pestaña Sesión: datos de campaña, feed de tiradas en vivo,
+    sesiones y preparación, peticiones de tirada a jugadores. */
+export default function DmSesion({ c }) {
+  const { t, tf, dmTab, campaign, setCampaign, campName, setCampName,
+          eventFeed, setEventFeed, rollFeed, feedFilter, setFeedFilter,
+          newRolls, setNewRolls, feedRef, playerView,
+          sessTitle, setSessTitle, sessions, setSessions,
+          timeline, setTimeline, rollReq, setRollReq, refresh,
+          chat, chatText, setChatText, sendDmChat } = c
+  const show = dmTab === 'sesion'
+  return (<>
+    <section className="card" hidden={!show}>
+      <h2>{t('dm.campaign')}</h2>
+      {!campaign ? (
+        <form className="row" onSubmit={async (e) => {
+          e.preventDefault()
+          const r = await api.createCampaign(campName || t('camp.name'))
+          setCampaign(r)
+        }}>
+          <input value={campName} onChange={(e) => setCampName(e.target.value)}
+                 placeholder={t('ses.campNamePh')} />
+          <button type="submit">{t('ses.create')}</button>
+        </form>
+      ) : (
+        <>
+          <p>{campName || t('camp.name')} — {t('ses.invite')}:
+            <strong> {campaign.invite_code}</strong></p>
+          <div className="row">
+            <button className="ghost" onClick={async () => {
+              const ex = await api.exportCampaign(campaign.id)
+              const blob = new Blob([JSON.stringify(ex, null, 2)],
+                                    { type: 'application/json' })
+              const a = document.createElement('a')
+              a.href = URL.createObjectURL(blob)
+              a.download = 'campania.json'
+              a.click()
+            }}>{t('ses.exportBackup')}</button>
+            <button className="ghost" onClick={async () =>
+              setEventFeed(eventFeed ? null
+                : (await api.campaignEvents(campaign.id)).events)
+            }>{t('ses.audit')}</button>
+          </div>
+          {eventFeed && eventFeed.map((e) => (
+            <div key={e.event_id} className="row">
+              <span className="muted">{e.occurred_at.slice(11, 19)}</span>
+              <span>{e.type}</span>
+            </div>
+          ))}
+        </>
+      )}
+    </section>
+
+    {campaign && rollFeed.length > 0 && (
+      <section className="card" hidden={!show}>
+        <h2>{t('dm.feed')}</h2>
+        <div className="row" role="group" aria-label={t('ses.filterAria')}>
+          {['todas', 'check', 'save', 'attack', 'damage'].map((f) => (
+            <button key={f} className="ghost"
+                    aria-pressed={feedFilter === f}
+                    style={{ borderColor: feedFilter === f
+                      ? 'var(--accent)' : undefined }}
+                    onClick={() => setFeedFilter(f)}>
+              {f === 'todas' ? t('dm.allRolls') : f}</button>))}
+        </div>
+        {newRolls > 0 && (
+          <button className="ghost" role="status"
+                  onClick={() => {
+                    feedRef.current?.scrollTo({ top: 0 })
+                    setNewRolls(0)
+                  }}>{tf('ses.newEvents', { n: newRolls })} ↑</button>)}
+        <div ref={feedRef}
+             style={{ maxHeight: '18rem', overflowY: 'auto' }}
+             onScroll={(e) => {
+               if (e.target.scrollTop <= 40) setNewRolls(0)
+             }}>
+        {rollFeed.filter((r) =>
+          (!playerView || !r.secret) &&
+          (feedFilter === 'todas' ||
+           r.roll_type === feedFilter)).map((r, i) => (
+          <div key={i} className="row">
+            <span>{r.secret ? '🔒 ' : ''}{r.character}</span>
+            <span className="muted">
+              {r.secret ? `${t('ses.secretTag')} · ` : ''}
+              {r.roll_type} · {r.expression}</span>
+            <strong>{r.total}</strong>
+          </div>
+        ))}
+        </div>
+      </section>
+    )}
+
+    {campaign && (
+      <section className="card" hidden={!show}>
+        <h2>{t('dm.sessions')}</h2>
+        <div className="row">
+          <input value={sessTitle} placeholder={t('ses.titlePh')}
+                 onChange={(e) => setSessTitle(e.target.value)} />
+          <button disabled={!sessTitle} onClick={async () => {
+            await api.createSession(campaign.id, {
+              title: sessTitle, number: sessions.length + 1 })
+            setSessTitle('')
+            const r = await api.listSessions(campaign.id)
+            setSessions(r.sessions)
+          }}>{t('ses.create')}</button>
+          <button onClick={async () => {
+            const r = timeline ? null
+                               : await api.timeline(campaign.id)
+            setTimeline(r?.timeline || null)
+          }}>{t('ses.timeline')}</button>
+        </div>
+        {sessions.map((s) => (
+          <div key={s.id}>
+            <div className="row">
+              <strong>#{s.number} {s.title}</strong>
+              <span className="muted">· {s.status}</span>
+              {s.status !== 'done' && (
+                <button style={{ minHeight: 32 }} onClick={async () => {
+                  await api.patchSession(campaign.id, s.id, {
+                    status: s.status === 'prep' ? 'active' : 'done' })
+                  api.listSessions(campaign.id)
+                    .then((r) => setSessions(r.sessions))
+                }}>{s.status === 'prep'
+                    ? t('ses.start') : t('common.close')}</button>
+              )}
+            </div>
+            <ul>
+              {s.scenes.map((sc) => (
+                <li key={sc.id} className="row">
+                  {sc.data.order}. {sc.name}
+                  {(sc.data.monsters || []).length > 0 && (
+                    <button style={{ minHeight: 32 }}
+                            onClick={async () => {
+                      const r = await api.startScene(campaign.id, sc.id)
+                      refresh(r.combat_id)
+                    }}>▶ {t('ses.combatBtn')}</button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+        {timeline && timeline.map((tl) => (
+          <div key={tl.id} className="row">
+            <span className="muted">{tl.world_date || '—'}</span>
+            <span>{tl.name}</span>
+          </div>
+        ))}
+      </section>
+    )}
+
+    {/* chat de mesa del DM — el mismo canal efímero que ven los
+        jugadores en la pestaña Actividad de su ficha */}
+    {campaign && (
+      <section className="card" hidden={!show}>
+        <h2>{t('act.chat')}</h2>
+        <ul style={{ maxHeight: 160, overflowY: 'auto' }}>
+          {chat.length === 0 && (
+            <li className="muted">{t('act.chatEmpty')}</li>)}
+          {chat.map((m, i) => (
+            <li key={i}><b>{m.from}:</b> {m.text}</li>))}
+        </ul>
+        <form className="row" onSubmit={sendDmChat}>
+          <input value={chatText} aria-label={t('act.chatAria')}
+                 maxLength={500} placeholder={t('act.chatPh')}
+                 onChange={(e) => setChatText(e.target.value)} />
+          <button type="submit" disabled={!chatText.trim()}>
+            {t('act.send')}</button>
+        </form>
+      </section>)}
+
+    {campaign && (
+      <section className="card" hidden={!show}>
+        <h2>{t('dm.rollreq')}</h2>
+        <div className="row">
+          <input value={rollReq.character_id} placeholder="character_id"
+                 onChange={(e) => setRollReq({ ...rollReq, character_id: e.target.value })} />
+          <input value={rollReq.expression} style={{ maxWidth: 90 }}
+                 onChange={(e) => setRollReq({ ...rollReq, expression: e.target.value })} />
+          <input value={rollReq.reason} placeholder={t('ses.reasonPh')}
+                 onChange={(e) => setRollReq({ ...rollReq, reason: e.target.value })} />
+          <button disabled={!rollReq.character_id}
+                  onClick={() => api.requestRoll(campaign.id, rollReq)}>
+            {t('ses.request')}
+          </button>
+        </div>
+      </section>
+    )}
+  </>)
+}

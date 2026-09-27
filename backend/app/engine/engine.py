@@ -51,28 +51,7 @@ def resolve_stat(stat: str, base: float, effects: list[Effect]) -> StatBreakdown
 
     for eff in sorted(effects, key=lambda e: e.priority):
         for op in eff.operations:
-            op_name = op.op
-            target = _OP_ALIASES.get(op_name, op.target)
-            if op_name in (Operation.SET_VALUE,) and _matches(target, stat):
-                sets.append((eff.priority, eff, float(op.value)))
-            elif op_name in (Operation.ADD_MODIFIER,) and _matches(target, stat):
-                adds.append((eff, float(op.value)))
-            elif op_name == Operation.GRANT_ADVANTAGE and _matches(target, stat):
-                out.advantage = True
-                entries.append(ModifierEntry(
-                    source=eff.name, op=op_name, value=op.value,
-                    reason="ventaja"))
-            elif op_name == Operation.GRANT_DISADVANTAGE and _matches(target, stat):
-                out.disadvantage = True
-                entries.append(ModifierEntry(
-                    source=eff.name, op=op_name, value=op.value,
-                    reason="desventaja"))
-            elif op_name == Operation.GRANT_RESISTANCE:
-                out.resistances.append(str(op.value))
-            elif op_name == Operation.GRANT_VULNERABILITY:
-                out.vulnerabilities.append(str(op.value))
-            elif op_name == Operation.GRANT_IMMUNITY:
-                out.immunities.append(str(op.value))
+            _collect_op(out, entries, sets, adds, eff, op, stat)
 
     if sets:
         _, eff, val = sets[-1]
@@ -81,7 +60,44 @@ def resolve_stat(stat: str, base: float, effects: list[Effect]) -> StatBreakdown
             source=eff.name, op=Operation.SET_VALUE, value=val,
             reason=f"establece {stat} a {val:g}"))
 
-    # stacking: HIGHEST/LOWEST collapse same-named contributions
+    _collapse_adds(out, adds, entries)
+    out.entries = entries
+    return out
+
+
+_FLAG_OPS = {
+    Operation.GRANT_RESISTANCE: "resistances",
+    Operation.GRANT_VULNERABILITY: "vulnerabilities",
+    Operation.GRANT_IMMUNITY: "immunities",
+}
+
+
+def _collect_op(out, entries, sets, adds, eff, op, stat) -> None:
+    """Clasifica una op de efecto en sets / adds / flags del
+    breakdown (set y add solo cuentan si el target casa el stat)."""
+    op_name = op.op
+    target = _OP_ALIASES.get(op_name, op.target)
+    if op_name == Operation.SET_VALUE and _matches(target, stat):
+        sets.append((eff.priority, eff, float(op.value)))
+    elif op_name == Operation.ADD_MODIFIER and _matches(target, stat):
+        adds.append((eff, float(op.value)))
+    elif op_name in (Operation.GRANT_ADVANTAGE,
+                     Operation.GRANT_DISADVANTAGE) \
+            and _matches(target, stat):
+        adv = op_name == Operation.GRANT_ADVANTAGE
+        if adv:
+            out.advantage = True
+        else:
+            out.disadvantage = True
+        entries.append(ModifierEntry(
+            source=eff.name, op=op_name, value=op.value,
+            reason="ventaja" if adv else "desventaja"))
+    elif op_name in _FLAG_OPS:
+        getattr(out, _FLAG_OPS[op_name]).append(str(op.value))
+
+
+def _collapse_adds(out, adds, entries) -> None:
+    """Stacking: HIGHEST/LOWEST collapse same-named contributions."""
     seen: dict[str, float] = {}
     for eff, val in adds:
         if eff.stacking_rule == StackingRule.HIGHEST:
@@ -104,8 +120,6 @@ def resolve_stat(stat: str, base: float, effects: list[Effect]) -> StatBreakdown
         entries.append(ModifierEntry(
             source=name, op=Operation.ADD_MODIFIER, value=val,
             reason=f"{val:+g} (no apilable)"))
-    out.entries = entries
-    return out
 
 
 def check_conditions(conditions: list[EffectCondition],
@@ -137,20 +151,26 @@ def apply_triggered(char, trigger: Trigger, ctx: dict | None = None) -> None:
         if not check_conditions(eff.conditions, ctx):
             continue
         for o in eff.operations:
-            if o.op == Operation.RESTORE_RESOURCE:
-                for r in char.resources:
-                    if r.id == o.target:
-                        r.current = r.max if o.value is None else min(
-                            r.max, r.current + int(o.value))
-            elif o.op == Operation.CONSUME_RESOURCE:
-                for r in char.resources:
-                    if r.id == o.target:
-                        r.current = max(0, r.current - int(o.value or 1))
-            elif o.op == Operation.APPLY_CONDITION:
-                c = str(o.value)
-                if c not in char.conditions:
-                    char.conditions.append(c)
-            elif o.op == Operation.REMOVE_CONDITION:
-                c = str(o.value)
-                if c in char.conditions:
-                    char.conditions.remove(c)
+            _trigger_op(char, o)
+
+
+def _trigger_op(char, o) -> None:
+    """Subconjunto de ops de trigger que mutan estado directamente:
+    recursos y condiciones."""
+    if o.op == Operation.RESTORE_RESOURCE:
+        for r in char.resources:
+            if r.id == o.target:
+                r.current = r.max if o.value is None else min(
+                    r.max, r.current + int(o.value))
+    elif o.op == Operation.CONSUME_RESOURCE:
+        for r in char.resources:
+            if r.id == o.target:
+                r.current = max(0, r.current - int(o.value or 1))
+    elif o.op == Operation.APPLY_CONDITION:
+        c = str(o.value)
+        if c not in char.conditions:
+            char.conditions.append(c)
+    elif o.op == Operation.REMOVE_CONDITION:
+        c = str(o.value)
+        if c in char.conditions:
+            char.conditions.remove(c)

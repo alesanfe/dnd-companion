@@ -1,6 +1,5 @@
 """Level-up, export/import, inventory transfer, entities, encounters,
 command search."""
-import os
 from pathlib import Path
 
 import pytest
@@ -48,8 +47,8 @@ def test_level_up_barbarian_fixed_hp():
 
 def test_inventory_add_remove_undo():
     cid = _mkchar()
-    r = _op(cid, 1, "character.inventory.add",
-            {"name": "Cuerda", "quantity": 2})
+    _op(cid, 1, "character.inventory.add",
+        {"name": "Cuerda", "quantity": 2})
     item_id = None
     d = client.get(f"/api/characters/{cid}").json()["data"]
     item_id = d["inventory"][0]["id"]

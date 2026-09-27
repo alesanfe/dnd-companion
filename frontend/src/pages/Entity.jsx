@@ -7,7 +7,7 @@ import { useT } from '../i18n.jsx'
     para monstruos, campos clave para conjuros/objetos, y el JSON
     original como fallback. */
 export default function Entity() {
-  const { t } = useT()
+  const { t, tf } = useT()
   const { id } = useParams()
   const [ent, setEnt] = useState(null)
   const [block, setBlock] = useState(null)
@@ -54,7 +54,7 @@ export default function Entity() {
   }
 
   if (err) return <main><p className="error">{err}</p></main>
-  if (!ent) return <main><p className="muted">Cargando…</p></main>
+  if (!ent) return <main><p className="muted">{t('common.loading')}</p></main>
 
   const d = ent.data || {}
   return (
@@ -62,11 +62,12 @@ export default function Entity() {
       <div className="row">
         <h1 style={{ flex: 1, margin: 0 }}>{ent.name}</h1>
         <button className="ghost" aria-pressed={fav}
-                aria-label="Guardar en favoritos"
+                aria-label={t('ent.favAria')}
                 onClick={toggleFav}>
-          {fav ? '★ Guardado' : '☆ Guardar'}</button>
+          {fav ? `★ ${t('ent.saved')}` : `☆ ${t('ent.save')}`}</button>
         <button className="ghost" aria-expanded={colPick}
-                onClick={() => setColPick(!colPick)}>Colección</button>
+                onClick={() => setColPick(!colPick)}>
+          {t('ent.collection')}</button>
         <AddToCharacter entity={ent} />
         <button className="ghost" onClick={() => {
           const text = block
@@ -76,7 +77,7 @@ export default function Entity() {
         }}>{t('entity.copy')}</button>
       </div>
       {colPick && (
-        <div className="card" role="dialog" aria-label="Añadir a colección">
+        <div className="card" role="dialog" aria-label={t('ent.colAria')}>
           {Object.keys(JSON.parse(
               localStorage.getItem('dnd-collections') || '{}'))
             .map((c) => (
@@ -84,21 +85,22 @@ export default function Entity() {
                       onClick={() => addToCollection(c)}>{c}</button>))}
           <div className="row">
             <button onClick={() => {
-              const n = prompt('Nombre de la colección')
+              const n = prompt(t('ent.colNamePrompt'))
               if (n?.trim()) addToCollection(n.trim())
-            }}>+ Nueva colección</button>
+            }}>{t('ent.newCol')}</button>
             <button className="ghost"
-                    onClick={() => setColPick(false)}>Cerrar</button>
+                    onClick={() => setColPick(false)}>
+              {t('common.close')}</button>
           </div>
         </div>)}
       <p className="muted">
         {ent.entity_type} · {ent.ruleset} · {ent.source_id}
         {!ent.is_redistributable &&
-          <span className="tag-private"> · contenido privado</span>}
+          <span className="tag-private"> · {t('search.private')}</span>}
       </p>
       {editions && Object.keys(editions.versions || {}).length > 1 && (
         <div className="row" role="group"
-             aria-label="Versiones por edición">
+             aria-label={t('ent.editionsAria')}>
           <span className="muted">{t('entity.editions')}</span>
           {Object.entries(editions.versions).map(([rs, v]) => (
             v.id !== ent.id && (
@@ -118,7 +120,7 @@ export default function Entity() {
             <span className="chip">CA {block.ac}</span>
             <span className="chip">PG {block.hp}</span>
             <span className="chip">CR {block.cr}</span>
-            <span className="chip">Vel {block.speed || '—'}</span>
+            <span className="chip">{t('ent.speed')} {block.speed || '—'}</span>
             {block.type && <span className="chip">{block.type}</span>}
             {block.size && <span className="chip">{block.size}</span>}
             {block.alignment &&
@@ -127,24 +129,24 @@ export default function Entity() {
               <span className="chip">⛰ {block.environment}</span>}
           </div>
           {[
-            ['Resistencias', block.resistances],
-            ['Inmunidades', block.immunities],
-            ['Vulnerabilidades', block.vulnerabilities],
-            ['Cond. inmunes', block.condition_immune],
+            [t('ent.resistances'), block.resistances],
+            [t('ent.immunities'), block.immunities],
+            [t('ent.vulnerabilities'), block.vulnerabilities],
+            [t('ent.condImmunes'), block.condition_immune],
           ].filter(([, v]) => v?.length).map(([label, v]) => (
             <p key={label} className="muted">
               <strong>{label}:</strong> {v.join(', ')}</p>))}
           {block.senses && <p className="muted">
-            <strong>Sentidos:</strong> {block.senses}</p>}
+            <strong>{t('ent.senses')}:</strong> {block.senses}</p>}
           {block.languages && <p className="muted">
-            <strong>Idiomas:</strong> {block.languages}</p>}
+            <strong>{t('ent.languages')}:</strong> {block.languages}</p>}
           {Object.keys(block.skills || {}).length > 0 && (
-            <p className="muted"><strong>Habilidades:</strong>{' '}
+            <p className="muted"><strong>{t('ent.skills')}:</strong>{' '}
               {Object.entries(block.skills)
                 .map(([k, v]) => `${k} ${v >= 0 ? '+' : ''}${v}`)
                 .join(', ')}</p>)}
           {block.spellcasting && (
-            <p className="muted"><strong>Conjuros:</strong>{' '}
+            <p className="muted"><strong>{t('ent.spells')}:</strong>{' '}
               {block.spellcasting.spells.join(', ')}</p>)}
           <table className="abilities">
             <thead><tr>
@@ -184,6 +186,7 @@ export default function Entity() {
 /** Tabla aleatoria rodable — 5etools {colLabels, rows:[[…]]} y
     variantes {entries} / {table:{rows}}. */
 function TableView({ data }) {
+  const { t } = useT()
   const [rolled, setRolled] = useState(null)
   const rows = data.rows || data.table?.rows || []
   const cols = data.colLabels || data.table?.colLabels || []
@@ -197,10 +200,10 @@ function TableView({ data }) {
   }
   return (
     <section className="card">
-      <h2>Tabla
+      <h2>{t('ent.table')}
         {(rows.length > 0 || entries.length > 0) &&
           <button style={{ marginLeft: '1rem' }}
-                  onClick={roll}>Tirar</button>}</h2>
+                  onClick={roll}>{t('sheet.roll')}</button>}</h2>
       {rolled && (
         <div className="row">
           <p className="chip">
@@ -235,6 +238,7 @@ function TableView({ data }) {
 /** "＋Añadir a personaje": conjuros/dotes/objetos del compendio
     directo a la ficha como operación reversible. */
 function AddToCharacter({ entity }) {
+  const { t, tf } = useT()
   const [open, setOpen] = useState(false)
   const [chars, setChars] = useState(null)
   const [done, setDone] = useState(null)
@@ -251,6 +255,11 @@ function AddToCharacter({ entity }) {
                             { spell_id: entity.id }]
         : type === 'feat' ? ['character.feat.learn',
                              { feat_id: entity.id }]
+        : type === 'background'
+          ? ['character.identity.set',
+             { field: 'background_id', value: entity.id }]
+        : type === 'feature'
+          ? ['character.feature.add', { entity_id: entity.id }]
         : ['character.inventory.add',
            { name: entity.name, source_id: entity.id }]
       await api.applyOp({ id: ch.id, version: ch.version },
@@ -271,14 +280,14 @@ function AddToCharacter({ entity }) {
               }}>＋ PJ</button>
       {open && (
         <div className="card" role="dialog"
-             aria-label={`Añadir ${entity.name} a un personaje`}>
-          {chars === null && <p className="muted">Cargando…</p>}
+             aria-label={tf('ent.addAria', { name: entity.name })}>
+          {chars === null && <p className="muted">{t('common.loading')}</p>}
           {chars?.length === 0 && (
-            <p className="muted">Sin personajes — crea uno primero.</p>)}
+            <p className="muted">{t('ent.noChars')}</p>)}
           {(chars || []).map((c) => (
             <div key={c.id} className="row">
               <span style={{ flex: 1 }}>{c.name}</span>
-              <button onClick={() => add(c.id)}>Añadir</button>
+              <button onClick={() => add(c.id)}>{t('common.add')}</button>
             </div>))}
           {done && <p role="status" className="muted">✓ {done}</p>}
           {err && <p className="error">{err}</p>}

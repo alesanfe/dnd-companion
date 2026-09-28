@@ -394,11 +394,14 @@ def combatant_hp_set(combat: Combat, p: dict, ctx):
     if "death_saves" in p:
         c.death_saves = dict(p["death_saves"])
     _sync_character(c, ctx)
+    payload = {"combatant": c.name, "current": c.hp_current,
+               "temp": c.hp_temp, "state": hp_state(c), **_char_ref(c)}
+    # el PG exacto de un monstruo es info del DM — las PJs reciben el
+    # estado difuso vía REST; el evento numérico solo va a la sala del DM
+    if c.kind != "character":
+        payload["visibility"] = "dm"
     return inv, [{"type": "character.hp.changed",
-                  "payload": {"combatant": c.name,
-                              "current": c.hp_current,
-                              "temp": c.hp_temp,
-                              "state": hp_state(c), **_char_ref(c)}}]
+                  "payload": payload}]
 
 
 @op("combatant.initiative.roll")

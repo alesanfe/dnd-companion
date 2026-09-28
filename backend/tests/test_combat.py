@@ -76,3 +76,22 @@ def test_ordered_skips_downed_monster_and_stable():
     ])
     assert [c.id for c in cm.ordered()] == ["a", "b"]
     assert cm.active.id == "a"          # turno de salvación de Aria
+
+
+def test_hp_set_event_dm_only_for_monsters():
+    """hp.set emite el PG exacto — para un monstruo lleva
+    visibility=dm (la ficha del PJ sigue recibiéndolo en claro)."""
+    from app.engine.combat_ops import combatant_hp_set
+    cm = Combat(combatants=[
+        Combatant(id="m", kind="monster", name="Goblin",
+                  initiative=20, hp_current=7, hp_max=7),
+        Combatant(id="a", kind="character", name="Aria",
+                  initiative=15, hp_current=20, hp_max=20,
+                  ref_id="a"),
+    ])
+    _, evs = combatant_hp_set(
+        cm, {"combatant_id": "m", "current": 4}, None)
+    assert evs[0]["payload"]["visibility"] == "dm"
+    _, evs2 = combatant_hp_set(
+        cm, {"combatant_id": "a", "current": 3}, None)
+    assert "visibility" not in evs2[0]["payload"]

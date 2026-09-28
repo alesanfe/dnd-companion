@@ -144,6 +144,8 @@ export default function CharacterSheet() {
   const [xpAdd, setXpAdd] = useState(0)
   const [chat, setChat] = useState([])
   const [chatText, setChatText] = useState('')
+  const [typing, setTyping] = useState(null)   // {from, at} efímero
+  const typingSent = useRef(0)
   const [notify, setNotify] = useState(
     localStorage.getItem('dnd-notify') === '1')
   const toggleNotify = async () => {
@@ -197,7 +199,23 @@ export default function CharacterSheet() {
   // y peticiones del DM (y dispara resync cuando algo toca la ficha)
   const wsRef = useCampaignSocket(char, id, notify, load,
                                   { setChat, setRollLog,
-                                    setRollRequest })
+                                    setRollRequest, setTyping })
+
+  // el "está escribiendo" caduca a los 3s — no hay 'stop typing'
+  useEffect(() => {
+    if (!typing) return undefined
+    const tm = setTimeout(() => setTyping(null), 3000)
+    return () => clearTimeout(tm)
+  }, [typing])
+
+  // throttle: un ping cada 1.5s como máximo, nada por tecla
+  const onTyping = () => {
+    if (Date.now() - typingSent.current < 1500) return
+    if (wsRef.current?.socket?.readyState !== 1) return
+    typingSent.current = Date.now()
+    wsRef.current.socket.send(JSON.stringify(
+      { type: 'typing', from: char?.name || '?' }))
+  }
 
   const op = async (type, payload) => {
     setErr(null)
@@ -297,7 +315,7 @@ export default function CharacterSheet() {
     invTab, setInvTab, newItem, setNewItem,
     atkItem, setAtkItem, castId, setCastId,
     history, setHistory,
-    chat, chatText, setChatText, sendChat,
+    chat, chatText, setChatText, sendChat, typing, onTyping,
   }
 
   // "quién es" de un vistazo: avatar + clases/subclases/especie/trasfondo

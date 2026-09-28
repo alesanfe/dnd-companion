@@ -14,7 +14,7 @@ const TOUR_KEYS = ['tour.identity', 'tour.focus', 'tour.vitalbar',
     chat efímero, tiradas del grupo (con notificación opcional),
     peticiones del DM y resync cuando un evento toca esta ficha. */
 export function useCampaignSocket(char, id, notify, load, sinks) {
-  const { setChat, setRollLog, setRollRequest } = sinks
+  const { setChat, setRollLog, setRollRequest, setTyping } = sinks
   const wsRef = useRef(null)
   useEffect(() => {
     if (!char?.campaign_id) return undefined
@@ -27,6 +27,11 @@ export function useCampaignSocket(char, id, notify, load, sinks) {
       if (ev.type === 'chat') {
         setChat((l) => [
           { from: ev.from, text: ev.text }, ...l].slice(0, 30))
+        return
+      }
+      /* "está escribiendo" — efímero como el chat, caduca solo */
+      if (ev.type === 'typing') {
+        setTyping?.({ from: ev.from, at: Date.now() })
         return
       }
       if (!ev.type.includes('.')) return

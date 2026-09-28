@@ -130,6 +130,14 @@ async def _dispatch_ws(websocket: WebSocket, campaign_id: str,
                 "from": str(msg.get("from", "?"))[:80],
                 "text": text})
         return
+    # "X está escribiendo" — efímero: se reparte a los DEMÁS sin
+    # persistir ni encolar (el que escribe ya sabe que escribe)
+    if msg.get("type") == "typing":
+        await manager.broadcast(campaign_id, {
+            "type": "typing",
+            "from": str(msg.get("from", "?"))[:80]},
+            exclude=websocket)
+        return
     if msg.get("type") != "operation":
         await websocket.send_text(
             json.dumps({"type": "error", "detail": "unknown message"}))

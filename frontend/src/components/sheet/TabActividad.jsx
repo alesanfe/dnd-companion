@@ -5,7 +5,8 @@ import { api } from '../../api.js'
     chat efímero de mesa (WS de la campaña). */
 export default function TabActividad({ c }) {
   const { t, tf, focus, hud, tab, history, setHistory, load, char,
-          chat = [], chatText = '', setChatText, sendChat } = c
+          chat = [], chatText = '', setChatText, sendChat,
+          typing, onTyping } = c
   const show = (g) => focus ? hud.has(g) : tab === g
   if (!history && !char?.campaign_id) return null
   return (<>
@@ -18,10 +19,16 @@ export default function TabActividad({ c }) {
           {chat.map((m, i) => (
             <li key={i}><b>{m.from}</b>: {m.text}</li>))}
         </ul>
+        {typing && (
+          <p className="muted" role="status" aria-live="polite"
+             style={{ margin: '.2rem 0' }}>
+            {typing.from} {t('act.typing')}</p>)}
         <form onSubmit={sendChat} className="row">
           <input value={chatText} aria-label={t('act.chatAria')}
                  maxLength={500} placeholder={t('act.chatPh')}
-                 onChange={(e) => setChatText(e.target.value)} />
+                 onChange={(e) => {
+                   setChatText(e.target.value); onTyping?.()
+                 }} />
           <button type="submit" disabled={!chatText.trim()}>
             {t('act.send')}</button>
         </form>

@@ -45,6 +45,8 @@ export default function DmBoard() {
   const [presence, setPresence] = useState([]) // quién está en la sala
   const [chat, setChat] = useState([])         // chat efímero de mesa
   const [chatText, setChatText] = useState('')
+  const [typing, setTyping] = useState(null)   // {from, at} efímero
+  const typingSent = useRef(0)
   const sockRef = useRef(null)                 // WS vivo para el chat
 
   // feed en vivo: tiradas de los jugadores en la sala
@@ -55,6 +57,9 @@ export default function DmBoard() {
         const ev = msg.event || msg   // el servidor emite el evento suelto
         if (ev?.type === 'chat') {
           setChat((f) => [...f.slice(-40), ev])
+        }
+        if (ev?.type === 'typing') {
+          setTyping({ from: ev.from, at: Date.now() })
         }
         if (ev?.type === 'dice.roll.created') {
           setRollFeed((f) => [ev.payload, ...f].slice(0, 20))
@@ -98,6 +103,21 @@ export default function DmBoard() {
     if (campaign?.id)
       localStorage.setItem('dnd-last-campaign', campaign.id)
   }, [campaign?.id])
+
+  // el "está escribiendo" caduca solo a los 3s
+  useEffect(() => {
+    if (!typing) return undefined
+    const tm = setTimeout(() => setTyping(null), 3000)
+    return () => clearTimeout(tm)
+  }, [typing])
+
+  const onDmTyping = () => {
+    if (Date.now() - typingSent.current < 1500) return
+    if (sockRef.current?.socket?.readyState !== 1) return
+    typingSent.current = Date.now()
+    sockRef.current.socket.send(JSON.stringify(
+      { type: 'typing', from: 'DM' }))
+  }
 
   const sendDmChat = (e) => {
     e?.preventDefault()
@@ -144,7 +164,7 @@ export default function DmBoard() {
     sessTitle, setSessTitle, sessions, setSessions,
     timeline, setTimeline, rollReq, setRollReq,
     entities, setEntities, entForm, setEntForm,
-    chat, chatText, setChatText, sendDmChat,
+    chat, chatText, setChatText, sendDmChat, typing, onDmTyping,
     combat, combatName, setCombatName, refresh, cop, setCombat,
     ordered, activeIdx, sel, setSelId,
     difficulty, setDifficulty, partyLevels, setPartyLevels,

@@ -57,6 +57,22 @@ def test_public_roll_reaches_everyone():
     assert len(dm.sent) == 1 and len(player.sent) == 1
 
 
+def test_broadcast_exclude_skips_sender():
+    """typing y mensajes efímeros no vuelven al que los emitió."""
+    mgr = RoomManager()
+    a, b = FakeWS(), FakeWS()
+
+    async def run():
+        await mgr.join("camp", a, role="dm")
+        await mgr.join("camp", b, role="player")
+        await mgr.broadcast("camp", {"type": "typing", "from": "x"},
+                            exclude=a)
+
+    asyncio.run(run())
+    assert a.sent == []
+    assert len(b.sent) == 1 and '"typing"' in b.sent[0]
+
+
 def test_secret_roll_http_payload_flagged():
     """El endpoint marca visibility=dm cuando secret=True."""
     from fastapi.testclient import TestClient

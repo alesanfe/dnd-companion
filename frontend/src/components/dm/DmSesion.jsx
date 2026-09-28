@@ -9,7 +9,8 @@ export default function DmSesion({ c }) {
           newRolls, setNewRolls, feedRef, playerView,
           sessTitle, setSessTitle, sessions, setSessions,
           timeline, setTimeline, rollReq, setRollReq, refresh,
-          chat, chatText, setChatText, sendDmChat } = c
+          chat, chatText, setChatText, sendDmChat,
+          typing, onDmTyping } = c
   const show = dmTab === 'sesion'
   // campañas existentes — sin esto recargar /dm obligaba a crear una
   // nueva cada visita
@@ -194,10 +195,16 @@ export default function DmSesion({ c }) {
           {chat.map((m, i) => (
             <li key={i}><b>{m.from}:</b> {m.text}</li>))}
         </ul>
+        {typing && (
+          <p className="muted" role="status" aria-live="polite"
+             style={{ margin: '.2rem 0' }}>
+            {typing.from} {t('act.typing')}</p>)}
         <form className="row" onSubmit={sendDmChat}>
           <input value={chatText} aria-label={t('act.chatAria')}
                  maxLength={500} placeholder={t('act.chatPh')}
-                 onChange={(e) => setChatText(e.target.value)} />
+                 onChange={(e) => {
+                   setChatText(e.target.value); onDmTyping?.()
+                 }} />
           <button type="submit" disabled={!chatText.trim()}>
             {t('act.send')}</button>
         </form>

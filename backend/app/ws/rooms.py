@@ -27,11 +27,13 @@ class RoomManager:
                 del self._rooms[campaign_id]
 
     async def broadcast(self, campaign_id: str,
-                        event: Event | dict) -> None:
+                        event: Event | dict,
+                        exclude: WebSocket | None = None) -> None:
         """Reparte el evento a la sala. Si el payload marca
         visibility=dm solo llega a sockets DM/owner/local — las
         tiradas secretas no se filtran a los jugadores.
-        Acepta Event de dominio o dicts efímeros (chat)."""
+        Acepta Event de dominio o dicts efímeros (chat).
+        `exclude` omite un socket (p.ej. el emisor del typing)."""
         room = self._rooms.get(campaign_id, {})
         payload = getattr(event, "payload", None)
         if payload is None and isinstance(event, dict):
@@ -42,6 +44,8 @@ class RoomManager:
                 else json.dumps(event))
         dead = []
         for ws, info in room.items():
+            if ws is exclude:
+                continue
             role = info[0] if isinstance(info, tuple) else info
             if dm_only and role not in ("dm", "owner", "local"):
                 continue

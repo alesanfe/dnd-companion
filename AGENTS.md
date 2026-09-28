@@ -56,10 +56,18 @@ cd frontend && npm install && npm run dev
 - El `user_id` del body/payload es **spoofable**: con token se pisa con
   el uid autenticado (ops, join, transfer). El mismo guard va en REST
   **y** en el path WS de operaciones (main.py `_dispatch_ws`).
-- Ops `entity_kind=combat` = DM-only; `character` = miembro y, si la
-  ficha tiene `player_id`, solo su dueño (o el DM) la muta.
+- Ops `entity_kind=combat` = DM-only (REST y WS); `character` = miembro
+  y, si la ficha tiene `player_id`, solo su dueño (o el DM) la muta.
+  Excepción: `combatant.death_save_roll` sobre el propio PJ (y su undo).
 - Fichas libres (`player_id` NULL) se reclaman vía PATCH — el no-DM
   solo puede poner su propio uid o soltar la suya.
+- Visibilidad `dm` se filtra en el servidor, no solo en la UI: eventos
+  (/state, /events), escenas de sesiones, entidades, relaciones y
+  timeline nunca salen a no-DM en campañas con owner.
+- Sala WS: `visibility=dm` solo llega a sockets dm/owner/local;
+  `payload.for_user` = entrega dirigida (petición secreta del DM).
+  Espectador = solo lectura (sin chat/typing/ops). El `from` del
+  chat/typing lo firma el servidor con la identidad del socket.
 - Conflictos de optimistic locking: `POST /api/operations/conflicts/
   {id}/retry|dismiss` — resolución asistida desde Settings.
 

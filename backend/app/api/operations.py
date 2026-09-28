@@ -472,6 +472,17 @@ def _player_combat_op(conn, op: OperationIn,
     de muerte de SU combatiente-PJ (en la mesa la tira el jugador,
     no el DM). Solo death_save_roll y solo sobre combatientes cuyo
     personaje tiene su player_id."""
+    if op.operation_type == "combatant.death_save.set" \
+            and (op.payload or {}).get("_undoes"):
+        # deshacer la propia salvación: la inversa solo vale si la op
+        # original era una death_save_roll de ESTE jugador (el
+        # combatiente ya se validó entonces)
+        orig = conn.execute(
+            "SELECT operation_type, user_id FROM operations "
+            "WHERE operation_id = ?", (op.payload["_undoes"],)).fetchone()
+        if orig and orig["operation_type"] == "combatant.death_save_roll" \
+                and orig["user_id"] == (user or {}).get("user_id"):
+            return
     if op.operation_type != "combatant.death_save_roll":
         raise HTTPException(403, "solo el DM dirige el combate")
     row = conn.execute("SELECT data FROM combats WHERE id = ?",

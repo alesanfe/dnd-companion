@@ -762,6 +762,16 @@ def test_player_rolls_own_death_save_in_combat():
     r2 = _cop("combatant.death_save_roll",
               {"combatant_id": cb["id"]}, player, v)
     assert r2.status_code == 200
+    op_id = r2.json()["operation_id"]
+    # un click erróneo se deshace — la inversa solo es legal para el
+    # propio autor: otro jugador sigue recibiendo 403
+    other = _auth_headers(f"du{uuid.uuid4().hex[:8]}")
+    client.post("/api/campaigns/join",
+                json={"invite_code": code}, headers=other)
+    assert client.post(f"/api/operations/undo/{op_id}",
+                       headers=other).status_code == 403
+    r3 = client.post(f"/api/operations/undo/{op_id}", headers=player)
+    assert r3.status_code == 200
     # …pero nada más: turnos y combatientes ajenos siguen siendo del DM
     v2 = client.get(f"/api/combat/{comb['id']}",
                     headers=owner).json()["version"]

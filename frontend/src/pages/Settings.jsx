@@ -222,16 +222,25 @@ function SyncQueue({ onChanged }) {
   </div>)
 }
 
-/** Operaciones rechazadas por optimistic locking — revisar a mano. */
+/** Operaciones rechazadas por optimistic locking — resolución
+    asistida: reintentar sobre la versión actual o descartar. */
 function SyncConflicts() {
   const { t, tf } = useT()
   const [rows, setRows] = useState(null)
-  useEffect(() => {
-    api.opConflicts()
-      .then((r) => setRows(r.conflicts || []))
-      .catch(() => setRows([]))
-  }, [])
+  const [msg, setMsg] = useState(null)
+  const load = () => api.opConflicts()
+    .then((r) => setRows(r.conflicts || []))
+    .catch(() => setRows([]))
+  useEffect(() => { load() }, [])
   if (!rows?.length) return null
+  const act = async (fn, id, label) => {
+    setMsg(null)
+    try {
+      await fn(id)
+      setMsg(`✓ ${label}`)
+    } catch (e) { setMsg(`⚠ ${e.message}`) }
+    load()
+  }
   return (
     <div role="alert">
       <strong>⚠ {tf('set.conflicts', { n: rows.length })}
@@ -240,13 +249,29 @@ function SyncConflicts() {
         {t('set.conflictsHint')}</span>
       <ul style={{ margin: '.3rem 0', paddingLeft: '1rem' }}>
         {rows.map((r) => (
-          <li key={r.operation_id}>
+          <li key={r.operation_id} className="row">
             <Link to={`/character/${r.entity_id}/actividad`}>
               {r.operation_type}</Link>
-            <span className="muted">
-              {' '}· {r.timestamp?.slice(11, 19)}</span>
+            <span className="muted"
+                  title={JSON.stringify(r.payload)}>
+              {' '}· {r.timestamp?.slice(11, 19)}
+              {Object.keys(r.payload || {}).length > 0 &&
+                ` · ${Object.entries(r.payload).slice(0, 2)
+                    .map(([k, v]) => `${k}=${v}`).join(', ')}`}
+            </span>
+            <button className="ghost" style={{ minHeight: 24 }}
+                    onClick={() =>
+                      act(api.retryConflict, r.operation_id,
+                          t('set.retryDone'))}>
+              {t('set.retry')}</button>
+            <button className="ghost" style={{ minHeight: 24 }}
+                    onClick={() =>
+                      act(api.dismissConflict, r.operation_id,
+                          t('set.dismissDone'))}>
+              {t('set.dismiss')}</button>
           </li>))}
       </ul>
+      {msg && <p className="muted" role="status">{msg}</p>}
     </div>
   )
 }

@@ -361,6 +361,56 @@ def test_get_campaign_owned_requires_membership():
                       headers=owner).status_code == 200
 
 
+# --- resolución asistida de conflictos ---------------------------------
+
+def test_conflict_retry_applies_at_fresh_version():
+    cid = _mkchar()
+    before = client.get(
+        f"/api/characters/{cid}").json()["data"]["hp"]["current"]
+    assert _op(cid, 1, "character.hp.damage",
+               {"amount": 5}).status_code == 200
+    # op con versión stale → 409 y queda registrada como 'conflict'
+    stale = uuid.uuid4().hex
+    r = client.post("/api/operations", json={
+        "operation_id": stale, "entity_id": cid, "entity_version": 1,
+        "client_id": "c", "user_id": "u", "entity_kind": "character",
+        "operation_type": "character.hp.heal", "payload": {"amount": 3}})
+    assert r.status_code == 409
+    # reintentar: se aplica con la versión actual y se marca resolved
+    assert client.post(
+        f"/api/operations/conflicts/{stale}/retry").status_code == 200
+    hp = client.get(
+        f"/api/characters/{cid}").json()["data"]["hp"]["current"]
+    assert hp == before - 5 + 3
+    confs = client.get("/api/operations/conflicts").json()["conflicts"]
+    assert all(c["operation_id"] != stale for c in confs)
+    # reintentar dos veces → ya resuelto, 404
+    assert client.post(
+        f"/api/operations/conflicts/{stale}/retry").status_code == 404
+
+
+def test_conflict_dismiss_marks_resolved():
+    cid = _mkchar()
+    assert _op(cid, 1, "character.condition.apply",
+               {"condition": "prone"}).status_code == 200
+    stale = uuid.uuid4().hex
+    r = client.post("/api/operations", json={
+        "operation_id": stale, "entity_id": cid, "entity_version": 1,
+        "client_id": "c", "user_id": "u", "entity_kind": "character",
+        "operation_type": "character.hp.damage", "payload": {"amount": 2}})
+    assert r.status_code == 409
+    assert client.post(
+        f"/api/operations/conflicts/{stale}/dismiss").status_code == 200
+    confs = client.get("/api/operations/conflicts").json()["conflicts"]
+    assert all(c["operation_id"] != stale for c in confs)
+    # descartado → ya no es conflict (404), y el daño NUNCA se aplicó
+    assert client.post(
+        f"/api/operations/conflicts/{stale}/dismiss").status_code == 404
+    hp = client.get(
+        f"/api/characters/{cid}").json()["data"]["hp"]["current"]
+    assert hp == 8                      # default 8, sin el daño stale
+
+
 # --- rules assistant: FTS seguro ------------------------------------
 
 def test_rules_ask_survives_fts_operators():

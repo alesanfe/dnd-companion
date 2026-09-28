@@ -525,6 +525,67 @@ def conflicts(limit: int = 20,
     return {"conflicts": out}
 
 
+@router.post("/conflicts/{operation_id}/retry")
+async def retry_conflict(operation_id: str,
+                         user: dict | None = Depends(optional_user)):
+    """Re-aplica una op en conflicto sobre la versión ACTUAL de la
+    entidad — resolución manual del optimistic locking desde la UI.
+    El nuevo operation_id evita que la idempotencia rebote el
+    reintento; el viejo queda marcado 'resolved'."""
+    conn = state_db()
+    row = conn.execute(
+        "SELECT * FROM operations WHERE operation_id = ?",
+        (operation_id,)).fetchone()
+    if row is None or row["status"] != "conflict":
+        raise HTTPException(404, "conflict not found")
+    entity_kind = "combat" if conn.execute(
+        "SELECT 1 FROM combats WHERE id = ?",
+        (row["entity_id"],)).fetchone() else "character"
+    retry_op = OperationIn(
+        operation_id=uuid.uuid4().hex,
+        entity_id=row["entity_id"],
+        entity_version=_current_version(conn, row["entity_id"],
+                                        entity_kind),
+        client_id=row["client_id"],
+        user_id=row["user_id"],
+        operation_type=row["operation_type"],
+        entity_kind=entity_kind,
+        payload=json.loads(row["payload"]),
+    )
+    result = await apply(retry_op, user)   # membresía revalidada dentro
+    conn.execute(
+        "UPDATE operations SET status = ? WHERE operation_id = ?",
+        (OperationStatus.RESOLVED.value, operation_id))
+    conn.commit()
+    return {**result, "resolved_conflict": operation_id}
+
+
+@router.post("/conflicts/{operation_id}/dismiss")
+def dismiss_conflict(operation_id: str,
+                     user: dict | None = Depends(optional_user)):
+    """Descarta el conflicto — el dato local gana y no se reintenta."""
+    conn = state_db()
+    row = conn.execute(
+        "SELECT * FROM operations WHERE operation_id = ?",
+        (operation_id,)).fetchone()
+    if row is None or row["status"] != "conflict":
+        raise HTTPException(404, "conflict not found")
+    # misma membresía que /history — la entidad puede ser char o combat
+    for table in _TABLES.values():
+        er = conn.execute(
+            f"SELECT campaign_id FROM {table} WHERE id = ?",
+            (row["entity_id"],)).fetchone()
+        if er and er["campaign_id"] and _has_owner(
+                conn, er["campaign_id"]):
+            _require_role(conn, er["campaign_id"], user)
+            break
+    conn.execute(
+        "UPDATE operations SET status = ? WHERE operation_id = ?",
+        (OperationStatus.DISMISSED.value, operation_id))
+    conn.commit()
+    return {"dismissed": operation_id}
+
+
 @router.post("/undo/{operation_id}")
 async def undo(operation_id: str,
                user: dict | None = Depends(optional_user)):

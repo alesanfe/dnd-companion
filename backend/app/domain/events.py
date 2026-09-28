@@ -14,6 +14,9 @@ class OperationStatus(str, Enum):
     SYNCED = "synced"
     REJECTED = "rejected"
     CONFLICT = "conflict"
+    # resolución manual desde la UI de conflictos
+    RESOLVED = "resolved"
+    DISMISSED = "dismissed"
 
 
 class Operation(BaseModel):

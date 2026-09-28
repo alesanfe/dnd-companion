@@ -263,6 +263,10 @@ export const api = {
   },
   opHistory: (entityId) => req(`/api/operations?entity_id=${entityId}`),
   opConflicts: () => req('/api/operations/conflicts'),
+  retryConflict: (opId) =>
+    req(`/api/operations/conflicts/${opId}/retry`, { method: 'POST' }),
+  dismissConflict: (opId) =>
+    req(`/api/operations/conflicts/${opId}/dismiss`, { method: 'POST' }),
   undoOp: (opId) => req(`/api/operations/undo/${opId}`, { method: 'POST' }),
   exportCharacter: (id) => req(`/api/characters/${id}/export`),
   importCharacter: (character) => req('/api/characters/import', {

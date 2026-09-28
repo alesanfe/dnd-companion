@@ -921,6 +921,16 @@ async def request_roll(campaign_id: str, body: RollRequestIn,
     conn = state_db()
     _require_role(conn, campaign_id, user, _DM_ROLES)
     from ..domain.events import Event, EventType
+    payload = {"expression": body.expression, "reason": body.reason,
+               "secret": body.secret}
+    if body.secret and _has_owner(conn, campaign_id):
+        # petición secreta: solo el dueño de la ficha (y los DM) la ven
+        # — antes se emitía a toda la sala y delataba la tirada oculta
+        prow = conn.execute(
+            "SELECT player_id FROM characters WHERE id = ?",
+            (body.character_id,)).fetchone()
+        payload["for_user"] = prow["player_id"] if prow else None
+        payload["visibility"] = "dm"
     event = Event(
         event_id=uuid.uuid4().hex,
         type=EventType.ROLL_REQUESTED,
@@ -929,8 +939,7 @@ async def request_roll(campaign_id: str, body: RollRequestIn,
         aggregate_version=0,
         actor_id="dm",
         occurred_at=datetime.now(timezone.utc),
-        payload={"expression": body.expression, "reason": body.reason,
-                 "secret": body.secret},
+        payload=payload,
     )
     conn.execute(
         """INSERT INTO events

@@ -547,6 +547,35 @@ def test_combat_ops_dm_only_in_owned_campaign():
                        headers=owner).status_code == 200
 
 
+def test_secret_roll_request_marked_targeted():
+    """Una petición secreta se marca visibility=dm + for_user — los
+    demás jugadores no la ven ni por feed ni por socket."""
+    owner = _auth_headers(f"sr{uuid.uuid4().hex[:8]}")
+    pa = _auth_headers(f"st{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    code = client.get(f"/api/campaigns/{camp['id']}",
+                      headers=owner).json()["invite_code"]
+    client.post("/api/campaigns/join",
+                json={"invite_code": code}, headers=pa)
+    cha = client.post("/api/characters",
+                      json={"name": "A", "campaign_id": camp["id"]},
+                      headers=pa).json()
+    uid_a = client.get("/api/auth/me", headers=pa).json()["user_id"]
+    client.post(f"/api/campaigns/{camp['id']}/roll-request",
+                json={"character_id": cha["id"], "secret": True,
+                      "reason": "escucha"}, headers=owner)
+    ev_dm = client.get(f"/api/campaigns/{camp['id']}/events",
+                       headers=owner).json()["events"]
+    req = [e for e in ev_dm if e["type"] == "dice.roll.requested"]
+    assert req and req[0]["payload"]["for_user"] == uid_a
+    assert req[0]["payload"]["visibility"] == "dm"
+    # el jugador no la ve en el feed (aunque pendingRolls sí la sirve)
+    ev_pa = client.get(f"/api/campaigns/{camp['id']}/events",
+                       headers=pa).json()["events"]
+    assert not [e for e in ev_pa if e["type"] == "dice.roll.requested"]
+
+
 def test_entities_and_relationships_require_membership():
     """Sin el guard un extraño listaba al menos las entidades y
     relaciones públicas de una mesa ajena. Ahora 403."""

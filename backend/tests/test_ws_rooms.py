@@ -73,6 +73,27 @@ def test_broadcast_exclude_skips_sender():
     assert len(b.sent) == 1 and '"typing"' in b.sent[0]
 
 
+def test_for_user_targeted_delivery():
+    """for_user: solo el socket de ese usuario + los DM reciben la
+    petición secreta — el resto de la mesa ni la ve."""
+    mgr = RoomManager()
+    dm, pa, pb = FakeWS(), FakeWS(), FakeWS()
+
+    async def run():
+        await mgr.join("camp", dm, role="dm", uid="udm")
+        await mgr.join("camp", pa, role="player", uid="ua")
+        await mgr.join("camp", pb, role="player", uid="ub")
+        ev = _ev()
+        ev.payload["for_user"] = "ua"
+        ev.payload["visibility"] = "dm"      # secreta + dirigida
+        await mgr.broadcast("camp", ev)
+
+    asyncio.run(run())
+    assert len(dm.sent) == 1
+    assert len(pa.sent) == 1                 # la destinataria sí la ve
+    assert pb.sent == []                     # otro jugador no
+
+
 def test_secret_roll_http_payload_flagged():
     """El endpoint marca visibility=dm cuando secret=True."""
     from fastapi.testclient import TestClient

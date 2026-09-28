@@ -57,7 +57,8 @@ async def campaign_ws(websocket: WebSocket, campaign_id: str,
     parámetro user_id suelto solo vale en modo local (sin cuenta),
     porque es spoofable y daría rol 'dm' a cualquiera."""
     role, resolved, name = _ws_identity(campaign_id, token, user_id)
-    await manager.join(campaign_id, websocket, role=role, name=name)
+    await manager.join(campaign_id, websocket, role=role, name=name,
+                       uid=resolved)
     # presencia en vivo — estilo Discord: la sala se entera de
     # altas y bajas sin polling
     await _broadcast_presence(campaign_id)

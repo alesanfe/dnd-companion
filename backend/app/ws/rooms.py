@@ -11,13 +11,15 @@ from ..domain.events import Event
 
 class RoomManager:
     def __init__(self) -> None:
-        # campaign_id → {socket: rol} — 'dm'|'owner'|'player'|'local'
-        self._rooms: dict[str, dict[WebSocket, str]] = {}
+        # campaign_id → {socket: (rol, nombre, user_id)}
+        # rol: 'dm'|'owner'|'player'|'local'|'spectator'
+        self._rooms: dict[str, dict[WebSocket, tuple]] = {}
 
     async def join(self, campaign_id: str, ws: WebSocket,
-                   role: str = 'local', name: str | None = None) -> None:
+                   role: str = 'local', name: str | None = None,
+                   uid: str | None = None) -> None:
         await ws.accept()
-        self._rooms.setdefault(campaign_id, {})[ws] = (role, name)
+        self._rooms.setdefault(campaign_id, {})[ws] = (role, name, uid)
 
     def leave(self, campaign_id: str, ws: WebSocket) -> None:
         room = self._rooms.get(campaign_id)
@@ -38,7 +40,11 @@ class RoomManager:
         payload = getattr(event, "payload", None)
         if payload is None and isinstance(event, dict):
             payload = event.get("payload")
-        dm_only = (payload or {}).get("visibility") == "dm"
+        payload = payload or {}
+        dm_only = payload.get("visibility") == "dm"
+        # for_user: entrega dirigida (petición secreta del DM) — solo el
+        # socket de ese usuario + los DM; el resto de la mesa ni la ve
+        target = payload.get("for_user")
         data = (event.model_dump_json()
                 if hasattr(event, "model_dump_json")
                 else json.dumps(event))
@@ -46,8 +52,13 @@ class RoomManager:
         for ws, info in room.items():
             if ws is exclude:
                 continue
-            role = info[0] if isinstance(info, tuple) else info
-            if dm_only and role not in ("dm", "owner", "local"):
+            role, uid = (info[0], info[2] if len(info) > 2 else None) \
+                if isinstance(info, tuple) else (info, None)
+            if dm_only and role not in ("dm", "owner", "local") \
+                    and not (uid and uid == target):
+                continue
+            if target and not dm_only and not (uid and uid == target) \
+                    and role not in ("dm", "owner", "local"):
                 continue
             try:
                 await ws.send_text(data)
@@ -63,7 +74,8 @@ class RoomManager:
         seen: dict[str, str] = {}
         guests = 0
         for info in room.values():
-            role, name = info if isinstance(info, tuple) else (info, None)
+            role, name = (info[0], info[1]) \
+                if isinstance(info, tuple) else (info, None)
             if name:
                 seen.setdefault(name, role)
             else:

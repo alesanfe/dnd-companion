@@ -543,6 +543,46 @@ def test_combat_ops_dm_only_in_owned_campaign():
                        headers=owner).status_code == 200
 
 
+def test_pending_roll_requests_scoped_to_own_chars():
+    """Un jugador no consulta peticiones pendientes de fichas ajenas —
+    las secretas del DM filtrarían el motivo de la tirada."""
+    owner = _auth_headers(f"rp{uuid.uuid4().hex[:8]}")
+    pa = _auth_headers(f"rq{uuid.uuid4().hex[:8]}")
+    pb = _auth_headers(f"rr{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    code = client.get(f"/api/campaigns/{camp['id']}",
+                      headers=owner).json()["invite_code"]
+    for h in (pa, pb):
+        client.post("/api/campaigns/join",
+                    json={"invite_code": code}, headers=h)
+    cha = client.post("/api/characters",
+                      json={"name": "A", "campaign_id": camp["id"]},
+                      headers=pa).json()
+    chb = client.post("/api/characters",
+                      json={"name": "B", "campaign_id": camp["id"]},
+                      headers=pb).json()
+    client.post(f"/api/campaigns/{camp['id']}/roll-request",
+                json={"character_id": cha["id"], "expression": "1d20",
+                      "reason": "percepción", "secret": True},
+                headers=owner)
+    both = f"{cha['id']},{chb['id']}"
+    # B no ve la petición dirigida a la ficha de A
+    r = client.get(
+        f"/api/campaigns/{camp['id']}/roll-requests/pending",
+        params={"character_ids": both}, headers=pb).json()
+    assert all(p["character_id"] != cha["id"] for p in r["pending"])
+    # A sí ve la suya; el DM ve ambas
+    ra = client.get(
+        f"/api/campaigns/{camp['id']}/roll-requests/pending",
+        params={"character_ids": both}, headers=pa).json()
+    assert any(p["character_id"] == cha["id"] for p in ra["pending"])
+    rm = client.get(
+        f"/api/campaigns/{camp['id']}/roll-requests/pending",
+        params={"character_ids": both}, headers=owner).json()
+    assert any(p["character_id"] == cha["id"] for p in rm["pending"])
+
+
 def test_secret_rolls_not_served_by_rest_state():
     """La tirada secreta va visibility=dm por WS, pero el resync REST
     (/state, /events) la servía con el total a cualquier miembro.

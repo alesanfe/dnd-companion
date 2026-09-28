@@ -956,6 +956,20 @@ def pending_roll_requests(campaign_id: str, character_ids: str = "",
         return {"pending": []}
     conn = state_db()
     _require_role(conn, campaign_id, user)
+    # un jugador solo consulta SUS fichas: una petición secreta a otro
+    # PJ filtraría el motivo del DM ("percepción: te mienten")
+    uid = (user or {}).get("user_id")
+    if _has_owner(conn, campaign_id) \
+            and member_role(campaign_id, uid) not in _DM_ROLES:
+        allowed = {r["id"] for r in conn.execute(
+            f"""SELECT id FROM characters
+                WHERE id IN ({",".join("?" * len(ids))})
+                  AND (player_id = ? OR player_id IS NULL
+                       OR player_id = '')""",
+            (*ids, uid)).fetchall()}
+        ids = [i for i in ids if i in allowed]
+        if not ids:
+            return {"pending": []}
     rows = conn.execute(
         f"""SELECT aggregate_id, type, occurred_at, payload
             FROM events

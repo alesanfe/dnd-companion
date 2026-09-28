@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../api.js'
 import { useT } from '../i18n.jsx'
 import WikiText from './WikiText.jsx'
@@ -243,9 +243,41 @@ export default function MapBoard({ campaign, size = CELL,
 
   const cellAt = (e) => {
     const r = e.currentTarget.getBoundingClientRect()
-    return [Math.floor((e.clientX - r.left) / size),
-            Math.floor((e.clientY - r.top) / size)]
+    // pantalla → mundo: el SVG lleva viewBox con zoom/pan
+    const wx = view.x + (e.clientX - r.left) / r.width  * vw
+    const wy = view.y + (e.clientY - r.top)  / r.height * vh
+    return [Math.floor(wx / size), Math.floor(wy / size)]
   }
+
+  /* zoom/pan — rueda acerca/aleja anclando el cursor, botón central
+     o espacio arrastra la vista. Los botones ±/⛶ sirven en táctil. */
+  const [view, setView] = useState({ x: 0, y: 0, z: 1 })
+  const vw = d.cols * size / view.z, vh = d.rows * size / view.z
+  const svgRef = useRef(null)
+  const panRef = useRef(null)
+  const zoomAt = (e, factor) => {
+    const r = svgRef.current.getBoundingClientRect()
+    const px = view.x + (e.clientX - r.left) / r.width  * vw
+    const py = view.y + (e.clientY - r.top)  / r.height * vh
+    const z = Math.min(4, Math.max(.35, view.z * factor))
+    const nw = d.cols * size / z, nh = d.rows * size / z
+    setView({ z,
+      // el punto bajo el cursor no se mueve
+      x: px - (e.clientX - r.left) / r.width  * nw,
+      y: py - (e.clientY - r.top)  / r.height * nh })
+  }
+  useEffect(() => {
+    const el = svgRef.current
+    if (!el) return
+    // listener nativo no-pasivo — React onWheel no puede
+    // preventDefault (la página haría scroll)
+    const onW = (e) => {
+      e.preventDefault()
+      zoomAt(e, e.deltaY < 0 ? 1.2 : 1 / 1.2)
+    }
+    el.addEventListener('wheel', onW, { passive: false })
+    return () => el.removeEventListener('wheel', onW)
+  })
 
   const onSvgClick = (e) => {
     if (tokMoved) { setTokMoved(false); return }
@@ -267,6 +299,15 @@ export default function MapBoard({ campaign, size = CELL,
      cubre (o limpia, si la celda ancla ya lo estaba) el
      rectángulo entero */
   const onSvgDown = (e) => {
+    // botón central (rueda) → paneo de la vista
+    if (e.button === 1) {
+      const r = e.currentTarget.getBoundingClientRect()
+      panRef.current = { cx: e.clientX, cy: e.clientY,
+                         vx: view.x, vy: view.y, rw: r.width,
+                         rh: r.height }
+      e.preventDefault()
+      return
+    }
     if (readOnly || (mode !== 'fog' && mode !== 'mark' &&
                      mode !== 'blast' && mode !== 'cone' &&
                      mode !== 'line')) return
@@ -276,6 +317,7 @@ export default function MapBoard({ campaign, size = CELL,
   }
 
   const onSvgUp = () => {
+    panRef.current = null
     // soltar tras arrastrar un token → commit de la posición
     if (dragTok) {
       const tk = d.tokens.find((t2) => t2.id === dragTok.id)
@@ -354,6 +396,14 @@ export default function MapBoard({ campaign, size = CELL,
   }
 
   const onSvgMove = (e) => {
+    if (panRef.current) {
+      const p = panRef.current
+      // arrastra la vista: px de pantalla → unidades de mundo
+      setView((v) => ({ ...v,
+        x: p.vx - (e.clientX - p.cx) / p.rw * vw,
+        y: p.vy - (e.clientY - p.cy) / p.rh * vh }))
+      return
+    }
     const [x, y] = cellAt(e)
     if (x < 0 || y < 0 || x >= d.cols || y >= d.rows) return
     if (drag) setDrag((m) => ({ ...m, b: [x, y] }))
@@ -526,6 +576,20 @@ export default function MapBoard({ campaign, size = CELL,
           <button className="ghost" title={t('map.rowPlus')}
                   onClick={() => resize('rows', +1)}>＋fil</button>
         </>}
+        {/* zoom ±/⛶ — rueda en ratón; en táctil estos botones y
+            el paneo con botón central */}
+        {map && (
+          <span className="row" style={{ gap: 0 }}>
+            <button className="ghost" aria-label="-"
+                    onClick={() => setView((v) => ({
+                      ...v, z: Math.max(.35, v.z / 1.25) }))}>−</button>
+            <button className="ghost" title={t('map.zoomReset')}
+                    aria-label={t('map.zoomReset')}
+                    onClick={() => setView({ x: 0, y: 0, z: 1 })}>⛶</button>
+            <button className="ghost" aria-label="+"
+                    onClick={() => setView((v) => ({
+                      ...v, z: Math.min(4, v.z * 1.25) }))}>+</button>
+          </span>)}
       </div>
       {!readOnly && sel && (
         <div className="row" style={{ fontSize: '.9rem',
@@ -645,7 +709,8 @@ export default function MapBoard({ campaign, size = CELL,
           sq: Math.round(dist / d.cell_ft) })}</p>)}
 
       {map && (
-      <svg width={W} height={H} role="img"
+      <svg ref={svgRef} width={W} height={H} role="img"
+           viewBox={`${view.x} ${view.y} ${vw} ${vh}`}
            aria-label={t('map.canvasAria')}
            onClick={onSvgClick} onMouseMove={onSvgMove}
            onMouseDown={onSvgDown} onMouseUp={onSvgUp}

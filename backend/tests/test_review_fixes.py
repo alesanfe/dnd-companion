@@ -920,3 +920,33 @@ def test_award_xp_splits_fallen_monsters_between_pcs():
     xp = client.get(f"/api/characters/{ch['id']}",
                     headers=player).json()["data"]["xp"]
     assert xp == 50
+
+
+def test_split_loot_shares_treasure_dm_only():
+    """split-loot reparte el tesoro entre las fichas como ops
+    currency.earn; resto redondeado a las primeras. DM-only con owner."""
+    owner = _auth_headers(f"sl{uuid.uuid4().hex[:8]}")
+    player = _auth_headers(f"sm{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    code = client.get(f"/api/campaigns/{camp['id']}",
+                      headers=owner).json()["invite_code"]
+    client.post("/api/campaigns/join",
+                json={"invite_code": code}, headers=player)
+    a = client.post("/api/characters",
+                    json={"name": "A", "campaign_id": camp["id"]},
+                    headers=player).json()
+    b = client.post("/api/characters",
+                    json={"name": "B", "campaign_id": camp["id"]},
+                    headers=owner).json()
+    assert client.post(f"/api/campaigns/{camp['id']}/split-loot",
+                       json={"coin": "gp", "amount": 10},
+                       headers=player).status_code == 403
+    r = client.post(f"/api/campaigns/{camp['id']}/split-loot",
+                    json={"coin": "gp", "amount": 11}, headers=owner)
+    assert r.status_code == 200 and r.json()["awarded"] == 2
+    purses = [client.get(f"/api/characters/{cid}",
+                         headers=owner).json()["data"]["purse"]
+              for cid in (a["id"], b["id"])]
+    # 11 gp / 2 fichas → 6 y 5, sin resto perdido
+    assert sorted(p["gp"] for p in purses) == [5, 6]

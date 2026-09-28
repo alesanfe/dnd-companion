@@ -15,6 +15,8 @@ export default function DmSesion({ c }) {
   // peticiones de tirada que los jugadores aún no han respondido —
   // se recalcula al llegar tiradas nuevas (una respuesta la cierra)
   const [pendingReqs, setPendingReqs] = useState([])
+  const [loot, setLoot] = useState({ coin: 'gp', amount: '' })
+  const [lootMsg, setLootMsg] = useState(null)
   useEffect(() => {
     if (!campaign || partyChars.length === 0) {
       setPendingReqs([])
@@ -256,6 +258,33 @@ export default function DmSesion({ c }) {
             {t('ses.request')}
           </button>
         </div>
+        {/* reparto del botín — una op currency.earn por PJ */}
+        {partyChars.length > 0 && (
+          <div className="row" style={{ marginTop: '.5rem' }}>
+            <input type="number" min="1" value={loot.amount}
+                   placeholder={t('ses.lootAmt')}
+                   aria-label={t('ses.lootAmt')}
+                   style={{ maxWidth: 90 }}
+                   onChange={(e) => setLoot(
+                     { ...loot, amount: e.target.value })} />
+            <select value={loot.coin} aria-label={t('ses.lootCoin')}
+                    onChange={(e) => setLoot(
+                      { ...loot, coin: e.target.value })}>
+              {['pp', 'gp', 'ep', 'sp', 'cp'].map((k) => (
+                <option key={k} value={k}>{k}</option>))}
+            </select>
+            <button className="ghost"
+                    disabled={!(+loot.amount > 0)}
+                    onClick={() => api.splitLoot(campaign.id,
+                      { coin: loot.coin, amount: +loot.amount })
+                      .then((r) => setLootMsg(tf('ses.lootSplit', {
+                        share: r.share, coin: loot.coin,
+                        n: r.awarded })))
+                      .catch(() => {})}>
+              {t('ses.lootSplitBtn')}
+            </button>
+            {lootMsg && <span className="muted">{lootMsg}</span>}
+          </div>)}
       </section>
     )}
   </>)

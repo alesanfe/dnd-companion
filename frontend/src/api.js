@@ -181,6 +181,9 @@ export const api = {
   listCampaigns: () => req('/api/campaigns'),
   campaignEvents: (campaignId, limit = 100) =>
     req(`/api/campaigns/${campaignId}/events?limit=${limit}`),
+  splitLoot: (campaignId, body) =>
+    req(`/api/campaigns/${campaignId}/split-loot`,
+        { method: 'POST', body: JSON.stringify(body) }),
   pendingRolls: (campaignId, characterIds) =>
     req(`/api/campaigns/${campaignId}/roll-requests/pending` +
         `?character_ids=${characterIds.join(',')}`),

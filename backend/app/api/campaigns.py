@@ -955,6 +955,51 @@ async def request_roll(campaign_id: str, body: RollRequestIn,
     return {"event_id": event.event_id}
 
 
+# --- Reparto de tesoro del grupo -----------------------------------
+
+_COINS = ("pp", "gp", "ep", "sp", "cp")
+
+
+class LootSplit(BaseModel):
+    coin: str = "gp"
+    amount: int = 0
+
+
+@router.post("/{campaign_id}/split-loot")
+async def split_loot(campaign_id: str, body: LootSplit,
+                     user: dict | None = Depends(optional_user)):
+    """Reparte el tesoro entre las fichas de la campaña — cada parte es
+    una op `character.currency.earn` real: auditable, deshacible y con
+    broadcast a la sala (el que esté conectado ve su bolsa crecer)."""
+    from .operations import OperationIn, apply_to_store
+    conn = state_db()
+    if _has_owner(conn, campaign_id):
+        _require_role(conn, campaign_id, user, _DM_ROLES)
+    if body.coin not in _COINS or body.amount <= 0:
+        raise HTTPException(400, "tesoro inválido")
+    rows = conn.execute(
+        "SELECT id, version FROM characters WHERE campaign_id = ?",
+        (campaign_id,)).fetchall()
+    if not rows:
+        return {"share": 0, "awarded": 0}
+    share, rem = divmod(body.amount, len(rows))
+    uid = (user or {}).get("user_id") or "dm"
+    awarded = 0
+    for i, r in enumerate(rows):
+        part = share + (1 if i < rem else 0)
+        if part <= 0:
+            continue
+        result = apply_to_store(OperationIn(
+            operation_id=uuid.uuid4().hex, entity_id=r["id"],
+            entity_version=r["version"], client_id="api:split-loot",
+            user_id=uid, operation_type="character.currency.earn",
+            entity_kind="character", payload={body.coin: part}))
+        for event in result.pop("_event_objs", []):
+            await manager.broadcast(campaign_id, event)
+        awarded += 1
+    return {"share": share, "awarded": awarded}
+
+
 @router.get("/{campaign_id}/roll-requests/pending")
 def pending_roll_requests(campaign_id: str, character_ids: str = "",
                           user: dict | None = Depends(optional_user)):

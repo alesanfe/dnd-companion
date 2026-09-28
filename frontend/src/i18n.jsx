@@ -525,6 +525,10 @@ es: {
   'ses.request': 'Pedir',
   'ses.pickChar': 'personaje',
   'ses.pendingRolls': 'sin responder',
+  'ses.lootAmt': 'botín',
+  'ses.lootCoin': 'moneda',
+  'ses.lootSplitBtn': 'Repartir',
+  'ses.lootSplit': '{share} {coin} para cada PJ ({n} fichas)',
 
   'com.levelsPh': 'niveles: 3,3,4',
   'com.crsPh': 'CRs: 1/4,1/2,2',
@@ -1349,6 +1353,10 @@ en: {
   'ses.request': 'Request',
   'ses.pickChar': 'character',
   'ses.pendingRolls': 'unanswered',
+  'ses.lootAmt': 'loot',
+  'ses.lootCoin': 'coin',
+  'ses.lootSplitBtn': 'Split',
+  'ses.lootSplit': '{share} {coin} each ({n} sheets)',
 
   'com.levelsPh': 'levels: 3,3,4',
   'com.crsPh': 'CRs: 1/4,1/2,2',

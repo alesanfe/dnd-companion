@@ -2,6 +2,8 @@
 inversas noop, doble-undo 409, muerte de PJ en combate, ASI gated
 por asi_earned, adv antes del modificador, merge de inventario,
 rest largo limpia muerto/estable."""
+import asyncio
+import json
 import sys
 import uuid
 from pathlib import Path
@@ -443,6 +445,78 @@ def test_char_claim_and_release():
     assert client.patch(f"/api/characters/{cid}",
                         json={"player_id": None},
                         headers=pa).status_code == 200
+
+
+class _FakeWS:
+    """Socket stub para probar _dispatch_ws sin WebSocket real."""
+
+    def __init__(self):
+        self.sent = []
+
+    async def send_text(self, text):
+        self.sent.append(json.loads(text))
+
+
+def test_ws_op_auth_parity_with_rest():
+    """El path WS de operaciones aplica el mismo modelo que REST:
+    la entidad debe ser de esta sala, en campaña con dueño se exige
+    miembro, el jugador solo toca su ficha y el combate es del DM."""
+    from app.main import _dispatch_ws
+    owner = _auth_headers(f"we{uuid.uuid4().hex[:8]}")
+    player = _auth_headers(f"wf{uuid.uuid4().hex[:8]}")
+    uid_p = client.get("/api/auth/me", headers=player).json()["user_id"]
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    code = client.get(f"/api/campaigns/{camp['id']}",
+                      headers=owner).json()["invite_code"]
+    client.post("/api/campaigns/join",
+                json={"invite_code": code}, headers=player)
+    ch = client.post("/api/characters",
+                     json={"name": "P", "campaign_id": camp["id"]},
+                     headers=player).json()
+    comb = client.post("/api/combat", json={
+        "name": "X", "campaign_id": camp["id"]}, headers=owner).json()
+    ws = _FakeWS()
+
+    def _op(entity_id, version, kind, otype, payload=None):
+        return {"type": "operation", "operation": {
+            "operation_id": uuid.uuid4().hex, "entity_id": entity_id,
+            "entity_version": version, "client_id": "c",
+            "user_id": "spoofable", "entity_kind": kind,
+            "operation_type": otype, "payload": payload or {}}}
+
+    # jugador dirigiendo el combate por WS → error (como en REST)
+    asyncio.run(_dispatch_ws(ws, camp["id"],
+                             _op(comb["id"], comb["version"],
+                                 "combat", "combat.end"),
+                             resolved=uid_p))
+    assert ws.sent[-1]["type"] == "error"
+    assert "DM" in ws.sent[-1]["detail"]
+    # jugador mutando SU ficha → ack, y el user_id queda sellado
+    v = client.get(f"/api/characters/{ch['id']}",
+                   headers=player).json()["version"]
+    asyncio.run(_dispatch_ws(ws, camp["id"],
+                             _op(ch["id"], v, "character",
+                                 "character.hp.damage", {"amount": 1}),
+                             resolved=uid_p))
+    assert ws.sent[-1]["type"] == "ack"
+    # socket sin identidad en campaña con dueño → error
+    asyncio.run(_dispatch_ws(ws, camp["id"],
+                             _op(ch["id"], v + 1, "character",
+                                 "character.hp.damage", {"amount": 1}),
+                             resolved=None))
+    assert ws.sent[-1]["type"] == "error"
+    # op sobre entidad de OTRA campaña → error (aislamiento de sala)
+    camp2 = client.post("/api/campaigns", json={"name": "Otra"},
+                        headers=owner).json()
+    other = client.post("/api/characters",
+                        json={"name": "X", "campaign_id": camp2["id"]},
+                        headers=owner).json()
+    asyncio.run(_dispatch_ws(ws, camp["id"],
+                             _op(other["id"], other["version"],
+                                 "character", "character.hp.damage",
+                                 {"amount": 1}), resolved=uid_p))
+    assert ws.sent[-1]["type"] == "error"
 
 
 def test_combat_ops_dm_only_in_owned_campaign():

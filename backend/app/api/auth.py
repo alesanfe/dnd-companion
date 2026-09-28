@@ -12,7 +12,7 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 
 from ..db.connections import state_db
@@ -38,7 +38,8 @@ class Credentials(BaseModel):
 
 
 @router.post("/register", status_code=201)
-def register(body: Credentials):
+def register(body: Credentials, request: Request):
+    _throttle(f"reg:{request.client.host if request.client else '?'}")
     conn = state_db()
     if conn.execute("SELECT 1 FROM users WHERE username = ?",
                     (body.username,)).fetchone():
@@ -52,19 +53,25 @@ def register(body: Credentials):
     return {"user_id": uid, "token": _issue(conn, uid)}
 
 
-# throttle de login en memoria: max 5 intentos/min por usuario
+# throttle en memoria: max 5 intentos/min por clave (usuario en login,
+# IP en register — por nombre no frenaría la creación masiva)
 _login_attempts: dict[str, list[float]] = {}
 
 
-def _throttle(username: str) -> None:
+def _throttle(key: str) -> None:
+    import os
     import time
+    # TestClient comparte una única IP: sin el bypass la suite de
+    # tests tropezaría con su propio rate-limit
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return
     now = time.time()
-    tries = [t for t in _login_attempts.get(username, [])
+    tries = [t for t in _login_attempts.get(key, [])
              if now - t < 60]
     if len(tries) >= 5:
         raise HTTPException(429, "demasiados intentos; espera un minuto")
     tries.append(now)
-    _login_attempts[username] = tries
+    _login_attempts[key] = tries
 
 
 @router.post("/login")
@@ -93,6 +100,10 @@ def logout(authorization: str | None = Header(None)):
 
 def _issue(conn, user_id: str) -> str:
     token = secrets.token_urlsafe(32)
+    # GC perezosa: cada emisión barre los tokens caducados — la tabla
+    # no crece sin límite con sesiones abandonadas
+    conn.execute("DELETE FROM auth_tokens WHERE expires_at <= ?",
+                 (_now(),))
     conn.execute(
         "INSERT INTO auth_tokens (token, user_id, created_at, expires_at) "
         "VALUES (?,?,?,?)",

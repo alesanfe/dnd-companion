@@ -22,7 +22,9 @@ export default function TabAcciones({ c }) {
       .then((r) => { if (alive) setActions(r.actions) })
       .catch(() => {})
     return () => { alive = false }
-  }, [tab, focus, id, actions])
+    // hud en deps: en modo focus, marcar 'acciones' en el HUD debe
+    // disparar la carga — show() depende de hud, no de tab
+  }, [tab, focus, hud, id, actions])
 
   return (<div className="sheet-cols">
     <Section title={t('sheet.actions')}  hidden={!show('acciones')}>

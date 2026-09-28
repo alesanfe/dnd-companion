@@ -573,7 +573,7 @@ export default function CharacterSheet() {
                       e.target.checked ? nx.add(k) : nx.delete(k)
                       return nx
                     })} />
-                  {t('tab.' + k) || label}</label>))}
+                  {tr('tab.' + k, label)}</label>))}
           </div>)}
         {!focus && (
           <nav className="tabs" role="tablist" aria-label={t('sheet.tabsAria')}>
@@ -581,7 +581,7 @@ export default function CharacterSheet() {
                 <button key={k} role="tab" aria-selected={tab === k}
                         onClick={() => setTab(k)}>
                   <span className="ti" aria-hidden="true">{icon}</span>
-                  {t('tab.' + k) || label}</button>))}
+                  {tr('tab.' + k, label)}</button>))}
           </nav>)}
       </div>
 

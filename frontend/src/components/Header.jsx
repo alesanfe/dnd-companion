@@ -27,7 +27,11 @@ export default function Header() {
             localStorage.setItem('dc.user', JSON.stringify(u))
             setUser(u)
           }
-        } catch { clearAuth(); setUser(null) }
+        } catch (e) {
+          // solo el 401 cierra sesión — un error de red/offline
+          // no debe revocar el token local
+          if (e.status === 401) { clearAuth(); setUser(null) }
+        }
       }
       // peticiones de tirada del DM sobre mis personajes en campaña
       try {

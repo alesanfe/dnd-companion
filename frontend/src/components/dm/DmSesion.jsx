@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { api } from '../../api.js'
 
 /** Pestaña Sesión: datos de campaña, feed de tiradas en vivo,
@@ -10,23 +11,55 @@ export default function DmSesion({ c }) {
           timeline, setTimeline, rollReq, setRollReq, refresh,
           chat, chatText, setChatText, sendDmChat } = c
   const show = dmTab === 'sesion'
+  // campañas existentes — sin esto recargar /dm obligaba a crear una
+  // nueva cada visita
+  const [camps, setCamps] = useState(null)
+  const [pickId, setPickId] = useState('')
+  useEffect(() => {
+    if (campaign || camps !== null) return
+    api.listCampaigns()
+      .then((r) => {
+        setCamps(r.campaigns)
+        setPickId(r.campaigns[0]?.id || '')
+      })
+      .catch(() => setCamps([]))
+  }, [campaign, camps])
   return (<>
     <section className="card" hidden={!show}>
       <h2>{t('dm.campaign')}</h2>
-      {!campaign ? (
+      {!campaign ? (<>
         <form className="row" onSubmit={async (e) => {
           e.preventDefault()
           const r = await api.createCampaign(campName || t('camp.name'))
-          setCampaign(r)
+          // createCampaign devuelve {id, invite_code} — el nombre se
+          // conserva del input o el sidebar queda en blanco
+          setCampaign({ ...r, name: campName || t('camp.name') })
         }}>
           <input value={campName} onChange={(e) => setCampName(e.target.value)}
                  placeholder={t('ses.campNamePh')} />
           <button type="submit">{t('ses.create')}</button>
         </form>
-      ) : (
+        {camps?.length > 0 && (
+          <form className="row" onSubmit={async (e) => {
+            e.preventDefault()
+            if (!pickId) return
+            setCampaign(await api.getCampaign(pickId))
+          }}>
+            <label className="muted">{t('ses.openExisting')}
+              <select value={pickId} aria-label={t('ses.openExisting')}
+                      onChange={(e) => setPickId(e.target.value)}>
+                {camps.map((cp) => (
+                  <option key={cp.id} value={cp.id}>{cp.name}</option>))}
+              </select></label>
+            <button type="submit" disabled={!pickId}>
+              {t('camp.open')}</button>
+          </form>)}
+      </>) : (
         <>
-          <p>{campName || t('camp.name')} — {t('ses.invite')}:
-            <strong> {campaign.invite_code}</strong></p>
+          <p>{campaign.name} — {t('ses.invite')}:
+            <strong> {campaign.invite_code}</strong>{' '}
+            <button className="ghost" onClick={() => setCampaign(null)}>
+              {t('ses.switch')}</button></p>
           <div className="row">
             <button className="ghost" onClick={async () => {
               const ex = await api.exportCampaign(campaign.id)

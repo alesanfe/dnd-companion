@@ -36,6 +36,7 @@ export const useT = () => useContext(LangCtx)
 /* ---- diccionario ---- */
 const STRINGS = {
 es: {
+  'app.skip': 'Saltar al contenido',
   'nav.home': 'Inicio',
   'nav.sheets': 'Fichas', 'nav.campaigns': 'Campañas',
   'nav.compendium': 'Compendio', 'nav.dm': 'Mesa DM',
@@ -498,6 +499,8 @@ es: {
 
   'ses.campNamePh': 'Nombre de campaña',
   'ses.create': 'Crear',
+  'ses.openExisting': 'o abre una existente',
+  'ses.switch': 'Cambiar',
   'ses.invite': 'código invitación',
   'ses.exportBackup': 'Exportar backup',
   'ses.audit': 'Auditoría',
@@ -838,6 +841,7 @@ es: {
 },
 
 en: {
+  'app.skip': 'Skip to content',
   'nav.home': 'Home',
   'nav.sheets': 'Sheets', 'nav.campaigns': 'Campaigns',
   'nav.compendium': 'Compendium', 'nav.dm': 'DM Table',
@@ -1300,6 +1304,8 @@ en: {
 
   'ses.campNamePh': 'Campaign name',
   'ses.create': 'Create',
+  'ses.openExisting': 'or open an existing one',
+  'ses.switch': 'Switch',
   'ses.invite': 'invite code',
   'ses.exportBackup': 'Export backup',
   'ses.audit': 'Audit',

@@ -72,6 +72,33 @@ export default function DmBoard() {
     return () => { sockRef.current = null; sock.close() }
   }, [campaign?.id])
 
+  // al entrar en la campaña se cargan sesiones y entidades — antes
+  // solo se repoblaban tras crear/editar y salían vacías
+  useEffect(() => {
+    if (!campaign) return
+    api.listSessions(campaign.id)
+      .then((r) => setSessions(r.sessions)).catch(() => {})
+    api.listEntities(campaign.id)
+      .then((r) => setEntities(r.entities)).catch(() => {})
+  }, [campaign?.id])
+
+  // recargar /dm no debe tirar el tablero entero: restaura la última
+  // campaña abierta y recuérdala para la próxima visita
+  useEffect(() => {
+    if (campaign) return
+    const last = localStorage.getItem('dnd-last-campaign')
+    if (!last) return
+    api.getCampaign(last)
+      .then(setCampaign)
+      .catch(() => localStorage.removeItem('dnd-last-campaign'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (campaign?.id)
+      localStorage.setItem('dnd-last-campaign', campaign.id)
+  }, [campaign?.id])
+
   const sendDmChat = (e) => {
     e?.preventDefault()
     const text = chatText.trim()

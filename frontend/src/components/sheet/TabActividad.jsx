@@ -35,7 +35,8 @@ export default function TabActividad({ c }) {
           {h.reversible ? (
             <>
             <button onClick={async () => {
-              await api.undoOp(h.operation_id)
+              try { await api.undoOp(h.operation_id) }
+              catch { /* ya revertida o no reversible */ }
               setHistory(null)
               load()
             }}>{t('sheet.undoBtn')}</button>
@@ -45,7 +46,8 @@ export default function TabActividad({ c }) {
               const idx = history.indexOf(h)
               for (const x of history.slice(0, idx + 1)) {
                 if (x.reversible)
-                  await api.undoOp(x.operation_id)
+                  try { await api.undoOp(x.operation_id) }
+                  catch { /* ya revertida — seguir con la anterior */ }
               }
               setHistory(null)
               load()

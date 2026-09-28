@@ -56,7 +56,16 @@ async function req(path, opts = {}) {
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err.detail ? JSON.stringify(err.detail) : res.statusText)
+    // detail puede ser string, dict o lista de errores 422 — el
+    // usuario debe ver texto, no un blob JSON
+    let msg = res.statusText
+    if (typeof err.detail === 'string') msg = err.detail
+    else if (Array.isArray(err.detail))
+      msg = err.detail.map((d) => d.msg || JSON.stringify(d)).join('; ')
+    else if (err.detail) msg = JSON.stringify(err.detail)
+    const e = new Error(msg)
+    e.status = res.status
+    throw e
   }
   return res.json()
 }
@@ -66,6 +75,15 @@ export async function flushQueue() {
   const pending = await pendingOps()
   for (const op of pending) {
     try {
+      // la entity_version se guardó al encolar: offline pasaron minutos
+      // y otras ops pueden haberla movido — reenviarla tal cual
+      // provocaría 'conflict' seguro, así que se refresca antes
+      const url = op.payload.entity_kind === 'combat'
+        ? `/api/combat/${op.payload.entity_id}`
+        : `/api/characters/${op.payload.entity_id}`
+      const cur = await fetch(url, { headers: authHeaders() })
+      if (cur.ok)
+        op.payload.entity_version = (await cur.json()).version
       const r = await fetch('/api/operations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -122,7 +140,10 @@ export const api = {
     req(`/api/combat/${combatId}/add-party`, { method: 'POST' }),
   timeline: (campaignId) =>
     req(`/api/campaigns/${campaignId}/timeline`),
-  listCharacters: () => req('/api/characters'),
+  listCharacters: (campaignId) =>
+    req('/api/characters' +
+        (campaignId ? `?campaign_id=${encodeURIComponent(campaignId)}`
+                    : '')),
   getCharacter: (id) => req(`/api/characters/${id}`),
   createCharacter: (name, ruleset = 'dnd5e-2014') =>
     req('/api/characters', {

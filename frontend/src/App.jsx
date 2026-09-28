@@ -49,9 +49,10 @@ function MobileNav() {
 }
 
 export default function App() {
+  const { t } = useT()
   return (
     <div className="app">
-      <a href="#content" className="skip-link">Saltar al contenido</a>
+      <a href="#content" className="skip-link">{t('app.skip')}</a>
       <Header />
       <CommandPalette />
       <div id="content" tabIndex={-1}>

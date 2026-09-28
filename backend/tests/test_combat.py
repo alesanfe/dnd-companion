@@ -57,3 +57,22 @@ def test_end_is_reversible():
     assert c.status == "ended"
     apply_combat_operation(c, inv["operation_type"], inv["payload"], _Ctx())
     assert c.status == "active"
+
+
+def test_ordered_skips_downed_monster_and_stable():
+    """Un monstruo a 0 PG aunque falte la marca 'muerto' y un PJ
+    estabilizado no toman turno; el PJ caído sí — su turno es la
+    salvación de muerte."""
+    cm = Combat(combatants=[
+        Combatant(id="m", kind="monster", name="Goblin",
+                  initiative=20, hp_current=0, hp_max=7),
+        Combatant(id="s", kind="character", name="Sara",
+                  initiative=18, hp_current=0, hp_max=10,
+                  ref_id="s", conditions=["estable"]),
+        Combatant(id="a", kind="character", name="Aria",
+                  initiative=15, hp_current=0, hp_max=20, ref_id="a"),
+        Combatant(id="b", kind="character", name="Borin",
+                  initiative=10, hp_current=12, hp_max=12, ref_id="b"),
+    ])
+    assert [c.id for c in cm.ordered()] == ["a", "b"]
+    assert cm.active.id == "a"          # turno de salvación de Aria

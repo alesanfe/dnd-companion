@@ -35,13 +35,16 @@ class Combat(BaseModel):
     combatants: list[Combatant] = Field(default_factory=list)
 
     def ordered(self) -> list[Combatant]:
-        """Iniciativa descendente; los muertos/inconscientes no toman
-        turno (alias ES/EN canonicalizados)."""
+        """Iniciativa descendente; los muertos/inconscientes/estables no
+        toman turno (alias ES/EN canonicalizados). Un monstruo a 0 PG
+        aunque falte la marca 'muerto' queda fuera; el PJ caído sigue en
+        el orden — en su turno tira la salvación de muerte."""
         from .conditions import canon
-        skip = {"dead", "unconscious"}
+        skip = {"dead", "unconscious", "stable", "estable"}
         return sorted(
             (c for c in self.combatants
-             if not skip & {canon(x) for x in c.conditions}),
+             if not skip & {canon(x) for x in c.conditions}
+             and not (c.hp_current <= 0 and c.kind != "character")),
             key=lambda c: -c.initiative)
 
     @property

@@ -199,10 +199,13 @@ export default function CampaignBoard() {
             (los muertos/inconscientes se apartan como en Combat.ordered
             del backend), turno activo y estado aproximado (sin PG) */}
         {combatView?.combat?.combatants?.length > 0 && (() => {
-          const OUT = new Set(['muerto', 'inconsciente',
-                               'dead', 'unconscious'])
+          const OUT = new Set(['muerto', 'inconsciente', 'estable',
+                               'dead', 'unconscious', 'stable'])
           const isOut = (cb) => (cb.conditions || [])
             .some((cn) => OUT.has(cn))
+            // monstruo a 0 sin marca 'muerto': hp_state='caído' es lo
+            // único que ve el jugador (los números van ocultos)
+            || (cb.hp_state === 'caído' && cb.kind !== 'character')
           const alive = combatView.combat.combatants
             .filter((cb) => !isOut(cb))
             .sort((a, b) => b.initiative - a.initiative)

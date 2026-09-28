@@ -152,8 +152,16 @@ export default function DmBoard() {
     } catch (ex) { setErr(ex.message) }
   }
 
+  // mismo orden que Combat.ordered() del motor: los fuera de combate
+  // (muerto/inconsciente/estable o monstruo a 0 PG) no toman turno —
+  // sin el filtro el índice del turno desapuntaba en cuanto alguien caía
+  const OUT = new Set(['muerto', 'inconsciente', 'estable',
+                       'dead', 'unconscious', 'stable'])
   const ordered = combat
-    ? [...combat.combat.combatants].sort((a, b) => b.initiative - a.initiative)
+    ? [...combat.combat.combatants]
+        .filter((cb) => !(cb.conditions || []).some((x) => OUT.has(x))
+                && !(cb.hp_current <= 0 && cb.kind !== 'character'))
+        .sort((a, b) => b.initiative - a.initiative)
     : []
   const activeIdx = combat ? combat.combat.turn_index % Math.max(1, ordered.length) : 0
   const sel = ordered.find((c) => c.id === selId)

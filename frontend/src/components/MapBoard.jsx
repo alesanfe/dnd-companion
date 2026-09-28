@@ -9,6 +9,10 @@ const MARK_COLORS = ['#27ae60', '#2980b9', '#c0392b', '#f39c12',
 const DEFAULTS = { cols: 16, rows: 10, cell_ft: 5, tokens: [],
                    fog: [], marks: {}, pins: [] }
 
+// distancia en pies entre el centro de dos celdas
+const cellDist = (x1, y1, x2, y2, ft) =>
+  Math.hypot(x2 - x1, y2 - y1) * ft
+
 /** Grid táctico estilo Owlbear: varios mapas/escenas por campaña,
     tokens movibles (auto-numeración, PG, renombrar), niebla de
     guerra, zonas pintadas y regla de distancia. Persiste en
@@ -33,6 +37,7 @@ export default function MapBoard({ campaign, size = CELL,
   const [drag, setDrag] = useState(null)    // pintar área {a,b,kind}
   const [dragTok, setDragTok] = useState(null) // arrastrar token {id,x,y}
   const [tokMoved, setTokMoved] = useState(false)
+  const [tokDmg, setTokDmg] = useState(0)   // daño rápido al token
   const [suppress, setSuppress] = useState(false)
   const [speeds, setSpeeds] = useState(() => {
     try { return JSON.parse(localStorage.getItem('map.speeds')) ||
@@ -250,6 +255,15 @@ export default function MapBoard({ campaign, size = CELL,
   for (let y = 0; y < d.rows; y++)
     for (let x = 0; x < d.cols; x++) cells.push([x, y])
 
+  /* visión en vista de jugador: la niebla cercana a un token PROPIO
+     con vision_ft > 0 se abre (se ve el contenido, la celda sigue
+     sombreada). Tokens/pins dentro se muestran. */
+  const myToks = readOnly
+    ? d.tokens.filter((tk) => tokOwner(tk) === myUid)
+    : []
+  const lit = (x, y) => myToks.some((tk) => tk.vision_ft &&
+    cellDist(tk.x, tk.y, x, y, d.cell_ft) <= tk.vision_ft + 0.01)
+
   const newMap = async () => {
     const name = prompt(t('map.newPrompt'), `Mapa ${maps.length + 1}`)
     if (!name?.trim()) return
@@ -366,15 +380,34 @@ export default function MapBoard({ campaign, size = CELL,
           <strong>{sel.name}</strong>
           <button className="ghost" onClick={renameTok}
                   title={t('map.renameTok')}>✎</button>
-          {sel.hp != null ? <>
+          {sel.ref_id ? (
+            <span className="muted">{t('map.linkedHp')}</span>
+          ) : sel.hp != null ? <>
             <button className="ghost" aria-label={t('map.hpMinus')}
                     onClick={() => adjHp(-1)}>−</button>
             <span>{sel.hp}/{sel.max_hp}</span>
             <button className="ghost" aria-label={t('map.hpPlus')}
                     onClick={() => adjHp(+1)}>＋</button>
+            {/* daño de una tacada desde el grid */}
+            <input type="number" min="0" style={{ width: 56 }}
+                   aria-label={t('map.dmgAria')} value={tokDmg || ''}
+                   onChange={(e) => setTokDmg(+e.target.value || 0)} />
+            <button className="ghost" disabled={!tokDmg}
+                    onClick={() => adjHp(-tokDmg)}>−{t('com.damage') || 'dmg'}</button>
           </> : (
             <button className="ghost" onClick={setHp}>
               {t('map.tokenHp')}</button>)}
+          {/* radio de visión (ft): abre la niebla alrededor del token
+              en la vista del jugador */}
+          <label className="muted">{t('map.visionFt')}
+            <input type="number" min="0" max="300" step="5"
+                   defaultValue={sel.vision_ft || 0}
+                   key={`${sel.id}:${sel.vision_ft}`}
+                   style={{ width: 52 }}
+                   aria-label={t('map.visionFtAria')}
+                   onBlur={(e) => patchTok({
+                     vision_ft: Math.max(0, +e.target.value || 0) })} />
+          </label>
           {Object.keys(speeds).map((k) => (
             <label key={k} className="muted">
               {t(`map.speed.${k}`)}
@@ -442,7 +475,8 @@ export default function MapBoard({ campaign, size = CELL,
         {cells.map(([x, y]) => {
           const k = `${x},${y}`
           const mk = d.marks[k]
-          const fog = d.fog.includes(k)
+          // la visión del propio token abre la niebla cercana
+          const fog = d.fog.includes(k) && (!readOnly || !lit(x, y))
           // el DM ve la niebla translúcida (sabe qué hay debajo);
           // el jugador la ve casi opaca
           return (
@@ -481,7 +515,8 @@ export default function MapBoard({ campaign, size = CELL,
 
         {/* tokens (bajo niebla → ocultos en vista de jugador) */}
         {d.tokens.map((tk) => {
-          if (readOnly && d.fog.includes(`${tk.x},${tk.y}`))
+          if (readOnly && d.fog.includes(`${tk.x},${tk.y}`) &&
+              !lit(tk.x, tk.y))
             return null
           const lx = dragTok?.id === tk.id ? dragTok.x : tk.x
           const ly = dragTok?.id === tk.id ? dragTok.y : tk.y
@@ -536,7 +571,8 @@ export default function MapBoard({ campaign, size = CELL,
           const ent = worldEntities.find((e) => e.id === p.entity_id)
           // pin a una entidad que el jugador no conoce → oculto
           if (readOnly && !ent) return null
-          if (readOnly && d.fog.includes(`${p.x},${p.y}`)) return null
+          if (readOnly && d.fog.includes(`${p.x},${p.y}`) &&
+              !lit(p.x, p.y)) return null
           return (
             <g key={p.id}
                onClick={(e) => {

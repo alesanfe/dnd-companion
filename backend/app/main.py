@@ -155,6 +155,11 @@ async def _dispatch_ws(websocket: WebSocket, campaign_id: str,
             from .api.campaigns import _require_role
             _require_role(conn, entity_camp,
                           {"user_id": resolved} if resolved else None)
+            if op.entity_kind == "character":
+                from .api.operations import _char_ownership
+                _char_ownership(conn, op.entity_id,
+                                {"user_id": resolved}
+                                if resolved else None)
         if resolved:
             # el actor es la identidad de la conexión — el user_id del
             # payload es spoofable y envenenaría la auditoría

@@ -444,6 +444,24 @@ def _entity_campaign(conn, op: OperationIn) -> str | None:
     return row["campaign_id"] if row else None
 
 
+def _char_ownership(conn, entity_id: str, user: dict | None) -> None:
+    """En campaña con dueño, un miembro no-DM solo muta la ficha cuyo
+    player_id es el suyo — sin esto cualquier jugador editaba las
+    fichas ajenas por /api/operations (membresía sola no bastaba).
+    player_id vacío = ficha sin reclamar; el DM mueve todo."""
+    row = conn.execute(
+        "SELECT campaign_id, player_id FROM characters WHERE id = ?",
+        (entity_id,)).fetchone()
+    if row is None or not row["campaign_id"] or not row["player_id"]:
+        return
+    uid = (user or {}).get("user_id")
+    if not _has_owner(conn, row["campaign_id"]):
+        return
+    if member_role(row["campaign_id"], uid) not in _DM_ROLES \
+            and row["player_id"] != uid:
+        raise HTTPException(403, "la ficha es de otro jugador")
+
+
 @router.post("")
 async def apply(op: OperationIn,
                 user: dict | None = Depends(optional_user)):
@@ -453,6 +471,8 @@ async def apply(op: OperationIn,
     camp_id = _entity_campaign(conn, op)
     if camp_id and _has_owner(conn, camp_id):
         _require_role(conn, camp_id, user)
+        if op.entity_kind == "character":
+            _char_ownership(conn, op.entity_id, user)
         if user:
             # con token, el autor es el autenticado — no el del body
             op.user_id = user["user_id"]

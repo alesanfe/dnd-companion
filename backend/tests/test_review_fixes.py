@@ -350,6 +350,63 @@ def test_delete_campaign_detaches_characters():
     assert client.get(f"/api/campaigns/{camp['id']}").status_code == 404
 
 
+def test_char_ownership_in_owned_campaign():
+    """Un jugador solo muta SU ficha: player_id ligado al uid en el
+    alta (spoof del body rebotado), patch/delete/op/transfer de la
+    ficha de otro jugador = 403. El DM mueve todo."""
+    def _account(tag):
+        r = client.post("/api/auth/register", json={
+            "username": f"{tag}{uuid.uuid4().hex[:8]}",
+            "password": "pw12345"})
+        return {"Authorization": f"Bearer {r.json()['token']}"}, \
+            r.json()["user_id"]
+
+    owner, _uid_o = _account("o")
+    pa, uid_a = _account("a")
+    pb, uid_b = _account("b")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    code = client.get(f"/api/campaigns/{camp['id']}",
+                      headers=owner).json()["invite_code"]
+    for h in (pa, pb):
+        client.post("/api/campaigns/join",
+                    json={"invite_code": code}, headers=h)
+    # A crea su ficha intentando spoofear player_id=B → ligado a A
+    r = client.post("/api/characters",
+                    json={"name": "A", "campaign_id": camp["id"],
+                          "player_id": uid_b}, headers=pa)
+    assert r.status_code == 201
+    cid = r.json()["id"]
+    row = client.get(f"/api/characters/{cid}", headers=owner).json()
+    assert row["player_id"] == uid_a
+    # B: lectura sí (miembro), mutaciones no
+    assert client.get(f"/api/characters/{cid}",
+                      headers=pb).status_code == 200
+    assert client.patch(f"/api/characters/{cid}", json={"name": "X"},
+                        headers=pb).status_code == 403
+    assert client.delete(f"/api/characters/{cid}",
+                         headers=pb).status_code == 403
+    assert client.post("/api/operations", json={
+        "operation_id": uuid.uuid4().hex, "entity_id": cid,
+        "entity_version": row["version"], "client_id": "c",
+        "user_id": uid_b, "entity_kind": "character",
+        "operation_type": "character.hp.damage",
+        "payload": {"amount": 1}}, headers=pb).status_code == 403
+    # ni mover objetos de la ficha de A
+    cb = client.post("/api/characters",
+                     json={"name": "B", "campaign_id": camp["id"]},
+                     headers=pb).json()
+    assert client.post("/api/inventory/transfer", json={
+        "transfer_id": uuid.uuid4().hex, "from_character": cid,
+        "to_character": cb["id"], "item_id": "x", "quantity": 1},
+        headers=pb).status_code == 403
+    # A (dueña) y el DM sí pueden
+    assert client.patch(f"/api/characters/{cid}",
+                        json={"name": "A2"}, headers=pa).status_code == 200
+    assert client.delete(f"/api/characters/{cid}",
+                         headers=owner).status_code == 200
+
+
 def test_combat_difficulty_is_dm_only():
     """Los CRs/stat_blocks son info del DM — for-combat exige rol DM
     cuando la campaña tiene dueño; en local queda abierto."""

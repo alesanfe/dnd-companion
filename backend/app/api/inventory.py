@@ -59,6 +59,17 @@ def transfer(body: TransferIn,
     if user:
         body.user_id = uid
 
+    # y un jugador solo saca objetos de SU ficha — mover cosas del
+    # inventario del vecino es del DM (en local queda libre)
+    src_camp = src_row["campaign_id"]
+    if src_camp and src_row["player_id"] and _has_owner(
+            conn, src_camp) \
+            and member_role(src_camp, uid) not in _DM_ROLES \
+            and src_row["player_id"] != uid:
+        conn.rollback()
+        raise HTTPException(
+            403, "solo puedes mover objetos de tu propia ficha")
+
     try:
         src = Character(**json.loads(src_row["data"]))
         dst = Character(**json.loads(dst_row["data"]))

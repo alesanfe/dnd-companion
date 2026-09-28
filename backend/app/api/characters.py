@@ -9,8 +9,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .auth import optional_user
-from .campaigns import _has_owner, _require_role
+from .auth import member_role, optional_user
+from .campaigns import _DM_ROLES, _has_owner, _require_role
 from ..db.connections import content_db, state_db
 from ..domain.character import (
     AbilityScores, Character, ClassLevel, HitDicePool, HitPoints,
@@ -37,6 +37,33 @@ def _char_camp_guard(conn, campaign_id: str | None,
         _require_role(conn, campaign_id, user)
 
 
+def _char_write_guard(conn, campaign_id: str | None, player_id: str | None,
+                      user: dict | None) -> None:
+    """Mutación además de membresía: en campaña con dueño, un miembro
+    no-DM solo toca la ficha cuyo player_id es el suyo (vacío = libre
+    de reclamar); el DM mueve todas."""
+    _char_camp_guard(conn, campaign_id, user)
+    if campaign_id and player_id \
+            and _has_owner(conn, campaign_id):
+        uid = (user or {}).get("user_id")
+        if member_role(campaign_id, uid) not in _DM_ROLES \
+                and player_id != uid:
+            raise HTTPException(403, "la ficha es de otro jugador")
+
+
+def _bound_player_id(conn, campaign_id: str | None,
+                     player_id: str | None,
+                     user: dict | None) -> str | None:
+    """Alta en campaña con dueño: un miembro no-DM solo crea fichas
+    SUYAS (player_id = su uid; el del body sería spoofable). El DM sí
+    asigna player_id arbitrarios."""
+    uid = (user or {}).get("user_id")
+    if campaign_id and _has_owner(conn, campaign_id) \
+            and member_role(campaign_id, uid) not in _DM_ROLES:
+        return uid
+    return player_id
+
+
 def _member_camps(conn, uid: str | None) -> set[str]:
     """Campañas donde el usuario es miembro u owner directo."""
     if not uid:
@@ -61,6 +88,8 @@ def create_character(body: CharacterCreate,
                      user: dict | None = Depends(optional_user)):
     conn = state_db()
     _char_camp_guard(conn, body.campaign_id, user)
+    player_id = _bound_player_id(conn, body.campaign_id,
+                                 body.player_id, user)
     cid = uuid.uuid4().hex
     now = datetime.now(timezone.utc).isoformat()
     char = Character(name=body.name, ruleset=body.ruleset, **body.data)
@@ -68,7 +97,7 @@ def create_character(body: CharacterCreate,
         """INSERT INTO characters
            (id, name, player_id, campaign_id, ruleset, version, data, updated_at)
            VALUES (?,?,?,?,?,1,?,?)""",
-        (cid, body.name, body.player_id, body.campaign_id,
+        (cid, body.name, player_id, body.campaign_id,
          body.ruleset.value, json.dumps(char.model_dump()), now),
     )
     conn.commit()
@@ -158,13 +187,15 @@ def create_from_options(body: WizardCreate,
     )
 
     conn = state_db()
+    player_id = _bound_player_id(conn, body.campaign_id,
+                                 body.player_id, user)
     cid = uuid.uuid4().hex
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         """INSERT INTO characters
            (id, name, player_id, campaign_id, ruleset, version, data, updated_at)
            VALUES (?,?,?,?,?,1,?,?)""",
-        (cid, body.name, body.player_id, body.campaign_id,
+        (cid, body.name, player_id, body.campaign_id,
          body.ruleset.value, json.dumps(char.model_dump()), now))
     conn.commit()
     return {"id": cid, "version": 1}
@@ -230,7 +261,7 @@ def patch_character(character_id: str, body: CharPatch,
     ).fetchone()
     if row is None:
         raise HTTPException(404, "character not found")
-    _char_camp_guard(conn, row["campaign_id"], user)
+    _char_write_guard(conn, row["campaign_id"], row["player_id"], user)
     # mover A una campaña con dueño también exige membresía — si no,
     # cualquiera colaba fichas en mesas ajenas
     if "campaign_id" in body.model_fields_set and body.campaign_id:
@@ -262,11 +293,12 @@ def delete_character(character_id: str,
                      user: dict | None = Depends(optional_user)):
     """Borra la ficha (sus operaciones quedan en el historial)."""
     conn = state_db()
-    row = conn.execute("SELECT campaign_id FROM characters WHERE id = ?",
-                       (character_id,)).fetchone()
+    row = conn.execute(
+        "SELECT campaign_id, player_id FROM characters WHERE id = ?",
+        (character_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "character not found")
-    _char_camp_guard(conn, row["campaign_id"], user)
+    _char_write_guard(conn, row["campaign_id"], row["player_id"], user)
     cur = conn.execute("DELETE FROM characters WHERE id = ?",
                        (character_id,))
     conn.commit()
@@ -310,13 +342,15 @@ def import_character(body: ImportIn,
     char = Character(**body.character)
     conn = state_db()
     _char_camp_guard(conn, body.campaign_id, user)
+    player_id = _bound_player_id(conn, body.campaign_id,
+                                 body.player_id, user)
     cid = uuid.uuid4().hex
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         """INSERT INTO characters
            (id, name, player_id, campaign_id, ruleset, version, data, updated_at)
            VALUES (?,?,?,?,?,1,?,?)""",
-        (cid, char.name, body.player_id, body.campaign_id,
+        (cid, char.name, player_id, body.campaign_id,
          char.ruleset.value, json.dumps(char.model_dump()), now))
     conn.commit()
     return {"id": cid, "version": 1}

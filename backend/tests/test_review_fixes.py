@@ -350,6 +350,24 @@ def test_delete_campaign_detaches_characters():
     assert client.get(f"/api/campaigns/{camp['id']}").status_code == 404
 
 
+def test_combat_difficulty_is_dm_only():
+    """Los CRs/stat_blocks son info del DM — for-combat exige rol DM
+    cuando la campaña tiene dueño; en local queda abierto."""
+    owner = _auth_headers(f"d{uuid.uuid4().hex[:8]}")
+    stranger = _auth_headers(f"e{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    comb = client.post("/api/combat", json={
+        "name": "X", "campaign_id": camp["id"]},
+        headers=owner).json()
+    assert client.get(
+        f"/api/encounters/for-combat/{comb['id']}",
+        headers=stranger).status_code == 403
+    assert client.get(
+        f"/api/encounters/for-combat/{comb['id']}",
+        headers=owner).status_code == 200
+
+
 def test_get_campaign_owned_requires_membership():
     owner = _auth_headers(f"g{uuid.uuid4().hex[:8]}")
     stranger = _auth_headers(f"h{uuid.uuid4().hex[:8]}")

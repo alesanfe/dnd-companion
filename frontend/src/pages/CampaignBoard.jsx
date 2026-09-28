@@ -193,34 +193,57 @@ export default function CampaignBoard() {
         </section>)}
 
       {campTab === 'resumen' && (<>
-        {/* tracker de combate en vivo — vista jugador: orden de
-            iniciativa, turno activo y estado aproximado (sin PG) */}
+        {/* tracker de combate en vivo — vista jugador: orden real
+            (los muertos/inconscientes se apartan como en Combat.ordered
+            del backend), turno activo y estado aproximado (sin PG) */}
         {combatView?.combat?.combatants?.length > 0 && (() => {
-          const list = [...combatView.combat.combatants]
+          const OUT = new Set(['muerto', 'inconsciente',
+                               'dead', 'unconscious'])
+          const isOut = (cb) => (cb.conditions || [])
+            .some((cn) => OUT.has(cn))
+          const alive = combatView.combat.combatants
+            .filter((cb) => !isOut(cb))
             .sort((a, b) => b.initiative - a.initiative)
+          const down = combatView.combat.combatants.filter(isOut)
           const turn = combatView.combat.turn_index %
-                       Math.max(1, list.length)
+                       Math.max(1, alive.length)
+          const mine = new Set(chars.map((c) => c.id))
+          const row = (cb, i) => (
+            <div key={cb.id} className="row"
+                 style={i === turn
+                   ? { outline: '1px solid var(--accent)',
+                       borderRadius: 6, padding: '2px 4px' }
+                   : undefined}>
+              <strong style={{ flex: 1 }}>
+                {i === turn && '▶ '}{cb.name}</strong>
+              <span className="muted" title={t('com.init')}>
+                {cb.initiative}</span>
+              {(cb.conditions || [])
+                .filter((cn) => !OUT.has(cn)).map((cond) => (
+                  <span key={cond} className="chip">{cond}</span>))}
+              <span className="chip" title={t('cb.hpHint')}>
+                {t(`cb.hp.${cb.hp_state || 'ileso'}`) !==
+                 `cb.hp.${cb.hp_state || 'ileso'}`
+                  ? t(`cb.hp.${cb.hp_state || 'ileso'}`)
+                  : cb.hp_state}</span>
+              {i === turn && cb.kind === 'character' &&
+               mine.has(cb.ref_id) && (
+                <Link to={`/character/${cb.ref_id}`}>
+                  <button className="primary">
+                    {t('cb.yourTurn')}</button></Link>)}
+            </div>)
           return (
             <section className="card">
               <h2>{combatView.combat.name || t('dm.combat')}
                 {' · '}{t('com.round')} {combatView.combat.round}</h2>
-              {list.map((cb, i) => (
-                <div key={cb.id} className="row"
-                     style={i === turn
-                       ? { outline: '1px solid var(--accent)',
-                           borderRadius: 6, padding: '2px 4px' }
-                       : undefined}>
-                  <strong style={{ flex: 1 }}>
-                    {i === turn && '▶ '}{cb.name}</strong>
-                  {(cb.conditions || []).map((cond) => (
-                    <span key={cond} className="chip">{cond}</span>))}
-                  <span className="chip"
-                        title={t('cb.hpHint')}>
-                    {t(`cb.hp.${cb.hp_state || 'ileso'}`) !==
-                     `cb.hp.${cb.hp_state || 'ileso'}`
-                      ? t(`cb.hp.${cb.hp_state || 'ileso'}`)
-                      : cb.hp_state}</span>
-                </div>))}
+              {alive.map(row)}
+              {down.length > 0 && (
+                <div className="row muted"
+                     style={{ marginTop: '.3rem', fontSize: '.85rem' }}>
+                  {down.map((cb) => (
+                    <span key={cb.id} className="chip">
+                      ✝ {cb.name}</span>))}
+                </div>)}
             </section>)
         })()}
         {rolls.length > 0 && (

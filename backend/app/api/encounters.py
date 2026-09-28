@@ -2,9 +2,11 @@
 (reglas 2014, DMG). Input: niveles del grupo + CRs de monstruos."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from .auth import optional_user
+from .campaigns import _DM_ROLES, _has_owner, _require_role
 from ..db.connections import state_db
 from ..domain.xp import (cr_to_xp, encounter_multiplier,
                          encounter_threshold)
@@ -49,7 +51,8 @@ def difficulty(body: EncounterIn):
 
 
 @router.get("/for-combat/{combat_id}")
-def combat_difficulty(combat_id: str):
+def combat_difficulty(combat_id: str,
+                      user: dict | None = Depends(optional_user)):
     """Dificultad del combate real: CRs de los stat blocks de los
     monstruos vs niveles de los personajes de la campaña."""
     import json
@@ -59,6 +62,10 @@ def combat_difficulty(combat_id: str):
         (combat_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "combat not found")
+    # CRs y stat blocks son información del DM — en campañas con
+    # dueño un jugador no debe medir la dificultad del encuentro
+    if row["campaign_id"] and _has_owner(conn, row["campaign_id"]):
+        _require_role(conn, row["campaign_id"], user, _DM_ROLES)
     combat = json.loads(row["data"])
     crs = [str((c.get("stat_block") or {}).get("cr", 0))
            for c in combat.get("combatants", [])

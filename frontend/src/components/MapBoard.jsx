@@ -60,6 +60,8 @@ export default function MapBoard({ campaign, size = CELL,
   const [dragTok, setDragTok] = useState(null) // arrastrar token {id,x,y}
   const [tokMoved, setTokMoved] = useState(false)
   const [tokDmg, setTokDmg] = useState(0)   // daño rápido al token
+  const [zoneDmg, setZoneDmg] = useState(0) // daño a la zona marcada
+  const [zoneLog, setZoneLog] = useState(null)
   const [suppress, setSuppress] = useState(false)
   const [speeds, setSpeeds] = useState(() => {
     try { return JSON.parse(localStorage.getItem('map.speeds')) ||
@@ -198,6 +200,38 @@ export default function MapBoard({ campaign, size = CELL,
   const adjHp = (delta) => {
     if (sel.hp == null) return
     patchTok({ hp: Math.max(0, Math.min(sel.max_hp, sel.hp + delta)) })
+  }
+
+  /* daño de zona: cada token con alguna casilla pintada recibe el
+     daño — vinculado a ficha va por op real (auditable); suelto baja
+     sus PG de token. Cierra el bucle plantilla AoE → resolver daño. */
+  const tokOnMark = (tk) => {
+    const s = Math.max(1, +(tk.size || 1))
+    for (let dy = 0; dy < s; dy++)
+      for (let dx = 0; dx < s; dx++)
+        if (d.marks[`${tk.x + dx},${tk.y + dy}`]) return true
+    return false
+  }
+  const dmgZone = async () => {
+    if (!zoneDmg) return
+    const res = []
+    let toks = d.tokens
+    for (const tk of d.tokens) {
+      if (!tokOnMark(tk)) continue
+      const lc = linkedChar(tk)
+      if (lc) {
+        // op real sobre la ficha — idempotente y deshacible
+        const r = await api.applyOp(lc, 'character.hp.damage',
+                                    { amount: zoneDmg }).catch(() => null)
+        res.push(`${tk.name}: ${r ? zoneDmg : '✗'}`)
+      } else {
+        const hp = Math.max(0, (tk.hp ?? 0) - zoneDmg)
+        toks = toks.map((t2) => t2.id === tk.id ? { ...t2, hp } : t2)
+        res.push(`${tk.name}: ${zoneDmg}`)
+      }
+    }
+    if (toks !== d.tokens) save({ ...d, tokens: toks })
+    setZoneLog(res.length ? res.join(' · ') : t('map.zoneEmpty'))
   }
 
   const dropTok = () => {
@@ -435,10 +469,20 @@ export default function MapBoard({ campaign, size = CELL,
               {t('map.clearWalls')}</button>)}
           {(mode === 'mark' || mode === 'blast' || mode === 'cone' ||
             mode === 'line') &&
-              Object.keys(d.marks).length > 0 && (
+              Object.keys(d.marks).length > 0 && (<>
             <button className="ghost"
                     onClick={() => save({ ...d, marks: {} })}>
-              {t('map.clearMarks')}</button>)}
+              {t('map.clearMarks')}</button>
+            {/* resolver daño sobre las casillas pintadas */}
+            <input type="number" min="0" style={{ width: 52 }}
+                   aria-label={t('map.zoneDmgAria')}
+                   title={t('map.zoneDmgTitle')}
+                   value={zoneDmg || ''}
+                   onChange={(e) => setZoneDmg(+e.target.value || 0)} />
+            <button className="dmg" disabled={!zoneDmg}
+                    title={t('map.zoneDmgTitle')}
+                    onClick={dmgZone}>{t('map.zoneDmg')}</button>
+          </>)}
           <button className="ghost" onClick={addToken}>
             {t('map.addToken')}</button>
           <button className="ghost" title={t('map.bgTitle')}
@@ -557,6 +601,10 @@ export default function MapBoard({ campaign, size = CELL,
         <p className="muted" style={{ fontSize: '.9rem' }}>
           <strong>{sel.name}</strong> — {t('map.moveHint')}
         </p>)}
+      {zoneLog && (
+        <p className="muted" role="status" style={{ fontSize: '.85rem' }}
+           onClick={() => setZoneLog(null)}>
+          {zoneLog} — <em>×</em></p>)}
       {dist > 0 && (
         <p className="muted">{tf('map.dist', {
           ft: dist.toFixed(0),

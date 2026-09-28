@@ -523,6 +523,8 @@ es: {
   'ses.combatBtn': 'combate',
   'ses.reasonPh': 'motivo',
   'ses.request': 'Pedir',
+  'ses.pickChar': 'personaje',
+  'ses.pendingRolls': 'sin responder',
 
   'com.levelsPh': 'niveles: 3,3,4',
   'com.crsPh': 'CRs: 1/4,1/2,2',
@@ -1341,6 +1343,8 @@ en: {
   'ses.combatBtn': 'combat',
   'ses.reasonPh': 'reason',
   'ses.request': 'Request',
+  'ses.pickChar': 'character',
+  'ses.pendingRolls': 'unanswered',
 
   'com.levelsPh': 'levels: 3,3,4',
   'com.crsPh': 'CRs: 1/4,1/2,2',

@@ -43,6 +43,7 @@ export default function DmBoard() {
   const feedRef = useRef(null)           // scroll del feed de tiradas
   const [newRolls, setNewRolls] = useState(0)
   const [presence, setPresence] = useState([]) // quién está en la sala
+  const [partyChars, setPartyChars] = useState([]) // PJs de la campaña
   const [chat, setChat] = useState([])         // chat efímero de mesa
   const [chatText, setChatText] = useState('')
   const [typing, setTyping] = useState(null)   // {from, at} efímero
@@ -85,6 +86,8 @@ export default function DmBoard() {
       .then((r) => setSessions(r.sessions)).catch(() => {})
     api.listEntities(campaign.id)
       .then((r) => setEntities(r.entities)).catch(() => {})
+    api.listCharacters(campaign.id)
+      .then((r) => setPartyChars(r.characters || [])).catch(() => {})
   }, [campaign?.id])
 
   // recargar /dm no debe tirar el tablero entero: restaura la última
@@ -164,6 +167,7 @@ export default function DmBoard() {
     sessTitle, setSessTitle, sessions, setSessions,
     timeline, setTimeline, rollReq, setRollReq,
     entities, setEntities, entForm, setEntForm,
+    partyChars,
     chat, chatText, setChatText, sendDmChat, typing, onDmTyping,
     combat, combatName, setCombatName, refresh, cop, setCombat,
     ordered, activeIdx, sel, setSelId,

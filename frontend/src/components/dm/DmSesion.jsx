@@ -10,8 +10,21 @@ export default function DmSesion({ c }) {
           sessTitle, setSessTitle, sessions, setSessions,
           timeline, setTimeline, rollReq, setRollReq, refresh,
           chat, chatText, setChatText, sendDmChat,
-          typing, onDmTyping } = c
+          typing, onDmTyping, partyChars = [] } = c
   const show = dmTab === 'sesion'
+  // peticiones de tirada que los jugadores aún no han respondido —
+  // se recalcula al llegar tiradas nuevas (una respuesta la cierra)
+  const [pendingReqs, setPendingReqs] = useState([])
+  useEffect(() => {
+    if (!campaign || partyChars.length === 0) {
+      setPendingReqs([])
+      return
+    }
+    api.pendingRolls(campaign.id, partyChars.map((p) => p.id))
+      .then((r) => setPendingReqs(r.pending || []))
+      .catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaign?.id, rollFeed.length, partyChars.length])
   // campañas existentes — sin esto recargar /dm obligaba a crear una
   // nueva cada visita
   const [camps, setCamps] = useState(null)
@@ -213,9 +226,23 @@ export default function DmSesion({ c }) {
     {campaign && (
       <section className="card" hidden={!show}>
         <h2>{t('dm.rollreq')}</h2>
+        {pendingReqs.length > 0 && (
+          <p className="muted" role="status">
+            {t('ses.pendingRolls')}: {pendingReqs.map((p) => {
+              const pj = partyChars.find((x) => x.id === p.character_id)
+              return `${pj?.name || p.character_id} (${p.expression})`
+            }).join(' · ')}
+          </p>)}
         <div className="row">
-          <input value={rollReq.character_id} placeholder="character_id"
-                 onChange={(e) => setRollReq({ ...rollReq, character_id: e.target.value })} />
+          {/* select por nombre — pedir el uuid de la ficha era inusable */}
+          <select value={rollReq.character_id}
+                  aria-label={t('ses.pickChar')}
+                  onChange={(e) => setRollReq(
+                    { ...rollReq, character_id: e.target.value })}>
+            <option value="">{t('ses.pickChar')}</option>
+            {partyChars.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>))}
+          </select>
           <input value={rollReq.expression} style={{ maxWidth: 90 }}
                  onChange={(e) => setRollReq({ ...rollReq, expression: e.target.value })} />
           <input value={rollReq.reason} placeholder={t('ses.reasonPh')}

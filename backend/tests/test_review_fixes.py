@@ -543,6 +543,52 @@ def test_combat_ops_dm_only_in_owned_campaign():
                        headers=owner).status_code == 200
 
 
+def test_player_rolls_own_death_save_in_combat():
+    """Excepción al tracker DM-only: la salvación de muerte la tira
+    el jugador sobre SU combatiente-PJ. Sobre otro combatiente o
+    cualquier otra op de combate sigue siendo 403."""
+    owner = _auth_headers(f"ds{uuid.uuid4().hex[:8]}")
+    player = _auth_headers(f"dt{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    code = client.get(f"/api/campaigns/{camp['id']}",
+                      headers=owner).json()["invite_code"]
+    client.post("/api/campaigns/join",
+                json={"invite_code": code}, headers=player)
+    ch = client.post("/api/characters",
+                     json={"name": "P", "campaign_id": camp["id"]},
+                     headers=player).json()
+    comb = client.post("/api/combat", json={
+        "name": "X", "campaign_id": camp["id"]}, headers=owner).json()
+    client.post(f"/api/combat/{comb['id']}/add-party", headers=owner)
+    cj = client.get(f"/api/combat/{comb['id']}", headers=owner).json()
+    cb = next(c for c in cj["combat"]["combatants"]
+              if c.get("ref_id") == ch["id"])
+
+    def _cop(otype, payload, h, ver):
+        return client.post("/api/operations", json={
+            "operation_id": uuid.uuid4().hex, "entity_id": comb["id"],
+            "entity_version": ver, "client_id": "c", "user_id": "u",
+            "entity_kind": "combat", "operation_type": otype,
+            "payload": payload}, headers=h)
+
+    # DM deja al PJ a 0 PG
+    r = _cop("combatant.hp.set",
+             {"combatant_id": cb["id"], "current": 0},
+             owner, cj["version"])
+    assert r.status_code == 200
+    v = r.json()["version"]
+    # el jugador tira SU salvación de muerte — la única op de combate
+    # permitida a un no-DM
+    r2 = _cop("combatant.death_save_roll",
+              {"combatant_id": cb["id"]}, player, v)
+    assert r2.status_code == 200
+    # …pero nada más: turnos y combatientes ajenos siguen siendo del DM
+    v2 = client.get(f"/api/combat/{comb['id']}",
+                    headers=owner).json()["version"]
+    assert _cop("combat.next_turn", {}, player, v2).status_code == 403
+
+
 def test_combat_difficulty_is_dm_only():
     """Los CRs/stat_blocks son info del DM — for-combat exige rol DM
     cuando la campaña tiene dueño; en local queda abierto."""

@@ -462,6 +462,28 @@ def _char_ownership(conn, entity_id: str, user: dict | None) -> None:
         raise HTTPException(403, "la ficha es de otro jugador")
 
 
+def _player_combat_op(conn, op: OperationIn,
+                      user: dict | None) -> None:
+    """Única excepción al tracker DM-only: el jugador tira la salvación
+    de muerte de SU combatiente-PJ (en la mesa la tira el jugador,
+    no el DM). Solo death_save_roll y solo sobre combatientes cuyo
+    personaje tiene su player_id."""
+    if op.operation_type != "combatant.death_save_roll":
+        raise HTTPException(403, "solo el DM dirige el combate")
+    row = conn.execute("SELECT data FROM combats WHERE id = ?",
+                       (op.entity_id,)).fetchone()
+    cbt_id = (op.payload or {}).get("combatant_id")
+    if row and cbt_id:
+        for c in Combat(**json.loads(row["data"])).combatants:
+            if c.id == cbt_id and c.kind == "character" and c.ref_id:
+                ch = conn.execute(
+                    "SELECT player_id FROM characters WHERE id = ?",
+                    (c.ref_id,)).fetchone()
+                if ch and ch["player_id"] == (user or {}).get("user_id"):
+                    return
+    raise HTTPException(403, "solo el DM dirige el combate")
+
+
 @router.post("")
 async def apply(op: OperationIn,
                 user: dict | None = Depends(optional_user)):
@@ -478,7 +500,7 @@ async def apply(op: OperationIn,
             # y su estado, pero no mueven fichas ni turnos
             if member_role(camp_id, (user or {}).get("user_id")) \
                     not in _DM_ROLES:
-                raise HTTPException(403, "solo el DM dirige el combate")
+                _player_combat_op(conn, op, user)
         if user:
             # con token, el autor es el autenticado — no el del body
             op.user_id = user["user_id"]

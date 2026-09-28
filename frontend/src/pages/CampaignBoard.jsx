@@ -233,6 +233,17 @@ export default function CampaignBoard() {
                 <Link to={`/character/${cb.ref_id}`}>
                   <button className="primary">
                     {t('cb.yourTurn')}</button></Link>)}
+              {/* a 0 PG la salvación de muerte la tira el jugador
+                  (única op de combate abierta a no-DM) */}
+              {cb.kind === 'character' && mine.has(cb.ref_id) &&
+               cb.hp_state === 'caído' && (
+                <button onClick={() =>
+                  api.applyOp(combatView, 'combatant.death_save_roll',
+                              { combatant_id: cb.id }, 'combat')
+                    .then(() => api.getCombat(combatView.id, false)
+                      .then(setCombatView).catch(() => {}))
+                    .catch(() => {})}>
+                  {t('com.deathRoll')}</button>)}
             </div>)
           return (
             <section className="card">

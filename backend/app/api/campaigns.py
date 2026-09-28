@@ -618,6 +618,46 @@ async def map_ping(campaign_id: str, body: PingIn,
     return {"ok": True}
 
 
+class PresentIn(BaseModel):
+    entity_id: str | None = None   # None = cerrar la presentación
+
+
+@router.post("/{campaign_id}/present")
+async def present_entity(campaign_id: str, body: PresentIn,
+                         user: dict | None = Depends(optional_user)):
+    """'Mostrar al grupo' — el DM proyecta una entidad (nota, imagen de
+    mapa, PNJ) en la pantalla de todos los jugadores (modal). La entidad
+    debe ser visible para los jugadores: nada de filtrar secretos."""
+    from ..domain.events import Event, EventType
+    conn = state_db()
+    _require_role(conn, campaign_id, user, _DM_ROLES)
+    payload: dict = {"entity_id": None}
+    if body.entity_id:
+        row = conn.execute(
+            """SELECT id, kind, name, visibility, data
+               FROM campaign_entities
+               WHERE id = ? AND campaign_id = ?""",
+            (body.entity_id, campaign_id)).fetchone()
+        if row is None:
+            raise HTTPException(404, "entity not found")
+        # lo oculto al grupo no se puede proyectar — evita el leak de
+        # proyectar una nota privada 'por error'
+        if row["visibility"] != "public":
+            raise HTTPException(
+                400, "solo se proyectan entidades públicas")
+        payload = {"entity_id": row["id"], "kind": row["kind"],
+                   "name": row["name"], "data": json.loads(row["data"])}
+    ev = Event(event_id=uuid.uuid4().hex, type=EventType.PRESENT,
+               campaign_id=campaign_id,
+               aggregate_id=body.entity_id or campaign_id,
+               aggregate_version=0,
+               actor_id=(user or {}).get("name") or "?",
+               occurred_at=datetime.now(timezone.utc),
+               payload=payload)
+    await manager.broadcast(campaign_id, ev)
+    return {"ok": True}
+
+
 class TokenMove(BaseModel):
     token_id: str
     x: int

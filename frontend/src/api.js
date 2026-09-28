@@ -122,6 +122,9 @@ export const api = {
     req(`/api/campaigns/${campaignId}/ping`,
         { method: 'POST',
           body: JSON.stringify({ entity_id: entityId, x, y }) }),
+  present: (campaignId, entityId) =>
+    req(`/api/campaigns/${campaignId}/present`,
+        { method: 'POST', body: JSON.stringify({ entity_id }) }),
   moveToken: (campaignId, entityId, tokenId, x, y) =>
     req(`/api/campaigns/${campaignId}/entities/${entityId}/token-move`,
         { method: 'POST',

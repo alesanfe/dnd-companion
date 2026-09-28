@@ -146,6 +146,15 @@ export default function DmCampana({ c }) {
                   reload()
                 }}>{t('dm.reveal')}</button>
               )}
+              {/* 📺 proyectar al grupo: la entidad pública aparece como
+                  modal en la pantalla de todos los jugadores */}
+              {e.visibility === 'public' && (
+                <button className="ghost"
+                        title={t('camp.present')}
+                        aria-label={`${t('camp.present')} ${e.name}`}
+                        onClick={() =>
+                          api.present(campaign.id, e.id)
+                            .catch(() => {})}>📺</button>)}
               <button className="ghost" title={t('camp.editNotes')}
                       aria-label={tf('camp.notesAria',
                                      { name: e.name })}

@@ -1139,6 +1139,40 @@ def test_packages_install_deps_and_uninstall():
     assert client.delete("/api/packages/srd:2014").status_code == 404
 
 
+def test_present_only_dm_and_public():
+    """'Mostrar al grupo': solo el DM proyecta, solo entidades
+    públicas — una nota oculta no debe llegar al modal de nadie."""
+    owner = _auth_headers(f"p{uuid.uuid4().hex[:8]}")
+    player = _auth_headers(f"q{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    code = client.get(f"/api/campaigns/{camp['id']}",
+                      headers=owner).json()["invite_code"]
+    client.post("/api/campaigns/join",
+                json={"invite_code": code}, headers=player)
+
+    pub = client.post(f"/api/campaigns/{camp['id']}/entities", json={
+        "kind": "note", "name": "Pública",
+        "visibility": "public", "data": {"notes": "texto"}},
+        headers=owner).json()
+    dm_only = client.post(f"/api/campaigns/{camp['id']}/entities", json={
+        "kind": "note", "name": "Oculta", "visibility": "dm"},
+        headers=owner).json()
+
+    url = f"/api/campaigns/{camp['id']}/present"
+    assert client.post(url, json={"entity_id": pub["id"]},
+                       headers=player).status_code == 403
+    assert client.post(url, json={"entity_id": dm_only["id"]},
+                       headers=owner).status_code == 400
+    r = client.post(url, json={"entity_id": pub["id"]}, headers=owner)
+    assert r.status_code == 200
+    # cerrar la presentación (entity_id null)
+    assert client.post(url, json={"entity_id": None},
+                       headers=owner).status_code == 200
+    assert client.post(url, json={"entity_id": "no-existe"},
+                       headers=owner).status_code == 404
+
+
 def test_party_rest_applies_to_all_sheets_dm_only():
     """POST /campaigns/{id}/rest?kind=long aplica character.rest.long a
     cada ficha como op real — PG al máximo, deshacible. DM-only."""

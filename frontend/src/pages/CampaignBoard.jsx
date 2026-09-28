@@ -27,6 +27,7 @@ export default function CampaignBoard() {
   const [campTab, setCampTab] = useState('resumen')
   const [presence, setPresence] = useState([]) // quién está en la sala
   const [ping, setPing] = useState(null)       // ping de mapa en vivo
+  const [presented, setPresented] = useState(null) // entidad proyectada
   const me = currentUser() // para el botón "reclamar ficha"
   // el formulario de unirse solo ocupa espacio si todavía no estás dentro
   const [joined, setJoined] = useState(
@@ -95,11 +96,17 @@ export default function CampaignBoard() {
         if (ev?.type === 'dice.roll.requested' ||
             (ev?.type?.startsWith('campaign.') &&
              ev?.type !== 'campaign.presence' &&
-             ev?.type !== 'campaign.map.ping') ||
+             ev?.type !== 'campaign.map.ping' &&
+             ev?.type !== 'campaign.present') ||
             ev?.type?.startsWith('combat.')) load()
         // tiradas públicas (las secretas nunca llegan a este socket)
         if (ev?.type === 'dice.roll.created') {
           setRolls((l) => [ev.payload, ...l].slice(0, 10))
+        }
+        if (ev?.type === 'campaign.present') {
+          // el DM proyecta una entidad a la pantalla del grupo —
+          // entity_id null = cerrar la presentación
+          setPresented(ev.payload?.entity_id ? ev.payload : null)
         }
         if (ev?.type === 'campaign.map.ping') {
           setPing({ ...ev.payload, k: Date.now() })
@@ -433,6 +440,36 @@ export default function CampaignBoard() {
               </ul>
             </div>))}
         </section>)}
+
+      {/* presentación del DM: la entidad pública aparece en modal a
+          toda la mesa (estilo 'mostrar a los jugadores' de Foundry) */}
+      {presented && (
+        <div className="present-overlay" role="dialog" aria-modal="true"
+             aria-label={presented.name}
+             onClick={() => setPresented(null)}>
+          <div className="card present-card"
+               onClick={(e) => e.stopPropagation()}>
+            <div className="row">
+              <h2 style={{ flex: 1, margin: 0 }}>{presented.name}</h2>
+              <button className="ghost"
+                      aria-label={t('camp.presentClose')}
+                      onClick={() => setPresented(null)}>×</button>
+            </div>
+            {presented.data?.image_url && (
+              <img src={presented.data.image_url} alt=""
+                   style={{ maxWidth: '100%', borderRadius: 6 }} />)}
+            {(presented.data?.notes || presented.data?.description) && (
+              <WikiText entities={entities || []}
+                        text={presented.data.notes ||
+                              presented.data.description} />)}
+            {(presented.data?.items || presented.data?.monsters || [])
+              .length > 0 && (
+              <ul>{(presented.data.items ||
+                    presented.data.monsters || [])
+                    .map((it, i2) => <li key={i2}>
+                    {typeof it === 'string' ? it : it.name}</li>)}</ul>)}
+          </div>
+        </div>)}
     </main>
   )
 }

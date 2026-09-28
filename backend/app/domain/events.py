@@ -46,7 +46,8 @@ class EventType(str, Enum):
     ROLL_REQUESTED = "dice.roll.requested"          # DM pide tirada a jugador
     ENTITY_REVEALED = "campaign.entity.revealed"    # DM revela entidad
     ENTITY_UPDATED = "campaign.entity.updated"      # alta/cambio/borrado
-    MAP_PING = "campaign.map.ping"                  # ping efímero del VTT
+    MAP_PING = "campaign.map.ping"
+    PRESENT = "campaign.present"          # el DM proyecta una entidad                  # ping efímero del VTT
 
 
 class Event(BaseModel):

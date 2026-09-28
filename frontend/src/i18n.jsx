@@ -587,6 +587,8 @@ es: {
   'camp.k.note': 'Notas', 'camp.k.event': 'Eventos',
   'camp.k.map': 'Mapas', 'camp.k.shop': 'Tiendas',
   'camp.k.scene': 'Escenas',
+  'camp.present': 'mostrar al grupo',
+  'camp.presentClose': 'cerrar presentación',
 
   'camps.player': 'Jugador',
 
@@ -1445,6 +1447,8 @@ en: {
   'camp.k.note': 'Notes', 'camp.k.event': 'Events',
   'camp.k.map': 'Maps', 'camp.k.shop': 'Shops',
   'camp.k.scene': 'Scenes',
+  'camp.present': 'show to players',
+  'camp.presentClose': 'close presentation',
 
   'camps.player': 'Player',
 

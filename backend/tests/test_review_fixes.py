@@ -1228,3 +1228,103 @@ def test_party_rest_applies_to_all_sheets_dm_only():
     hp = client.get(f"/api/characters/{a['id']}",
                     headers=player).json()["data"]["hp"]
     assert hp["current"] == hp["max"]
+
+# --- eventos faltantes en EventType: emitirlos daba 500 tras rollback ---
+
+def test_item_charge_ops_via_rest():
+    """character.item.charge.set|use emitían 'inventory.item.charged' —
+    el tipo no estaba en EventType y apply_to_store hacía 500."""
+    cid = _mkchar()
+    assert _op(cid, _version(cid), "character.inventory.add",
+               {"id": "wand", "name": "Varita", "quantity": 1}
+               ).status_code == 200
+    r = _op(cid, _version(cid), "character.item.charge.set",
+            {"item_id": "wand", "max": 7})
+    assert r.status_code == 200
+    r = _op(cid, _version(cid), "character.item.charge.use",
+            {"item_id": "wand", "amount": 2})
+    assert r.status_code == 200
+
+
+def test_undo_rest_doesnt_500():
+    """undo de rest.long aplica character.state.restore — su evento
+    'character.state.restored' no estaba en EventType → 500."""
+    cid = _mkchar()
+    _op(cid, _version(cid), "character.hp.damage", {"amount": 5})
+    r = _op(cid, _version(cid), "character.rest.long", {})
+    assert r.status_code == 200
+    # localizar la op rest.long y deshacerla por REST
+    ops = _history(cid)
+    rest_op = next(o for o in ops
+                   if o["operation_type"] == "character.rest.long")
+    r = client.post(f"/api/operations/undo/{rest_op['operation_id']}")
+    assert r.status_code == 200
+    data = client.get(f"/api/characters/{cid}").json()["data"]
+    assert data["hp"]["current"] == data["hp"]["max"] - 5
+
+
+def test_death_save_undo_restores_conditions():
+    """Deshacer combatant.death_save debe quitar 'estable'/'muerto' —
+    la inversa no guardaba conditions."""
+    from app.domain.combat import Combatant as Cbt
+    cb = Combat(name="c", combatants=[
+        Cbt(id="x", name="Heroe", kind="character",
+            hp_current=0, hp_max=10, death_saves={"success": 0,
+                                                  "fail": 0})])
+    apply_combat_operation(cb, "combatant.death_save",
+                           {"combatant_id": "x", "success": True}, None)
+    apply_combat_operation(cb, "combatant.death_save",
+                           {"combatant_id": "x", "success": True}, None)
+    inv, _ = apply_combat_operation(
+        cb, "combatant.death_save", {"combatant_id": "x",
+                                     "success": True}, None)
+    assert "estable" in cb.combatants[0].conditions
+    apply_combat_operation(cb, inv["operation_type"],
+                           inv["payload"], None)
+    c = cb.combatants[0]
+    assert "estable" not in c.conditions
+    assert c.death_saves == {"success": 2, "fail": 0}
+
+
+def test_reveal_condition_session_active():
+    """reveal_condition='session_active' se evaluaba nunca: activar la
+    sesión debe revelar la entidad automáticamente."""
+    owner = _auth_headers(f"rv{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    e = client.post(f"/api/campaigns/{camp['id']}/entities", json={
+        "kind": "npc", "name": "Villano", "visibility": "dm",
+        "reveal_condition": "session_active"}, headers=owner).json()
+    s = client.post(f"/api/campaigns/{camp['id']}/sessions",
+                    json={"title": "S1"}, headers=owner).json()
+    r = client.patch(f"/api/campaigns/{camp['id']}/sessions/{s['id']}",
+                     json={"status": "active"}, headers=owner)
+    assert r.status_code == 200
+    assert e["id"] in (r.json().get("revealed") or [])
+    ents = client.get(f"/api/campaigns/{camp['id']}/entities",
+                      headers=owner).json()["entities"]
+    ent = next(x for x in ents if x["id"] == e["id"])
+    assert ent["visibility"] == "public" and ent["revealed_at"]
+
+
+def test_package_capabilities_and_app_version_enforced():
+    """capabilities desconocidas / contenido sin 'content' /
+    required_app_version futura → rechazo, no install a medias."""
+    pid = f"cap-{uuid.uuid4().hex[:8]}"
+    bad = {"manifest": {"id": pid, "name": "P", "version": "1",
+                        "license": "CC0",
+                        "capabilities": ["run_arbitrary_js"]},
+           "content": {}}
+    assert client.post("/api/packages/install", json=bad
+                       ).status_code == 400
+    bad2 = {"manifest": {"id": pid, "name": "P", "version": "1",
+                         "license": "CC0", "capabilities": ["themes"]},
+            "content": {"spells": [{"index": "x", "name": "X"}]}}
+    assert client.post("/api/packages/install", json=bad2
+                       ).status_code == 400
+    fut = {"manifest": {"id": pid, "name": "P", "version": "1",
+                        "license": "CC0",
+                        "required_app_version": "999.0.0"},
+           "content": {}}
+    assert client.post("/api/packages/install", json=fut
+                       ).status_code == 409

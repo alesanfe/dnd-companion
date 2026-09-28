@@ -90,6 +90,19 @@ export default function DmSesion({ c }) {
               setEventFeed(eventFeed ? null
                 : (await api.campaignEvents(campaign.id)).events)
             }>{t('ses.audit')}</button>
+            {/* DELETE /campaigns existía sin UI — borrar la campaña
+                completa (fichas, entidades, eventos) pide el nombre */}
+            <button className="ghost" style={{ color: '#c33' }}
+                    title={t('camp.delTitle')}
+                    onClick={async () => {
+              if (prompt(tf('camp.delPrompt',
+                            { name: campaign.name })) !== campaign.name)
+                return
+              await api.deleteCampaign(campaign.id)
+              localStorage.removeItem('dnd-last-campaign')
+              setCampaign(null)
+              setCamps(null)
+            }}>{t('camp.delBtn')}</button>
           </div>
           {eventFeed && eventFeed.map((e) => (
             <div key={e.event_id} className="row">
@@ -173,6 +186,18 @@ export default function DmSesion({ c }) {
                 }}>{s.status === 'prep'
                     ? t('ses.start') : t('common.close')}</button>
               )}
+              {/* borrar sesión — el endpoint existía pero no tenía
+                  ni método api ni botón */}
+              <button className="ghost" style={{ minHeight: 32 }}
+                      title={t('ses.delTitle')}
+                      aria-label={t('ses.delTitle')}
+                      onClick={async () => {
+                if (!confirm(tf('ses.delConfirm',
+                                { title: s.title }))) return
+                await api.deleteSession(campaign.id, s.id)
+                const r = await api.listSessions(campaign.id)
+                setSessions(r.sessions)
+              }}>🗑</button>
             </div>
             <ul>
               {s.scenes.map((sc) => (

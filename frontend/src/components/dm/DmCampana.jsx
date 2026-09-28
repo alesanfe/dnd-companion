@@ -15,6 +15,7 @@ export default function DmCampana({ c }) {
   const [rels, setRels] = useState(null)   // lazy: se cargan al abrir
   const [members, setMembers] = useState(null)
   const [editNotes, setEditNotes] = useState(null) // entidad en edición
+  const [shareEnt, setShareEnt] = useState(null)   // entidad compartiendo
   const [notesDraft, setNotesDraft] = useState('')
   if (!campaign) return null
   const show = dmTab === 'campana'
@@ -163,8 +164,69 @@ export default function DmCampana({ c }) {
                 setEditNotes(editNotes === e.id ? null : e.id)
                 setNotesDraft(e.data?.notes || '')
               }}>✎</button>
+              {/* 👥 visibilidad parcial: known_to + auto-revelado —
+                  el schema/endpoint existían sin ninguna UI */}
+              {e.visibility !== 'public' && (
+                <button className="ghost" title={t('camp.share')}
+                        aria-label={`${t('camp.share')} ${e.name}`}
+                        aria-expanded={shareEnt === e.id}
+                        onClick={() => {
+                  setShareEnt(shareEnt === e.id ? null : e.id)
+                  if (shareEnt !== e.id && !members)
+                    api.listMembers(campaign.id)
+                      .then((r) => setMembers(r.members))
+                      .catch(() => {})
+                }}>👥</button>)}
             </>)}
         </div>
+        {shareEnt === e.id && (
+          <div className="row" style={{ flexWrap: 'wrap',
+                                       fontSize: '.85rem' }}>
+            {/* known_to: jugadores que ven esta entidad aunque no
+                sea pública */}
+            <label className="muted">{t('camp.knownTo')}
+              <select aria-label={t('camp.knownTo')} value=""
+                      onChange={async (ev) => {
+                const uid = ev.target.value
+                if (!uid) return
+                const kt = [...new Set([...(e.known_to || []), uid])]
+                await api.patchEntity(campaign.id, e.id,
+                                      { known_to: kt })
+                reload()
+              }}>
+                <option value="">—</option>
+                {(members || [])
+                  .filter((m) => !['owner', 'co_dm'].includes(m.role))
+                  .filter((m) => !(e.known_to || [])
+                            .includes(m.user_id))
+                  .map((m) => <option key={m.user_id}
+                                      value={m.user_id}>
+                    {m.user_id}</option>)}
+              </select></label>
+            {(e.known_to || []).map((uid) => (
+              <button key={uid} className="ghost"
+                      title={t('camp.unshare')}
+                      onClick={async () => {
+                await api.patchEntity(campaign.id, e.id, {
+                  known_to: (e.known_to || []).filter((u) => u !== uid),
+                })
+                reload()
+              }}>{uid} ×</button>))}
+            {/* reveal_condition: auto-revelar al arrancar sesión */}
+            <label className="muted">{t('camp.autoReveal')}
+              <select value={e.reveal_condition || 'manual'}
+                      aria-label={t('camp.autoReveal')}
+                      onChange={async (ev) => {
+                await api.patchEntity(campaign.id, e.id, {
+                  reveal_condition: ev.target.value === 'manual'
+                    ? null : ev.target.value })
+                reload()
+              }}>
+                <option value="manual">{t('camp.revealManual')}</option>
+                <option value="session_active">
+                  {t('camp.revealSession')}</option>
+              </select></label>
+          </div>)}
         {/* notas con wiki-links — el mismo texto lo ven los
             jugadores en su tablero cuando la entidad es pública */}
         {e.data?.notes && editNotes !== e.id && (
@@ -233,8 +295,11 @@ export default function DmCampana({ c }) {
             await api.createRelationship(campaign.id, {
               from_id: f.rfrom.value, to_id: f.rto.value,
               type: f.rtype.value.trim(),
+              description: f.rdesc.value.trim() || null,
+              world_date: f.rdate.value.trim() || null,
               visibility: f.rpub.checked ? 'public' : 'dm',
             })
+            f.rdesc.value = ''; f.rdate.value = ''
             loadRels()
           }}>
             <select name="rfrom" required aria-label={t('rel.from')}>
@@ -251,6 +316,14 @@ export default function DmCampana({ c }) {
               {entities.map((e) => (
                 <option key={e.id} value={e.id}>{e.name}</option>))}
             </select>
+            <input name="rdesc" maxLength={80}
+                   placeholder={t('rel.descPh')}
+                   aria-label={t('rel.descPh')}
+                   style={{ width: '10rem' }} />
+            <input name="rdate" maxLength={20}
+                   placeholder={t('rel.datePh')} title={t('rel.datePh')}
+                   aria-label={t('rel.datePh')}
+                   style={{ width: '7rem' }} />
             <label className="muted" style={{ fontSize: '.85rem' }}>
               <input type="checkbox" name="rpub" />
               {' '}{t('rel.public')}</label>
@@ -258,8 +331,13 @@ export default function DmCampana({ c }) {
           </form>
           {(rels || []).map((r) => (
             <div key={r.id} className="row">
-              <span style={{ flex: 1 }}>
+              <span style={{ flex: 1 }}
+                    title={r.description || undefined}>
+                {r.world_date &&
+                  <span className="muted">{r.world_date} · </span>}
                 {nameOf(r.from_id)} —<i>{r.type}</i>→ {nameOf(r.to_id)}
+                {r.status && r.status !== 'active' && (
+                  <span className="muted"> ({r.status})</span>)}
               </span>
               <span className="muted"
                     title={r.visibility === 'public'

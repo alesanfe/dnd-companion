@@ -10,9 +10,22 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from .. import config
 from ..db.connections import content_db
 
 router = APIRouter(prefix="/api/packages", tags=["packages"])
+
+# capacidades que un pack puede declarar (ARCHITECTURE §12: solo
+# declarativo, nada de código arbitrario). Vacío ≡ ['content'].
+KNOWN_CAPABILITIES = {"content", "rules", "themes", "templates",
+                      "locales", "importers", "exporters"}
+
+
+def _ver_tuple(v: str) -> tuple[int, ...]:
+    try:
+        return tuple(int(x) for x in v.split("."))
+    except ValueError:
+        return (0,)
 
 
 class Manifest(BaseModel):
@@ -49,6 +62,23 @@ def install_package(body: PackageIn):
         if missing:
             raise HTTPException(
                 409, f"dependencias ausentes: {', '.join(missing)}")
+    # enforcement real del manifest: capabilities desconocidas y
+    # required_app_version > app instalada → rechazar, no instalar
+    # algo que el runtime no puede satisfacer
+    unknown = set(m.capabilities) - KNOWN_CAPABILITIES
+    if unknown:
+        raise HTTPException(
+            400, f"capabilities desconocidas: {', '.join(unknown)}")
+    caps = set(m.capabilities) or {"content"}
+    if body.content and "content" not in caps:
+        raise HTTPException(
+            400, "el pack lleva contenido sin declarar 'content'")
+    if m.required_app_version and \
+            _ver_tuple(m.required_app_version) > \
+            _ver_tuple(config.APP_VERSION):
+        raise HTTPException(
+            409, f"requiere app {m.required_app_version} "
+                 f"(instalada {config.APP_VERSION})")
     source_id = f"pkg:{m.id}"
     now = datetime.now(timezone.utc).isoformat()
     count = 0

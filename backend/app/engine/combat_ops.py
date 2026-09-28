@@ -312,9 +312,13 @@ def combatant_death_save(combat: Combat, p: dict, ctx):
     c = _find(combat, p["combatant_id"])
     if c.hp_current > 0:
         raise ValueError("el combatiente no está a 0 PG")
+    # la inversa debe cubrir también condiciones/hp: 3 éxitos añade
+    # 'estable' y 3 fallos 'muerto' — undo sin esto dejaba el efecto
     inv = {"operation_type": "combatant.death_save.set",
            "payload": {"combatant_id": c.id,
-                       "death_saves": dict(c.death_saves)}}
+                       "death_saves": dict(c.death_saves),
+                       "hp": c.hp_current,
+                       "conditions": list(c.conditions)}}
     key = "success" if p.get("success") else "fail"
     c.death_saves[key] += 1
     outcome = None

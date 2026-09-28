@@ -843,8 +843,9 @@ class SessionPatch(BaseModel):
 
 
 @router.patch("/{campaign_id}/sessions/{session_id}")
-def patch_session(campaign_id: str, session_id: str, body: SessionPatch,
-                  user: dict | None = Depends(optional_user)):
+async def patch_session(campaign_id: str, session_id: str,
+                        body: SessionPatch,
+                        user: dict | None = Depends(optional_user)):
     conn = state_db()
     _require_role(conn, campaign_id, user, _DM_ROLES)
     if body.status and body.status not in ("prep", "active", "done"):
@@ -862,10 +863,57 @@ def patch_session(campaign_id: str, session_id: str, body: SessionPatch,
         f"UPDATE sessions SET {', '.join(sets)} "
         "WHERE id = ? AND campaign_id = ?",
         (*params, session_id, campaign_id))
+    # reveal_condition con evaluador real: 'session:<id>' o
+    # 'session_active' se revelan cuando una sesión arranca —
+    # sin esto el campo se guardaba y jamás se leía
+    revealed: list[dict] = []
+    if body.status == "active":
+        rows = conn.execute(
+            """SELECT id, name FROM campaign_entities
+               WHERE campaign_id = ? AND visibility != 'public'
+                 AND reveal_condition IN
+                     ('session_active', ?)""",
+            (campaign_id, f"session:{session_id}")).fetchall()
+        if rows:
+            now = datetime.now(timezone.utc).isoformat()
+            ids = [r["id"] for r in rows]
+            conn.execute(
+                f"""UPDATE campaign_entities
+                    SET visibility='public', revealed_at=?,
+                        updated_at=?, version=version+1
+                    WHERE id IN ({','.join('?' * len(ids))})""",
+                (now, now, *ids))
+            revealed = [dict(r) for r in rows]
     conn.commit()
     if cur.rowcount == 0:
         raise HTTPException(404, "session not found")
-    return {"id": session_id, "changed": sets}
+    for r in revealed:
+        await _notify_reveal(conn, campaign_id, r["id"], r["name"])
+    return {"id": session_id, "changed": sets,
+            "revealed": [r["id"] for r in revealed]}
+
+
+async def _notify_reveal(conn, campaign_id: str, entity_id: str,
+                         name: str) -> None:
+    """Persiste + broadcast del evento entity.revealed — usado por
+    reveal manual y por reveal_condition auto al activar sesión."""
+    from ..domain.events import Event, EventType
+    ev = Event(event_id=uuid.uuid4().hex,
+               type=EventType.ENTITY_REVEALED,
+               campaign_id=campaign_id, aggregate_id=entity_id,
+               aggregate_version=0, actor_id="dm",
+               occurred_at=datetime.now(timezone.utc),
+               payload={"name": name})
+    conn.execute(
+        """INSERT INTO events
+           (event_id, campaign_id, aggregate_id, aggregate_version,
+            actor_id, occurred_at, type, payload)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (ev.event_id, campaign_id, entity_id, 0, "dm",
+         ev.occurred_at.isoformat(), ev.type.value,
+         json.dumps(ev.payload)))
+    conn.commit()
+    await manager.broadcast(campaign_id, ev)
 
 
 @router.get("/{campaign_id}/timeline")

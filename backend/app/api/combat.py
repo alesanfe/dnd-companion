@@ -25,8 +25,8 @@ class CombatCreate(BaseModel):
 
 
 @router.post("", status_code=201)
-def create_combat(body: CombatCreate,
-                  user: dict | None = Depends(optional_user)):
+async def create_combat(body: CombatCreate,
+                        user: dict | None = Depends(optional_user)):
     conn = state_db()
     # crear un encuentro en campaña con dueño es cosa del DM
     if body.campaign_id:
@@ -42,6 +42,28 @@ def create_combat(body: CombatCreate,
         (cid, body.campaign_id, body.name, body.ruleset.value,
          json.dumps(combat.model_dump()), now))
     conn.commit()
+    # evento combat.started — declarado en EventType pero nunca se
+    # emitía: los sockets de la sala refrescan al empezar el encuentro
+    if body.campaign_id:
+        from ..domain.events import Event, EventType
+        from ..ws.rooms import manager
+        ev = Event(event_id=uuid.uuid4().hex,
+                   type=EventType.COMBAT_STARTED,
+                   campaign_id=body.campaign_id, aggregate_id=cid,
+                   aggregate_version=1,
+                   actor_id=(user or {}).get("name") or "dm",
+                   occurred_at=datetime.now(timezone.utc),
+                   payload={"combat_id": cid, "name": body.name})
+        conn.execute(
+            """INSERT INTO events
+               (event_id, campaign_id, aggregate_id, aggregate_version,
+                actor_id, occurred_at, type, payload)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (ev.event_id, body.campaign_id, cid, 1, ev.actor_id,
+             ev.occurred_at.isoformat(), ev.type.value,
+             json.dumps(ev.payload)))
+        conn.commit()
+        await manager.broadcast(body.campaign_id, ev)
     return {"id": cid, "version": 1}
 
 

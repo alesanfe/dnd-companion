@@ -152,6 +152,11 @@ export const api = {
     req(`/api/campaigns/${campaignId}/sessions/${sessionId}`, {
       method: 'PATCH', body: JSON.stringify(body),
     }),
+  deleteSession: (campaignId, sessionId) =>
+    req(`/api/campaigns/${campaignId}/sessions/${sessionId}`,
+        { method: 'DELETE' }),
+  deleteCampaign: (campaignId) =>
+    req(`/api/campaigns/${campaignId}`, { method: 'DELETE' }),
   getCampaign: (id) => req(`/api/campaigns/${id}`),
   deleteCharacter: (id) =>
     req(`/api/characters/${id}`, { method: 'DELETE' }),

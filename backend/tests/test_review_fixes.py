@@ -274,6 +274,93 @@ def test_add_party_emits_operations_and_rolls_init():
     assert 1 + dex_mod <= init <= 20 + dex_mod  # d20 tirado, no el mod
 
 
+# --- campañas con dueño: control de acceso por membresía --------------
+
+def _auth_headers(username):
+    r = client.post("/api/auth/register", json={
+        "username": username, "password": "pw12345"})
+    return {"Authorization": f"Bearer {r.json()['token']}"}
+
+
+def _owned_camp_char():
+    """(owner, stranger, camp_id, char_id) — char asignado a una
+    campaña con dueño."""
+    owner = _auth_headers(f"o{uuid.uuid4().hex[:8]}")
+    stranger = _auth_headers(f"s{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    cid = _mkchar()
+    client.patch(f"/api/characters/{cid}",
+                 json={"campaign_id": camp["id"]}, headers=owner)
+    return owner, stranger, camp["id"], cid
+
+
+def test_owned_campaign_character_guarded():
+    owner, stranger, _camp, cid = _owned_camp_char()
+    assert client.get(f"/api/characters/{cid}",
+                      headers=stranger).status_code == 403
+    assert client.delete(f"/api/characters/{cid}",
+                         headers=stranger).status_code == 403
+    assert client.post(
+        f"/api/operations/character/{cid}/roll?expression=1d20",
+        headers=stranger).status_code == 403
+    # el owner sigue pudiendo leerla
+    assert client.get(f"/api/characters/{cid}",
+                      headers=owner).status_code == 200
+    # la lista del extraño no la filtra
+    lst = client.get("/api/characters", headers=stranger).json()
+    assert all(c["id"] != cid for c in lst["characters"])
+    # ni puede adjuntar fichas a la campaña ajena
+    other = _mkchar()
+    assert client.patch(f"/api/characters/{other}",
+                        json={"campaign_id": _camp},
+                        headers=stranger).status_code == 403
+
+
+def test_owned_campaign_ops_and_history_guarded():
+    owner, stranger, _camp, cid = _owned_camp_char()
+    v = client.get(f"/api/characters/{cid}",
+                   headers=owner).json()["version"]
+    op_body = {
+        "operation_id": uuid.uuid4().hex, "entity_id": cid,
+        "entity_version": v, "client_id": "c1", "user_id": "x",
+        "entity_kind": "character",
+        "operation_type": "character.condition.apply",
+        "payload": {"condition": "prone"}}
+    assert client.post("/api/operations", json=op_body,
+                       headers=stranger).status_code == 403
+    assert client.post("/api/operations", json=op_body,
+                       headers=owner).status_code == 200
+    assert client.get(f"/api/operations?entity_id={cid}",
+                      headers=stranger).status_code == 403
+    # op con user_id del autenticado (no el spoofable del body)
+    h = client.get(f"/api/operations?entity_id={cid}",
+                   headers=owner).json()["operations"]
+    assert h[0]["user_id"] != "x"
+
+
+def test_delete_campaign_detaches_characters():
+    camp = client.post("/api/campaigns", json={"name": "C"}).json()
+    cid = _mkchar()
+    client.patch(f"/api/characters/{cid}",
+                 json={"campaign_id": camp["id"]})
+    assert client.delete(f"/api/campaigns/{camp['id']}").status_code == 200
+    d = client.get(f"/api/characters/{cid}").json()
+    assert d["campaign_id"] is None                    # ficha sobrevive
+    assert client.get(f"/api/campaigns/{camp['id']}").status_code == 404
+
+
+def test_get_campaign_owned_requires_membership():
+    owner = _auth_headers(f"g{uuid.uuid4().hex[:8]}")
+    stranger = _auth_headers(f"h{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    assert client.get(f"/api/campaigns/{camp['id']}",
+                      headers=stranger).status_code == 403
+    assert client.get(f"/api/campaigns/{camp['id']}",
+                      headers=owner).status_code == 200
+
+
 # --- rules assistant: FTS seguro ------------------------------------
 
 def test_rules_ask_survives_fts_operators():

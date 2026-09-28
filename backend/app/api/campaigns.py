@@ -180,7 +180,8 @@ def delete_session(campaign_id: str, session_id: str,
 
 
 @router.post("/import", status_code=201)
-def import_campaign(body: dict):
+def import_campaign(body: dict,
+                    user: dict | None = Depends(optional_user)):
     """Restaura un backup de `GET /{id}/export`. Conserva los ids
     originales; los que ya existen se ignoran (restaurar ≠ duplicar)."""
     conn = state_db()
@@ -195,13 +196,23 @@ def import_campaign(body: dict):
     if conn.execute("SELECT 1 FROM campaigns WHERE invite_code = ?",
                     (invite,)).fetchone():
         invite = uuid.uuid4().hex[:8]       # código ya en uso → nuevo
+    # con token, el importador pasa a ser el dueño — el owner_id del
+    # bundle es spoofable (podría atribuir la campaña a otra persona);
+    # sin sesión se conserva el del backup (restauración local)
+    uid = (user or {}).get("user_id")
+    owner = uid or camp.get("owner_id")
     try:
         conn.execute(
             "INSERT INTO campaigns (id, name, ruleset, invite_code, "
             "created_at, updated_at, owner_id) VALUES (?,?,?,?,?,?,?)",
             (camp["id"], camp["name"], camp.get("ruleset", "dnd5e-2014"),
              invite, camp.get("created_at", now),
-             camp.get("updated_at", now), camp.get("owner_id")))
+             camp.get("updated_at", now), owner))
+        if owner:
+            conn.execute(
+                "INSERT OR IGNORE INTO members "
+                "(campaign_id, user_id, role, joined_at) VALUES (?,?,?,?)",
+                (camp["id"], owner, "owner", now))
         for e in body.get("entities", []):
             conn.execute(
                 "INSERT OR IGNORE INTO campaign_entities "
@@ -271,6 +282,9 @@ def get_campaign(campaign_id: str,
         "FROM campaigns WHERE id = ?", (campaign_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "campaign not found")
+    # en campañas con dueño solo los miembros ven la ficha — antes
+    # cualquiera con el id veía nombre/ruleset (y sondeaba ids)
+    _require_role(conn, campaign_id, user)
     out = dict(row)
     # el invite_code es la única credencial de acceso: solo lo ve el DM
     if row["owner_id"] is not None and \
@@ -279,6 +293,44 @@ def get_campaign(campaign_id: str,
         out.pop("invite_code", None)
     out.pop("owner_id", None)
     return out
+
+
+@router.delete("/{campaign_id}")
+def delete_campaign(campaign_id: str,
+                    user: dict | None = Depends(optional_user)):
+    """Borra la campaña y sus datos asociados. Las fichas NO se
+    borran — se desvinculan (campaign_id NULL), son de los jugadores."""
+    conn = state_db()
+    row = conn.execute("SELECT 1 FROM campaigns WHERE id = ?",
+                       (campaign_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "campaign not found")
+    # solo el owner (en local sin dueño queda abierto)
+    _require_role(conn, campaign_id, user, ("owner",))
+    combat_ids = [r["id"] for r in conn.execute(
+        "SELECT id FROM combats WHERE campaign_id = ?",
+        (campaign_id,)).fetchall()]
+    try:
+        for table in ("campaign_entities", "relationships",
+                      "sessions", "members", "events", "combats"):
+            conn.execute(f"DELETE FROM {table} WHERE campaign_id = ?",
+                         (campaign_id,))
+        if combat_ids:
+            conn.execute(
+                "DELETE FROM operations WHERE entity_id IN "
+                f"({','.join('?' * len(combat_ids))})",
+                combat_ids)
+        conn.execute(
+            "UPDATE characters SET campaign_id = NULL, "
+            "version = version + 1 WHERE campaign_id = ?",
+            (campaign_id,))
+        conn.execute("DELETE FROM campaigns WHERE id = ?",
+                     (campaign_id,))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return {"deleted": campaign_id}
 
 
 @router.get("/{campaign_id}/state")

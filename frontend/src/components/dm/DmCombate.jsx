@@ -14,9 +14,34 @@ export default function DmCombate({ c }) {
           setDmgType, newCond, setNewCond, condRounds, setCondRounds,
           areaDmg, setAreaDmg, areaAmt, setAreaAmt, areaType,
           setAreaType, areaResults, setAreaResults,
-          setRollReq, setDmTab } = c
+          setRollReq, setDmTab, entities } = c
   const [xpMsg, setXpMsg] = useState(null)
   if (!campaign) return null
+
+  /* 📍 combatiente → token en el primer mapa público. El token queda
+     vinculado a la ficha (ref_id) — PG en vivo y el jugador puede
+     moverlo. Primera casilla libre, esquina sup. izquierda hacia abajo. */
+  const toMap = async (cb) => {
+    const map = (entities || []).find(
+      (e) => e.kind === 'map' && e.visibility !== 'dm')
+    if (!map) { setDmTab('mapa'); return }   // sin mapa → pestaña Mapa
+    const data = map.data || {}
+    const toks = data.tokens || []
+    const used = new Set(toks.map((t2) => `${t2.x},${t2.y}`))
+    let x = 0, y = 0
+    while (used.has(`${x},${y}`)) { x++; if (x >= (data.cols || 16)) {
+      x = 0; y++ } }
+    const token = {
+      id: `t${Date.now()}`, name: cb.name, x, y,
+      color: cb.kind === 'character'
+        ? 'hsl(210 70% 45%)' : 'hsl(0 70% 45%)',
+      ref_id: cb.ref_id || null,
+      hp: cb.hp_current ?? null, max_hp: cb.hp_max ?? null,
+    }
+    await api.patchEntity(campaign.id, map.id, {
+      data: { ...data, tokens: [...toks, token] },
+    }).catch(() => {})
+  }
   const show = dmTab === 'combate'
   return (<>
     <section className="card" hidden={!show}>
@@ -261,6 +286,9 @@ export default function DmCombate({ c }) {
                         damage_type: dmgType || undefined })}>-</button>
               <button className="heal" disabled={!dmg[cb.id]}
                       onClick={() => cop('combatant.heal', { combatant_id: cb.id, amount: dmg[cb.id] })}>+</button>
+              <button className="ghost" title={t('com.toMap')}
+                      aria-label={tf('com.toMapAria', { name: cb.name })}
+                      onClick={() => toMap(cb)}>📍</button>
               <button onClick={() => cop('combatant.remove', { combatant_id: cb.id })}>×</button>
             </div>
           )})}

@@ -203,6 +203,12 @@ export default function CharacterSheet() {
     setErr(null)
     try {
       const r = await api.applyOp(char, type, payload)
+      if (r.queued) {
+        // offline: encolada en IndexedDB — avisa para que el jugador
+        // sepa que el cambio se enviará al volver la red
+        setNotice(t('sheet.opQueued'))
+        return r
+      }
       if (r.operation_id) {
         setUndoable({ id: r.operation_id, label: type })
         setTimeout(() => setUndoable((u) =>
@@ -235,10 +241,15 @@ export default function CharacterSheet() {
     e.preventDefault()
     // tirada a través del motor de efectos: aplica ventaja/desventaja y
     // mods declarativos activos sobre el personaje
-    const r = await api.characterRoll(id, expr, rollType)
+    // inspiración: se gasta en la PRÓXIMA tirada de d20 (SRD) —
+    // antes doRoll nunca la usaba ni la consumía
+    const useInsp = !!d.inspiration && rollType !== 'damage'
+    const r = await api.characterRoll(id, expr, rollType, useInsp)
     const fx = (r.effects_applied || []).length
       ? ` [${r.effects_applied.join(', ')}]` : ''
     setRollLog((l) => [`${r.expression} → ${r.kept.join('+')} = ${r.total}${fx}`, ...l].slice(0, 10))
+    if (useInsp)
+      await op('character.inspiration.set', { value: false })
   }
 
   // hook incondicional — jamás después de un return (React exige

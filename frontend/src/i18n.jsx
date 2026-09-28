@@ -48,6 +48,9 @@ es: {
 
   'sync.online': 'en línea', 'sync.offline': 'sin conexión',
   'sync.pending': 'pendientes de sincronizar',
+  'sync.flushNow': 'Reintentar ahora',
+  'sync.discard': 'Descartar esta operación',
+  'sync.queueTitle': 'Cola offline',
   'sync.conflicts': 'conflictos', 'sync.conflict.hint': 'rechazado por conflicto de versión — tu dato local queda en el dispositivo',
   'account.login': 'Entrar', 'account.logout': 'Salir',
   'account.user': 'usuario', 'account.pass': 'contraseña',
@@ -314,6 +317,7 @@ es: {
   'sheet.secretHint': 'El resultado solo lo ve el DM',
   'sheet.secretTag': 'secreta',
   'sheet.undoBtn': 'Deshacer',
+  'sheet.opQueued': 'Sin conexión — operación encolada',
   'sheet.tabsAria': 'Secciones de la ficha',
   'sheet.roll': 'Tirar',
 
@@ -680,6 +684,7 @@ es: {
   'map.cellInfo': 'Casilla = {ft} ft · niebla solo visible para el DM',
 
   'palette.aria': 'Búsqueda global',
+  'palette.reroll': '↺ Enter = retirar',
 
   'dice.trayAria': 'Bandeja de dados',
   'dice.rollAria': 'Tirar {die}',
@@ -853,6 +858,9 @@ en: {
 
   'sync.online': 'online', 'sync.offline': 'offline',
   'sync.pending': 'pending sync',
+  'sync.flushNow': 'Retry now',
+  'sync.discard': 'Discard this operation',
+  'sync.queueTitle': 'Offline queue',
   'sync.conflicts': 'conflicts', 'sync.conflict.hint': 'rejected due to version conflict — local data kept on this device',
   'account.login': 'Sign in', 'account.logout': 'Sign out',
   'account.user': 'username', 'account.pass': 'password',
@@ -1119,6 +1127,7 @@ en: {
   'sheet.secretHint': 'Only the DM sees the result',
   'sheet.secretTag': 'secret',
   'sheet.undoBtn': 'Undo',
+  'sheet.opQueued': 'Offline — operation queued',
   'sheet.tabsAria': 'Sheet sections',
   'sheet.roll': 'Roll',
 
@@ -1485,6 +1494,7 @@ en: {
   'map.cellInfo': 'Square = {ft} ft · fog only visible to the DM',
 
   'palette.aria': 'Global search',
+  'palette.reroll': '↺ Enter = reroll',
 
   'dice.trayAria': 'Dice tray',
   'dice.rollAria': 'Roll {die}',

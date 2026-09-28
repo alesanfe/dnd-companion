@@ -21,3 +21,8 @@ export async function pendingOps() {
 export async function markOp(id, status) {
   await db.pending_ops.update(id, { status })
 }
+
+/** Descarta una op encolada (el usuario decide no reenviarla). */
+export async function dropOp(id) {
+  await db.pending_ops.update(id, { status: 'discarded' })
+}

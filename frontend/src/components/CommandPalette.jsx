@@ -68,6 +68,19 @@ export default function CommandPalette() {
 
   const go = (to) => { setOpen(false); setQ(''); setResults([]); nav(to) }
 
+  const rollExpr = async (expression) => {
+    try {
+      const r = await api.roll(expression)
+      // Enter sobre el resultado retira la misma expresión — antes
+      // era un no-op muerto
+      setResults([{ kind: 'roll', label:
+        `${expression} → ${r.rolls?.join(' + ') || ''} = ${r.total}`,
+        sub: t('palette.reroll'),
+        run: () => rollExpr(expression) }])
+      setIdx(0)
+    } catch { /* expresión inválida */ }
+  }
+
   const ACTIONS = [
     { label: `＋ ${t('create.character')}`, sub: 'wizard', run: () => go('/new') },
     { label: `＋ ${t('create.campaign')}`, sub: 'mesa', run: () => go('/dm') },
@@ -96,15 +109,7 @@ export default function CommandPalette() {
         kind: 'action',
         label: `🎲 ${t('dash.roll')} ${expression}`,
         sub: 'dice',
-        run: async () => {
-          try {
-            const r = await api.roll(expression)
-            setResults([{ kind: 'roll', label:
-              `${expression} → ${r.rolls?.join(' + ') || ''} = ${r.total}`,
-              sub: '', run: () => {} }])
-            setIdx(0)
-          } catch { /* expresión inválida */ }
-        },
+        run: () => rollExpr(expression),
       })
     }
 

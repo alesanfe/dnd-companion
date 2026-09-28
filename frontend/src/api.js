@@ -98,6 +98,10 @@ export async function flushQueue() {
 
 if (typeof window !== 'undefined') {
   window.addEventListener('online', flushQueue)
+  // ops encoladas de una sesión anterior: sin esto solo salían al
+  // próximo evento 'online' — al reabrir ya-online se quedaban
+  // enterradas en IndexedDB
+  if (navigator.onLine) flushQueue()
 }
 
 export const api = {

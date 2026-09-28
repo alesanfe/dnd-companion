@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api } from '../api.js'
-import { pendingOps } from '../db.js'
+import { api, flushQueue } from '../api.js'
+import { dropOp, pendingOps } from '../db.js'
 import { clearAuth, currentUser, getPrefs, setAuth, setPref }
   from '../session.js'
 import { useT } from '../i18n.jsx'
@@ -16,11 +16,12 @@ export default function Settings() {
   const [online, setOnline] = useState(navigator.onLine)
   const [pending, setPending] = useState(0)
 
+  const tick = async () => {
+    setOnline(navigator.onLine)
+    setPending((await pendingOps()).length)
+  }
+
   useEffect(() => {
-    const tick = async () => {
-      setOnline(navigator.onLine)
-      setPending((await pendingOps()).length)
-    }
     tick()
     window.addEventListener('online', tick)
     window.addEventListener('offline', tick)
@@ -28,6 +29,7 @@ export default function Settings() {
       window.removeEventListener('online', tick)
       window.removeEventListener('offline', tick)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const auth = async (fn) => {
@@ -130,6 +132,7 @@ export default function Settings() {
             ? <span className="muted">{pending} {t('sync.pending')}</span>
             : <span className="muted">{t('charlist.synced')} ✓</span>}
         </div>
+        <SyncQueue onChanged={tick} />
         <SyncConflicts />
       </section>
 
@@ -183,6 +186,40 @@ function PackagesCard() {
         {t('pkg.hint')}</p>
     </section>
   )
+}
+
+/** Operaciones encoladas offline: qué falta por sincronizar, con
+    reintento manual y descarte — el 'pending N' del header por fin
+    lleva a algo accionable. */
+function SyncQueue({ onChanged }) {
+  const { t } = useT()
+  const [ops, setOps] = useState(null)
+  const load = () => pendingOps().then(setOps).catch(() => setOps([]))
+  useEffect(() => { load() }, [])
+  if (!ops?.length) return null
+  return (<div>
+    <strong>{t('sync.queueTitle')}</strong>
+    <ul style={{ margin: '.3rem 0', paddingLeft: '1rem' }}>
+      {ops.map((o) => (
+        <li key={o.id} className="row">
+          {o.payload.entity_kind === 'character' ? (
+            <Link to={`/character/${o.payload.entity_id}/actividad`}>
+              {o.payload.operation_type}</Link>
+          ) : <span>{o.payload.operation_type}</span>}
+          <span className="muted">
+            {' '}· {new Date(o.created_at).toLocaleTimeString()}</span>
+          <button className="ghost" style={{ minHeight: 24 }}
+                  title={t('sync.discard')}
+                  aria-label={t('sync.discard')}
+                  onClick={async () => {
+                    await dropOp(o.id); load(); onChanged?.()
+                  }}>✕</button>
+        </li>))}
+    </ul>
+    <button className="ghost" onClick={async () => {
+      await flushQueue(); load(); onChanged?.()
+    }}>{t('sync.flushNow')}</button>
+  </div>)
 }
 
 /** Operaciones rechazadas por optimistic locking — revisar a mano. */

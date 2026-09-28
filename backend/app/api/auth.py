@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..db.connections import state_db
 
@@ -33,22 +33,23 @@ def _now() -> str:
 
 
 class Credentials(BaseModel):
-    username: str
-    password: str
+    username: str = Field(min_length=3, max_length=32)
+    password: str = Field(min_length=8, max_length=128)
 
 
 @router.post("/register", status_code=201)
 def register(body: Credentials, request: Request):
     _throttle(f"reg:{request.client.host if request.client else '?'}")
+    username = body.username.strip()
     conn = state_db()
     if conn.execute("SELECT 1 FROM users WHERE username = ?",
-                    (body.username,)).fetchone():
+                    (username,)).fetchone():
         raise HTTPException(409, "username already taken")
     uid, salt = uuid.uuid4().hex, secrets.token_hex(16)
     conn.execute(
         "INSERT INTO users (id, username, password_hash, salt, created_at) "
         "VALUES (?,?,?,?,?)",
-        (uid, body.username, _hash(body.password, salt), salt, _now()))
+        (uid, username, _hash(body.password, salt), salt, _now()))
     conn.commit()
     return {"user_id": uid, "token": _issue(conn, uid)}
 
@@ -79,7 +80,7 @@ def login(body: Credentials):
     _throttle(body.username)
     conn = state_db()
     row = conn.execute(
-        "SELECT * FROM users WHERE username = ?", (body.username,)
+        "SELECT * FROM users WHERE username = ?", (body.username.strip(),)
     ).fetchone()
     if row is None or row["password_hash"] != _hash(body.password,
                                                   row["salt"]):

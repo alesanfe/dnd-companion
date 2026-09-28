@@ -139,6 +139,9 @@ async def character_roll(character_id: str, expression: str = "1d20",
         raise HTTPException(404, "character not found")
     if row["campaign_id"] and _has_owner(conn, row["campaign_id"]):
         _require_role(conn, row["campaign_id"], user)
+        # tirar "como" la ficha de otro jugador firmaría el evento con
+        # su nombre — solo el dueño de la ficha (o el DM)
+        _char_ownership(conn, character_id, user)
     char = Character(**json.loads(row["data"]))
 
     expr = expression.strip().lower()
@@ -257,6 +260,7 @@ def character_attack(character_id: str, item_name: str,
         raise HTTPException(404, "character not found")
     if row["campaign_id"] and _has_owner(conn, row["campaign_id"]):
         _require_role(conn, row["campaign_id"], user)
+        _char_ownership(conn, character_id, user)
     char = Character(**json.loads(row["data"]))
     item = next((i for i in char.inventory
                  if i.name.lower() == item_name.lower()), None)

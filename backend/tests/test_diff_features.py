@@ -276,10 +276,10 @@ def test_character_roll_applies_advantage_effect():
 
 def _auth_headers(username):
     r = client.post("/api/auth/register", json={
-        "username": username, "password": "pw12345"})
+        "username": username, "password": "pw123456"})
     if r.status_code == 409:
         r = client.post("/api/auth/login", json={
-            "username": username, "password": "pw12345"})
+            "username": username, "password": "pw123456"})
     return {"Authorization": f"Bearer {r.json()['token']}"}
 
 
@@ -318,8 +318,10 @@ def test_dm_entities_hidden_from_players():
 
 def test_wrong_password_rejected():
     u = f"w{uuid.uuid4().hex[:8]}"
-    client.post("/api/auth/register", json={"username": u, "password": "a"})
-    r = client.post("/api/auth/login", json={"username": u, "password": "b"})
+    client.post("/api/auth/register",
+                json={"username": u, "password": "pw123456"})
+    r = client.post("/api/auth/login",
+                    json={"username": u, "password": "wrong123"})
     assert r.status_code == 401
 
 

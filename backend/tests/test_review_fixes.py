@@ -280,7 +280,7 @@ def test_add_party_emits_operations_and_rolls_init():
 
 def _auth_headers(username):
     r = client.post("/api/auth/register", json={
-        "username": username, "password": "pw12345"})
+        "username": username, "password": "pw123456"})
     return {"Authorization": f"Bearer {r.json()['token']}"}
 
 
@@ -359,7 +359,7 @@ def test_char_ownership_in_owned_campaign():
     def _account(tag):
         r = client.post("/api/auth/register", json={
             "username": f"{tag}{uuid.uuid4().hex[:8]}",
-            "password": "pw12345"})
+            "password": "pw123456"})
         return {"Authorization": f"Bearer {r.json()['token']}"}, \
             r.json()["user_id"]
 
@@ -394,6 +394,10 @@ def test_char_ownership_in_owned_campaign():
         "user_id": uid_b, "entity_kind": "character",
         "operation_type": "character.hp.damage",
         "payload": {"amount": 1}}, headers=pb).status_code == 403
+    # ni tirar "como" la ficha de A — el evento firmaría su nombre
+    assert client.post(f"/api/operations/character/{cid}/roll",
+                       params={"expression": "1d20"},
+                       headers=pb).status_code == 403
     # ni mover objetos de la ficha de A
     cb = client.post("/api/characters",
                      json={"name": "B", "campaign_id": camp["id"]},

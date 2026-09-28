@@ -44,7 +44,8 @@ export default function MapBoard({ campaign, size = CELL,
                                   worldEntities = [],
                                   chars = [], myUid = null,
                                   ping = null,
-                                  activeRef = null }) {
+                                  activeRef = null,
+                                  turnOrder = {} }) {
   // entities externas → la lista la gestiona el padre (vista de
   // jugador: mantiene la escena elegida al refrescar por WS)
   const [ownMaps, setMaps] = useState(null)
@@ -773,6 +774,14 @@ export default function MapBoard({ campaign, size = CELL,
                       strokeWidth={sel?.id === tk.id ||
                                    (activeRef && tk.ref_id === activeRef)
                         ? 3 : 1} />
+              {/* posición en la iniciativa: número sobre el token si
+                  el combatiente está en el tracker activo */}
+              {tk.ref_id && turnOrder[tk.ref_id] && (
+                <text x={(lx + tsize * .5 - tsize * .45) * size}
+                      y={(ly + tsize * .5 - tsize * .4) * size + size * .18}
+                      fill="#9cf" fontSize={size * .26}
+                      fontWeight="bold" pointerEvents="none">
+                  {turnOrder[tk.ref_id]}</text>)}
               {/* turno activo en el tracker → anillo dorado pulsante */}
               {activeRef && tk.ref_id === activeRef && (
                 <circle cx={(lx + tsize * .5) * size}

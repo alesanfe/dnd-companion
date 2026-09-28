@@ -154,10 +154,13 @@ export default function CampaignBoard() {
   const aliveC = cbs.filter((cb) =>
     !(cb.conditions || []).some((cn) => OUT_C.has(cn)) &&
     !(cb.hp_state === 'caído' && cb.kind !== 'character'))
-  const activeRef = aliveC.length
-    ? [...aliveC].sort((a, b) => b.initiative - a.initiative)[
-        combatView.combat.turn_index % aliveC.length]?.ref_id
+  const sortedC = [...aliveC].sort((a, b) => b.initiative - a.initiative)
+  const activeRef = sortedC.length
+    ? sortedC[combatView.combat.turn_index % sortedC.length]?.ref_id
     : null
+  const turnOrder = {}
+  sortedC.forEach((cb, i) => {
+    if (cb.ref_id) turnOrder[cb.ref_id] = i + 1 })
 
   return (
     <main>
@@ -212,7 +215,8 @@ export default function CampaignBoard() {
                     size={30} entities={byKind.map}
                     worldEntities={entities || []}
                     chars={chars} myUid={me?.user_id}
-                    ping={ping} activeRef={activeRef} />
+                    ping={ping} activeRef={activeRef}
+                    turnOrder={turnOrder} />
         </section>)}
 
       {campTab === 'resumen' && (<>

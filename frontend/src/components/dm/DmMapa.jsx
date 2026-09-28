@@ -8,7 +8,12 @@ export default function DmMapa({ c }) {
   if (!campaign || dmTab !== 'mapa') return null
   // entities = todas las entidades de campaña → pins enlazables;
   // partyChars → tokens vinculados a ficha (PG en vivo + nombre)
+  // ref_id → posición en la iniciativa (badge sobre el token)
+  const turnOrder = {}
+  ;(ordered || []).forEach((cb, i) => {
+    if (cb.ref_id) turnOrder[cb.ref_id] = i + 1 })
   return <MapBoard campaign={campaign} worldEntities={entities || []}
                    chars={partyChars || []} ping={ping}
-                   activeRef={ordered?.[activeIdx]?.ref_id} />
+                   activeRef={ordered?.[activeIdx]?.ref_id}
+                   turnOrder={turnOrder} />
 }

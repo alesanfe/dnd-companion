@@ -476,8 +476,13 @@ def state_restore(char: Character, p: dict, ctx):
     current = char.model_dump()
     restored = Character(**p["data"])
     char.__dict__.update(restored.__dict__)
+    # resync para la sala: sin evento, los otros sockets (otro
+    # dispositivo del jugador, el tablero del DM) se quedan viendo el
+    # estado previo al undo
     return {"operation_type": "character.state.restore",
-            "payload": {"data": current}}, []
+            "payload": {"data": current}}, [
+                {"type": "character.state.restored",
+                 "payload": {"hp": char.hp.current}}]
 
 
 @op("character.level_up")

@@ -144,8 +144,13 @@ def combat_restore(combat: Combat, p: dict, ctx):
     current = combat.model_dump()
     restored = Combat(**p["data"])
     combat.__dict__.update(restored.__dict__)
+    # evento pequeño de resync: sin él, un undo (p.ej. de combat.end)
+    # dejaba a la sala viendo el estado viejo hasta el próximo refresh
     return {"operation_type": "combat.state.restore",
-            "payload": {"data": current}}, []
+            "payload": {"data": current}}, [
+                {"type": "combat.state.restored",
+                 "payload": {"round": combat.round,
+                             "status": combat.status}}]
 
 
 @op("combatant.add")

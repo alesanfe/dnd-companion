@@ -46,6 +46,23 @@ cd frontend && npm install && npm run dev
 - Eventos WebSocket pequeños y tipados (`character.hp.changed`, etc.), nunca
   la ficha completa.
 
+## Modelo de acceso (auth)
+
+- `optional_user`/`current_user` (api/auth.py): Bearer token de
+  `auth_tokens` (TTL 30d); `member_role(camp, uid)` = owner | co_dm |
+  player | guest | spectator. **Campaña sin `owner_id` = modo local
+  abierto** — los guards pasan siempre; con owner, `_require_role`
+  (api/campaigns.py) exige membresía y `_DM_ROLES` para lo administrativo.
+- El `user_id` del body/payload es **spoofable**: con token se pisa con
+  el uid autenticado (ops, join, transfer). El mismo guard va en REST
+  **y** en el path WS de operaciones (main.py `_dispatch_ws`).
+- Ops `entity_kind=combat` = DM-only; `character` = miembro y, si la
+  ficha tiene `player_id`, solo su dueño (o el DM) la muta.
+- Fichas libres (`player_id` NULL) se reclaman vía PATCH — el no-DM
+  solo puede poner su propio uid o soltar la suya.
+- Conflictos de optimistic locking: `POST /api/operations/conflicts/
+  {id}/retry|dismiss` — resolución asistida desde Settings.
+
 ## Verificación
 
 - `python -m compileall backend/app data-pipeline` — sintaxis

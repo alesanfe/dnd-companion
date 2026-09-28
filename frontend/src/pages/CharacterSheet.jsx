@@ -99,6 +99,14 @@ export default function CharacterSheet() {
 
   const load = () => api.getCharacter(id).then((c) => {
     setChar(c)
+    // peticiones del DM que llegaron estando offline — la sala solo
+    // emite el evento una vez; pendingRolls las reaparece al volver
+    if (c.campaign_id)
+      api.pendingRolls(c.campaign_id, [id])
+        .then((r) => {
+          const p = (r.pending || [])[0]
+          if (p) setRollRequest(p)
+        }).catch(() => {})
     // retrato: prioriza el guardado en la ficha (sincronizable),
     // luego el local del navegador
     setPortrait(c.data?.narrative?.portrait_url ||

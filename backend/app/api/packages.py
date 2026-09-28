@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from ..db.connections import content_db
@@ -38,6 +38,17 @@ class PackageIn(BaseModel):
 def install_package(body: PackageIn):
     conn = content_db()
     m = body.manifest
+    # dependencias del manifest: cada una debe existir como fuente
+    # (paquete 'pkg:x' o fuente de pipeline 'srd:2014'…). Un pack
+    # incompleto instalado "a medias" es peor que rechazar la install.
+    if m.dependencies:
+        have = {r[0] for r in conn.execute(
+            "SELECT id FROM content_sources").fetchall()}
+        missing = [d for d in m.dependencies
+                   if d not in have and f"pkg:{d}" not in have]
+        if missing:
+            raise HTTPException(
+                409, f"dependencias ausentes: {', '.join(missing)}")
     source_id = f"pkg:{m.id}"
     now = datetime.now(timezone.utc).isoformat()
     count = 0
@@ -84,6 +95,52 @@ def install_package(body: PackageIn):
 def list_packages():
     conn = content_db()
     rows = conn.execute(
-        "SELECT id, name, version, license, distribution_allowed "
-        "FROM content_sources WHERE id LIKE 'pkg:%'").fetchall()
-    return {"packages": [dict(r) for r in rows]}
+        """SELECT s.id, s.name, s.version, s.license,
+                  s.distribution_allowed, s.attribution_text,
+                  COUNT(e.id) AS entities
+           FROM content_sources s
+           LEFT JOIN content_entities e ON e.source_id = s.id
+           WHERE s.id LIKE 'pkg:%'
+           GROUP BY s.id ORDER BY s.name""").fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        # desglose por tipo — '12 hechizos · 3 objetos' para la UI
+        d["by_type"] = {r2[0]: r2[1] for r2 in conn.execute(
+            """SELECT entity_type, COUNT(*) FROM content_entities
+               WHERE source_id = ? GROUP BY entity_type""",
+            (d["id"],)).fetchall()}
+        out.append(d)
+    return {"packages": out}
+
+
+@router.delete("/{pkg_id}", status_code=200)
+def uninstall_package(pkg_id: str):
+    """Desinstala un pack: borra su fuente, entidades e índice FTS.
+    Solo packs de usuario ('pkg:*') — las fuentes de pipeline (srd,
+    open5e…) no se tocan por este endpoint."""
+    conn = content_db()
+    source_id = pkg_id if pkg_id.startswith("pkg:") else f"pkg:{pkg_id}"
+    row = conn.execute(
+        "SELECT id FROM content_sources WHERE id = ?", (source_id,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "paquete no instalado")
+    ids = [r[0] for r in conn.execute(
+        "SELECT id FROM content_entities WHERE source_id = ?",
+        (source_id,)).fetchall()]
+    try:
+        # FTS primero — la fila de entities se va en el mismo commit
+        for eid in ids:
+            conn.execute(
+                "DELETE FROM content_fts WHERE entity_id = ?", (eid,))
+        conn.execute(
+            "DELETE FROM content_entities WHERE source_id = ?",
+            (source_id,))
+        conn.execute(
+            "DELETE FROM content_sources WHERE id = ?", (source_id,))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return {"removed": source_id, "entities": len(ids)}

@@ -172,14 +172,39 @@ function PackagesCard() {
       </label>
       {msg && <p className="muted" role="status">{msg}</p>}
       {(pkgs || []).map((p) => (
-        <div key={p.id} className="row">
+        <div key={p.id} className="row" style={{ flexWrap: 'wrap' }}>
           <span style={{ flex: 1 }}>
             <strong>{p.name}</strong>{' '}
-            <span className="muted">v{p.version}</span></span>
+            <span className="muted">v{p.version}</span>
+            {p.attribution_text && (
+              <span className="muted" style={{ display: 'block',
+                                               fontSize: '.8rem' }}>
+                {p.attribution_text}</span>)}
+          </span>
+          {/* desglose por tipo: "12 conjuros · 3 objetos" */}
+          {p.entities > 0 && (
+            <span className="muted" style={{ fontSize: '.8rem' }}>
+              {Object.entries(p.by_type || {})
+                .map(([ty, n]) => `${n} ${t(`search.${ty}`) !==
+                  `search.${ty}` ? t(`search.${ty}`) : ty}`)
+                .join(' · ')}
+            </span>)}
           <span className="chip">{p.license}</span>
           {!p.distribution_allowed && (
             <span className="chip" title={t('pkg.privateTitle')}>
               {t('pkg.private')}</span>)}
+          <button className="ghost" style={{ minHeight: 24 }}
+                  title={t('pkg.uninstall')}
+                  aria-label={`${t('pkg.uninstall')} ${p.name}`}
+                  onClick={async () => {
+                    if (!confirm(tf('pkg.uninstallConfirm',
+                                    { name: p.name }))) return
+                    try {
+                      const r = await api.uninstallPackage(p.id)
+                      setMsg(`✓ ${r.entities} ${t('pkg.entities')}`)
+                      load()
+                    } catch (ex) { setMsg(`⚠ ${ex.message}`) }
+                  }}>✕</button>
         </div>))}
       {pkgs?.length === 0 && <p className="muted">{t('pkg.empty')}</p>}
       <p className="muted" style={{ fontSize: '.8rem' }}>

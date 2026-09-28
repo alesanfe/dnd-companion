@@ -1101,6 +1101,44 @@ def test_token_move_blocked_by_wall():
     assert _mv(4, 3, owner).status_code == 200
 
 
+def test_packages_install_deps_and_uninstall():
+    """Packs: dependencias obligatorias, conteo por tipo y
+    desinstalación limpia (fuente + entidades + FTS)."""
+    sfx = uuid.uuid4().hex[:8]          # la content DB persiste
+    base_id, child_id = f"base-{sfx}", f"child-{sfx}"
+    base = {"id": base_id, "name": "Base", "version": "1.0",
+            "license": "CC-BY-4.0"}
+    r = client.post("/api/packages/install", json={
+        "manifest": {**base, "id": child_id,
+                     "dependencies": [base_id]},
+        "content": {"spell": [{"index": "bolt", "name": "Bolt"}]}})
+    assert r.status_code == 409  # falta la base
+
+    client.post("/api/packages/install", json={
+        "manifest": base,
+        "content": {"spell": [{"index": "a", "name": "A"},
+                              {"index": "b", "name": "B"}]}})
+    r = client.post("/api/packages/install", json={
+        "manifest": {**base, "id": child_id,
+                     "dependencies": [base_id]},
+        "content": {"item": [{"index": "x", "name": "X"}]}})
+    assert r.status_code == 201
+
+    pkgs = client.get("/api/packages").json()["packages"]
+    child = next(p for p in pkgs if p["id"] == f"pkg:{child_id}")
+    assert child["by_type"] == {"item": 1}
+    assert child["entities"] == 1
+
+    # tras desinstalar no queda ni entidad ni FTS
+    r = client.delete(f"/api/packages/{child_id}")
+    assert r.status_code == 200
+    hits = client.get("/api/content/search?q=X"
+                      "&entity_type=item").json()["results"]
+    assert not any(h["id"] == f"pkg:{child_id}:x" for h in hits)
+    # solo packs — una fuente de pipeline no se borra por aquí
+    assert client.delete("/api/packages/srd:2014").status_code == 404
+
+
 def test_party_rest_applies_to_all_sheets_dm_only():
     """POST /campaigns/{id}/rest?kind=long aplica character.rest.long a
     cada ficha como op real — PG al máximo, deshacible. DM-only."""

@@ -252,6 +252,9 @@ export const api = {
   installPackage: (pkg) =>
     req('/api/packages/install',
         { method: 'POST', body: JSON.stringify(pkg) }),
+  uninstallPackage: (id) =>
+    req(`/api/packages/${encodeURIComponent(
+      String(id).replace(/^pkg:/, ''))}`, { method: 'DELETE' }),
   /** Cambio de estado vía operación idempotente. Si no hay red,
       encola en IndexedDB y se reenvía al volver (offline-first). */
   applyOp: async (entity, operationType, payload, kind = 'character') => {

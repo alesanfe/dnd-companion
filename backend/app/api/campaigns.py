@@ -422,6 +422,9 @@ def list_entities(campaign_id: str, kind: str | None = None,
     + entidades donde su user_id está en known_to. Sin token, `viewer`
     controla la vista (modo local/anónimo)."""
     conn = state_db()
+    # membresía primero: sin el guard un extraño veía al menos las
+    # entidades públicas de una mesa ajena
+    _require_role(conn, campaign_id, user)
     uid = (user or {}).get("user_id")
     if user is not None:
         is_dm = member_role(campaign_id, uid) in ("owner", "co_dm")
@@ -524,6 +527,7 @@ def list_relationships(campaign_id: str, entity_id: str | None = None,
     """Mismo filtro que las entidades: un jugador solo ve las
     relaciones públicas — las de DM no se filtran."""
     conn = state_db()
+    _require_role(conn, campaign_id, user)
     uid = (user or {}).get("user_id")
     if user is not None:
         is_dm = member_role(campaign_id, uid) in ("owner", "co_dm")

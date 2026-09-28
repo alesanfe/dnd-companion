@@ -543,6 +543,23 @@ def test_combat_ops_dm_only_in_owned_campaign():
                        headers=owner).status_code == 200
 
 
+def test_entities_and_relationships_require_membership():
+    """Sin el guard un extraño listaba al menos las entidades y
+    relaciones públicas de una mesa ajena. Ahora 403."""
+    owner = _auth_headers(f"en{uuid.uuid4().hex[:8]}")
+    stranger = _auth_headers(f"ex{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    client.post(f"/api/campaigns/{camp['id']}/entities",
+                json={"kind": "npc", "name": "Tabernera"},
+                headers=owner)
+    for path in ("entities", "relationships", "timeline"):
+        assert client.get(f"/api/campaigns/{camp['id']}/{path}",
+                          headers=stranger).status_code == 403
+        assert client.get(f"/api/campaigns/{camp['id']}/{path}",
+                          headers=owner).status_code == 200
+
+
 def test_pending_roll_requests_scoped_to_own_chars():
     """Un jugador no consulta peticiones pendientes de fichas ajenas —
     las secretas del DM filtrarían el motivo de la tirada."""

@@ -17,8 +17,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .auth import optional_user
-from .campaigns import _has_owner, _require_role
+from .auth import member_role, optional_user
+from .campaigns import _DM_ROLES, _has_owner, _require_role
 from ..db.connections import content_db, state_db
 # Las reglas de condición viven en domain/conditions.py (compartidas
 # con los combatientes); aquí solo se consultan para el personaje.
@@ -481,7 +481,8 @@ def history(entity_id: str, limit: int = 50,
 
 
 @router.get("/conflicts")
-def conflicts(limit: int = 20):
+def conflicts(limit: int = 20,
+              user: dict | None = Depends(optional_user)):
     """Operaciones en conflicto (optimistic locking) pendientes de
     revisión manual — PG/recursos modificados en dos dispositivos."""
     conn = state_db()
@@ -490,13 +491,33 @@ def conflicts(limit: int = 20):
                   timestamp, operation_type, payload
            FROM operations WHERE status = 'conflict'
            ORDER BY timestamp DESC LIMIT ?""",
-        (limit,)).fetchall()
-    return {"conflicts": [
-        {**dict(r), "payload": json.loads(r["payload"])} for r in rows]}
+        (limit * 4,)).fetchall()
+    # solo conflictos de entidades propias/locales o de campañas
+    # donde el usuario es miembro — nada de mesas ajenas
+    uid = (user or {}).get("user_id")
+    out = []
+    for r in rows:
+        camp = None
+        for table in _TABLES.values():
+            er = conn.execute(
+                f"SELECT campaign_id FROM {table} WHERE id = ?",
+                (r["entity_id"],)).fetchone()
+            if er:
+                camp = er["campaign_id"]
+                break
+        if (camp and _has_owner(conn, camp)
+                and member_role(camp, uid)
+                not in _DM_ROLES + ("player", "guest")):
+            continue
+        out.append({**dict(r), "payload": json.loads(r["payload"])})
+        if len(out) >= limit:
+            break
+    return {"conflicts": out}
 
 
 @router.post("/undo/{operation_id}")
-async def undo(operation_id: str):
+async def undo(operation_id: str,
+               user: dict | None = Depends(optional_user)):
     """Revierte una operación aplicando su inversa registrada."""
     conn = state_db()
     op_row = conn.execute(
@@ -528,7 +549,9 @@ async def undo(operation_id: str):
         # operation_id — los handlers ignoran claves extra del payload
         payload={**inv["payload"], "_undoes": operation_id},
     )
-    return await apply(inverse_op)
+    # apply() vuelve a comprobar la membresía con ESTE usuario —
+    # llamarla sin el user le pasaría el objeto Depends como user
+    return await apply(inverse_op, user)
 
 
 def _current_version(conn, entity_id: str, kind: str = "character") -> int:

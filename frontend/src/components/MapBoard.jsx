@@ -382,6 +382,13 @@ export default function MapBoard({ campaign, size = CELL,
     cellDist(tk.x, tk.y, x, y, d.cell_ft) <= tk.vision_ft + 0.01 &&
     // los muros bloquean la visión — nada de ver a través de paredes
     !blockedByWall(d.walls || [], tk.x, tk.y, x, y))
+  /* iluminación: cualquier token con light_ft alumbra la niebla —
+     no solo los propios (una antorcha ajena también revela el suelo).
+     La celda queda semitransparente: se ve terreno pero no quién */
+  const litByLight = (x, y) => (d.tokens || []).some((tk) =>
+    tk.light_ft &&
+    cellDist(tk.x, tk.y, x, y, d.cell_ft) <= tk.light_ft + 0.01 &&
+    !blockedByWall(d.walls || [], tk.x, tk.y, x, y))
 
   const newMap = async () => {
     const name = prompt(t('map.newPrompt'), `Mapa ${maps.length + 1}`)
@@ -545,6 +552,17 @@ export default function MapBoard({ campaign, size = CELL,
                 <option key={n} value={n}>{n}×{n}</option>))}
             </select>
           </label>
+          {/* luz emitida (ft): una antorcha de 20ft alumbra la niebla
+              para toda la mesa (respetando muros) */}
+          <label className="muted">{t('map.lightFt')}
+            <input type="number" min="0" max="300" step="5"
+                   defaultValue={sel.light_ft || 0}
+                   key={`${sel.id}:${sel.light_ft}`}
+                   style={{ width: 52 }}
+                   aria-label={t('map.lightFtAria')}
+                   onBlur={(e) => patchTok({
+                     light_ft: Math.max(0, +e.target.value || 0) })} />
+          </label>
           {/* radio de visión (ft): abre la niebla alrededor del token
               en la vista del jugador */}
           <label className="muted">{t('map.visionFt')}
@@ -634,15 +652,21 @@ export default function MapBoard({ campaign, size = CELL,
         {cells.map(([x, y]) => {
           const k = `${x},${y}`
           const mk = d.marks[k]
-          // la visión del propio token abre la niebla cercana
-          const fog = d.fog.includes(k) && (!readOnly || !lit(x, y))
+          // la visión del propio token abre la niebla; una luz ajena
+          // la deja en penumbra (se ve el terreno, todo atenuado)
+          const fogged = d.fog.includes(k)
+          const litFull = lit(x, y)
+          const litDim = !litFull && litByLight(x, y)
+          const fog = fogged && (!readOnly || (!litFull && !litDim))
+          const dimFog = readOnly && fogged && litDim
           // el DM ve la niebla translúcida (sabe qué hay debajo);
-          // el jugador la ve casi opaca
+          // el jugador: opaca, penumbra (.55) o despejada
           return (
             <rect key={k} x={x * size} y={y * size}
                   width={size} height={size}
                   fill={fog ? (readOnly ? 'rgba(0,0,0,.95)'
                                        : 'rgba(0,0,0,.5)')
+                        : dimFog ? 'rgba(0,0,0,.55)'
                         : mk || 'transparent'}
                   fillOpacity={mk && !fog ? .4 : 1}
                   stroke="#445" strokeWidth="1" />)
@@ -735,7 +759,7 @@ export default function MapBoard({ campaign, size = CELL,
         {/* tokens (bajo niebla → ocultos en vista de jugador) */}
         {d.tokens.map((tk) => {
           if (readOnly && d.fog.includes(`${tk.x},${tk.y}`) &&
-              !lit(tk.x, tk.y))
+              !lit(tk.x, tk.y) && !litByLight(tk.x, tk.y))
             return null
           const lx = dragTok?.id === tk.id ? dragTok.x : tk.x
           const ly = dragTok?.id === tk.id ? dragTok.y : tk.y
@@ -774,6 +798,14 @@ export default function MapBoard({ campaign, size = CELL,
                       strokeWidth={sel?.id === tk.id ||
                                    (activeRef && tk.ref_id === activeRef)
                         ? 3 : 1} />
+              {/* halo de luz: el token que emite ilumina su radio
+                  (los muros recortan la luz en el render de niebla) */}
+              {tk.light_ft > 0 && (
+                <circle cx={(lx + tsize * .5) * size}
+                        cy={(ly + tsize * .5) * size}
+                        r={(tk.light_ft / d.cell_ft) * size}
+                        fill="#f5c542" opacity=".10"
+                        pointerEvents="none" />)}
               {/* posición en la iniciativa: número sobre el token si
                   el combatiente está en el tracker activo */}
               {tk.ref_id && turnOrder[tk.ref_id] && (
@@ -827,7 +859,7 @@ export default function MapBoard({ campaign, size = CELL,
           // pin a una entidad que el jugador no conoce → oculto
           if (readOnly && !ent) return null
           if (readOnly && d.fog.includes(`${p.x},${p.y}`) &&
-              !lit(p.x, p.y)) return null
+              !lit(p.x, p.y) && !litByLight(p.x, p.y)) return null
           return (
             <g key={p.id}
                onClick={(e) => {

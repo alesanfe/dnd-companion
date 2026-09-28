@@ -21,6 +21,7 @@ export default function DmBoard() {
   const [dmTab, setDmTab] = useState('sesion')
   const [playerView, setPlayerView] = useState(false)  // lo que ven los jugadores
   const [entities, setEntities] = useState([])
+  const [ping, setPing] = useState(null)      // ping de mapa en vivo
   const [entForm, setEntForm] = useState({ kind: 'npc', name: '', notes: '', monsters: '' })
   const [partyLevels, setPartyLevels] = useState('3,3,3,3')
   const [crs, setCrs] = useState('')
@@ -68,6 +69,16 @@ export default function DmBoard() {
           // scroll — cuenta "N nuevos" hasta que vuelva arriba
           if ((feedRef.current?.scrollTop ?? 0) > 40)
             setNewRolls((n) => n + 1)
+        }
+        // entidades vivas: el PATCH del propio DM (tokens, niebla)
+        // y los cambios de jugadores/espectadores redibujan el mapa —
+        // sin esto la pestaña Mapa se quedaba con datos viejos
+        if (ev?.type === 'campaign.entity.updated') {
+          api.listEntities(campaign.id)
+            .then((r) => setEntities(r.entities)).catch(() => {})
+        }
+        if (ev?.type === 'campaign.map.ping') {
+          setPing({ ...ev.payload, k: Date.now() })
         }
         if (ev?.type === 'campaign.presence') {
           setPresence(ev.payload?.members || [])
@@ -174,7 +185,7 @@ export default function DmBoard() {
     newRolls, setNewRolls, feedRef,
     sessTitle, setSessTitle, sessions, setSessions,
     timeline, setTimeline, rollReq, setRollReq,
-    entities, setEntities, entForm, setEntForm,
+    entities, setEntities, entForm, setEntForm, ping,
     partyChars,
     chat, chatText, setChatText, sendDmChat, typing, onDmTyping,
     combat, combatName, setCombatName, refresh, cop, setCombat,

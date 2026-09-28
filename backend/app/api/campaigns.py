@@ -588,6 +588,36 @@ def delete_relationship(campaign_id: str, rel_id: str,
         raise HTTPException(404, "relationship not found")
 
 
+class PingIn(BaseModel):
+    x: int
+    y: int
+    entity_id: str | None = None        # mapa donde se pulsó
+
+
+@router.post("/{campaign_id}/ping")
+async def map_ping(campaign_id: str, body: PingIn,
+                   user: dict | None = Depends(optional_user)):
+    """Ping efímero del mapa (botón derecho): señalar un punto a toda
+    la mesa. Solo WS — no persiste en el feed de eventos."""
+    from ..domain.events import Event, EventType
+    conn = state_db()
+    _require_role(conn, campaign_id, user)
+    ev = Event(event_id=uuid.uuid4().hex, type=EventType.MAP_PING,
+               campaign_id=campaign_id,
+               aggregate_id=body.entity_id or campaign_id,
+               aggregate_version=0,
+               actor_id=(user or {}).get("name") or "?",
+               occurred_at=datetime.now(timezone.utc),
+               payload={"x": int(body.x), "y": int(body.y),
+                        "entity_id": body.entity_id,
+                        "by": (user or {}).get("name") or "?",
+                        # el destinatario puede verificar que el ping
+                        # es del mapa que está viendo
+                        })
+    await manager.broadcast(campaign_id, ev)
+    return {"ok": True}
+
+
 class TokenMove(BaseModel):
     token_id: str
     x: int

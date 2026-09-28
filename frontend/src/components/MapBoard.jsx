@@ -22,7 +22,8 @@ export default function MapBoard({ campaign, size = CELL,
                                   readOnly = false, viewer = 'dm',
                                   entities = null,
                                   worldEntities = [],
-                                  chars = [], myUid = null }) {
+                                  chars = [], myUid = null,
+                                  ping = null }) {
   // entities externas → la lista la gestiona el padre (vista de
   // jugador: mantiene la escena elegida al refrescar por WS)
   const [ownMaps, setMaps] = useState(null)
@@ -487,6 +488,13 @@ export default function MapBoard({ campaign, size = CELL,
            aria-label={t('map.canvasAria')}
            onClick={onSvgClick} onMouseMove={onSvgMove}
            onMouseDown={onSvgDown} onMouseUp={onSvgUp}
+           onContextMenu={(e) => {
+             // botón derecho = ping compartido (clásico VTT)
+             e.preventDefault()
+             const [px, py] = cellAt(e)
+             if (px < 0 || py < 0 || px >= d.cols || py >= d.rows) return
+             api.ping(campaign.id, map.id, px, py).catch(() => {})
+           }}
            onMouseLeave={() => setDrag(null)}
            style={{ background: '#223', borderRadius: 6,
                     maxWidth: '100%', touchAction: 'manipulation' }}>
@@ -534,6 +542,23 @@ export default function MapBoard({ campaign, size = CELL,
                 height={(Math.abs(drag.b[1] - drag.a[1]) + 1) * size}
                 fill={drag.kind === 'fog' ? '#000' : markColor}
                 opacity=".35" pointerEvents="none" />)}
+
+        {/* ping compartido: anillo que pulsa ~1.5s en la celda */}
+        {ping && ping.entity_id === map?.id && (
+          <g pointerEvents="none">
+            <circle cx={(ping.x + .5) * size} cy={(ping.y + .5) * size}
+                    r={size * .25} fill="none"
+                    stroke="#ffd700" strokeWidth="3">
+              <animate attributeName="r" values={`${size * .15};${size * .7}`}
+                       dur=".6s" repeatCount="3" />
+              <animate attributeName="opacity" values=".9;0"
+                       dur=".6s" repeatCount="3" />
+            </circle>
+            <text x={(ping.x + .5) * size} y={(ping.y - .3) * size}
+                  textAnchor="middle" fill="#ffd700"
+                  stroke="#000" strokeWidth={size * .01}
+                  fontSize={size * .3}>{ping.by}</text>
+          </g>)}
 
         {/* regla: shift para medir */}
         {measure && (

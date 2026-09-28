@@ -26,6 +26,7 @@ export default function CampaignBoard() {
   const [undoSave, setUndoSave] = useState(null)    // op_id deshacer
   const [campTab, setCampTab] = useState('resumen')
   const [presence, setPresence] = useState([]) // quién está en la sala
+  const [ping, setPing] = useState(null)       // ping de mapa en vivo
   const me = currentUser() // para el botón "reclamar ficha"
   // el formulario de unirse solo ocupa espacio si todavía no estás dentro
   const [joined, setJoined] = useState(
@@ -93,11 +94,15 @@ export default function CampaignBoard() {
         const ev = msg.event || msg
         if (ev?.type === 'dice.roll.requested' ||
             (ev?.type?.startsWith('campaign.') &&
-             ev?.type !== 'campaign.presence') ||
+             ev?.type !== 'campaign.presence' &&
+             ev?.type !== 'campaign.map.ping') ||
             ev?.type?.startsWith('combat.')) load()
         // tiradas públicas (las secretas nunca llegan a este socket)
         if (ev?.type === 'dice.roll.created') {
           setRolls((l) => [ev.payload, ...l].slice(0, 10))
+        }
+        if (ev?.type === 'campaign.map.ping') {
+          setPing({ ...ev.payload, k: Date.now() })
         }
         if (ev?.type === 'campaign.presence') {
           setPresence(ev.payload?.members || [])
@@ -193,7 +198,8 @@ export default function CampaignBoard() {
           <MapBoard campaign={{ id }} readOnly viewer="player"
                     size={30} entities={byKind.map}
                     worldEntities={entities || []}
-                    chars={chars} myUid={me?.user_id} />
+                    chars={chars} myUid={me?.user_id}
+                    ping={ping} />
         </section>)}
 
       {campTab === 'resumen' && (<>

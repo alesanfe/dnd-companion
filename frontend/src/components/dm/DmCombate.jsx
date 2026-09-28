@@ -47,6 +47,38 @@ export default function DmCombate({ c }) {
       data: { ...data, tokens: [...toks, token] },
     }).catch(() => {})
   }
+
+  /* 📍 directo al mapa desde el buscador de monstruos — preparación
+     de encuentros sin pasar por el tracker de combate */
+  const dropMonster = async (m) => {
+    const map = (entities || []).find(
+      (e) => e.kind === 'map' && e.visibility !== 'dm')
+    if (!map) { setDmTab('mapa'); return }
+    const data = map.data || {}
+    const toks = data.tokens || []
+    const used = new Set(toks.map((t2) => `${t2.x},${t2.y}`))
+    let x = 0, y = 0
+    while (used.has(`${x},${y}`)) { x++; if (x >= (data.cols || 16)) {
+      x = 0; y++ } }
+    let hp = null, sq = 1
+    try {
+      const dat = typeof m.data === 'string'
+        ? JSON.parse(m.data) : (m.data || {})
+      hp = dat.hp ?? dat.hit_points ?? dat.hp_max ?? null
+      const sz = String(dat.size || '').toLowerCase()
+      sq = sz.includes('gargan') ? 4
+        : (sz.includes('huge') || sz.includes('enorme')) ? 3
+        : (sz.includes('large') || sz.includes('grande')) ? 2 : 1
+    } catch { /* resultado sin data — nombre suelto */ }
+    const token = {
+      id: `t${Date.now()}`, name: m.name, x, y, size: sq,
+      color: 'hsl(0 70% 45%)',
+      ...(hp ? { hp, max_hp: hp } : {}),
+    }
+    await api.patchEntity(campaign.id, map.id, {
+      data: { ...data, tokens: [...toks, token] },
+    }).catch(() => {})
+  }
   const show = dmTab === 'combate'
   return (<>
     <section className="card" hidden={!show}>
@@ -219,6 +251,8 @@ export default function DmCombate({ c }) {
               <span>{m.name}</span>
               <button onClick={() =>
                 cop('combatant.add', { content_entity_id: m.id })}>+</button>
+              <button className="ghost" title={t('com.toMap')}
+                      onClick={() => dropMonster(m)}>📍</button>
             </div>
           ))}
           <div className="row">

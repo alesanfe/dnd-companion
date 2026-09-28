@@ -611,6 +611,15 @@ export default function MapBoard({ campaign, size = CELL,
                     textAnchor="middle" fill="#fff"
                     fontSize={tr * .72} pointerEvents="none">
                 {tk.name.slice(0, 2).toUpperCase()}</text>
+              {/* insignia de condiciones: la ficha vinculada lleva
+                  estados activos → punto naranja en la esquina */}
+              {lc && (lc.conditions || []).length > 0 && (
+                <circle cx={(lx + tsize * .92) * size}
+                        cy={(ly + tsize * .08) * size}
+                        r={size * .13} fill="#e67e22"
+                        stroke="#111" strokeWidth={1}>
+                  <title>{lc.conditions.join(', ')}</title>
+                </circle>)}
               {hp != null && hpMax != null && (
                 <g>
                   <rect x={lx * size + 2} y={ly * size + 2}

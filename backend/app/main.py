@@ -72,7 +72,7 @@ async def campaign_ws(websocket: WebSocket, campaign_id: str,
                     json.dumps({"type": "error", "detail": "invalid json"}))
                 continue
             await _dispatch_ws(websocket, campaign_id, msg, resolved,
-                               name)
+                               name, role)
     except WebSocketDisconnect:
         manager.leave(campaign_id, websocket)
         await _broadcast_presence(campaign_id)
@@ -119,7 +119,8 @@ async def _broadcast_presence(campaign_id: str) -> None:
 
 async def _dispatch_ws(websocket: WebSocket, campaign_id: str,
                        msg: dict, resolved: str | None = None,
-                       name: str | None = None) -> None:
+                       name: str | None = None,
+                       role: str = "local") -> None:
     """Un mensaje del protocolo de sala: ping / chat / operation."""
     if msg.get("type") == "ping":
         await websocket.send_text(json.dumps({"type": "pong"}))
@@ -128,6 +129,12 @@ async def _dispatch_ws(websocket: WebSocket, campaign_id: str,
     # es la identidad autenticada del socket — el `from` del cliente es
     # spoofable (un jugador podría firmar mensajes como "DM")
     if msg.get("type") == "chat":
+        # un espectador anónimo mira pero no habla — antes podía
+        # intervenir en el chat de una mesa ajena con token inválido
+        if role == "spectator":
+            await websocket.send_text(json.dumps(
+                {"type": "error", "detail": "solo lectura"}))
+            return
         text = str(msg.get("text", "")).strip()[:500]
         if text:
             await manager.broadcast(campaign_id, {
@@ -138,6 +145,8 @@ async def _dispatch_ws(websocket: WebSocket, campaign_id: str,
     # "X está escribiendo" — efímero: se reparte a los DEMÁS sin
     # persistir ni encolar (el que escribe ya sabe que escribe)
     if msg.get("type") == "typing":
+        if role == "spectator":
+            return
         await manager.broadcast(campaign_id, {
             "type": "typing",
             "from": name or str(msg.get("from", "?"))[:80]},
@@ -146,6 +155,12 @@ async def _dispatch_ws(websocket: WebSocket, campaign_id: str,
     if msg.get("type") != "operation":
         await websocket.send_text(
             json.dumps({"type": "error", "detail": "unknown message"}))
+        return
+    if role == "spectator":
+        # mira pero no toca — ni operaciones sobre entidades de la sala
+        # ni sobre fichas sin campaña (entity_camp None saltaba el guard)
+        await websocket.send_text(json.dumps(
+            {"type": "error", "detail": "solo lectura"}))
         return
     try:
         op = OperationIn(**msg["operation"])

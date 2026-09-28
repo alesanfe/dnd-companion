@@ -464,6 +464,36 @@ class _FakeWS:
         self.sent.append(json.loads(text))
 
 
+def test_ws_spectator_is_read_only():
+    """Un socket espectador (anónimo en mesa con dueño) mira pero no
+    habla ni opera — ni siquiera sobre fichas sin campaña."""
+    import asyncio
+    from app.main import _dispatch_ws
+    ws = _FakeWS()
+
+    async def run():
+        await _dispatch_ws(
+            ws, "camp-x", {"type": "chat", "text": "hola"},
+            role="spectator")
+        await _dispatch_ws(ws, "camp-x", {"type": "typing"},
+                           role="spectator")
+        await _dispatch_ws(ws, "camp-x", {
+            "type": "operation",
+            "operation": {"operation_id": uuid.uuid4().hex,
+                          "entity_id": "x", "entity_version": 1,
+                          "client_id": "c",
+                          "operation_type": "character.hp.damage",
+                          "entity_kind": "character",
+                          "payload": {"amount": 1}}},
+            role="spectator")
+
+    asyncio.run(run())
+    errs = [m for m in ws.sent if m.get("type") == "error"]
+    # chat rechazado + op rechazada; typing se descarta en silencio
+    assert len(errs) == 2 and all("solo lectura" in e["detail"]
+                                  for e in errs)
+
+
 def test_ws_chat_uses_authenticated_name():
     """El `from` del mensaje WS es spoofable — el servidor firma con la
     identidad autenticada del socket."""

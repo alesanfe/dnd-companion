@@ -7,7 +7,7 @@ const CELL = 44
 const MARK_COLORS = ['#27ae60', '#2980b9', '#c0392b', '#f39c12',
                      '#8e44ad', '#7f8c8d']
 const DEFAULTS = { cols: 16, rows: 10, cell_ft: 5, tokens: [],
-                   fog: [], marks: {}, pins: [] }
+                   fog: [], marks: {}, pins: [], walls: [] }
 
 // distancia en pies entre el centro de dos celdas
 const cellDist = (x1, y1, x2, y2, ft) =>
@@ -93,11 +93,28 @@ export default function MapBoard({ campaign, size = CELL,
   const resize = (dim, delta) =>
     save({ ...d, [dim]: Math.max(4, d[dim] + delta) })
 
-  const onCell = (x, y) => {
+  const onCell = (x, y, e) => {
     if (mode === 'fog') {
       const k = `${x},${y}`
       save({ ...d, fog: d.fog.includes(k)
         ? d.fog.filter((f) => f !== k) : [...d.fog, k] })
+    } else if (mode === 'wall') {
+      /* borde más cercano al clic — clave canónica "x,y,E|S" (del
+         borde derecho de la celda izquierda / inferior de la de arriba) */
+      const r = e.currentTarget.getBoundingClientRect()
+      const fx = (e.clientX - r.left) / size - x
+      const fy = (e.clientY - r.top) / size - y
+      const dist = { E: 1 - fx, S: 1 - fy, W: fx, N: fy }
+      const side = Object.entries(dist)
+        .sort((a2, b2) => a2[1] - b2[1])[0][0]
+      const key = side === 'E' ? `${x},${y},E`
+        : side === 'S' ? `${x},${y},S`
+        : side === 'W' ? `${x - 1},${y},E`
+        : `${x},${y - 1},S`
+      const walls = (d.walls || []).includes(key)
+        ? d.walls.filter((w2) => w2 !== key)
+        : [...(d.walls || []), key]
+      save({ ...d, walls })
     } else if (mode === 'mark' || mode === 'blast') {
       const k = `${x},${y}`
       const marks = { ...d.marks }
@@ -187,7 +204,7 @@ export default function MapBoard({ campaign, size = CELL,
     if (mode === 'move' && sel) {
       patchTok({ x, y }); setSel(null); return
     }
-    onCell(x, y)
+    onCell(x, y, e)
   }
 
   /* pintar en área: arrastrar con la herramienta niebla/zona
@@ -195,7 +212,7 @@ export default function MapBoard({ campaign, size = CELL,
      rectángulo entero */
   const onSvgDown = (e) => {
     if (readOnly || (mode !== 'fog' && mode !== 'mark' &&
-                     mode !== 'blast')) return
+                     mode !== 'blast' && mode !== 'cone')) return
     const [x, y] = cellAt(e)
     if (x < 0 || y < 0 || x >= d.cols || y >= d.rows) return
     setDrag({ a: [x, y], b: [x, y], kind: mode })
@@ -225,6 +242,23 @@ export default function MapBoard({ campaign, size = CELL,
           for (let x = Math.floor(x1 - rad); x <= Math.ceil(x1 + rad); x++)
             if (Math.hypot(x - x1, y - y1) <= rad)
               keys.push(`${x},${y}`)
+      } else if (drag.kind === 'cone') {
+        // cono 5e: el ancho igual a la longitud en cada punto —
+        // celda dentro si está a ≤ alcance y a ≤26.6° del eje
+        const len = Math.hypot(x2 - x1, y2 - y1) + .5
+        const ang = Math.atan2(y2 - y1, x2 - x1)
+        const half = Math.atan(.5)          // 53.13°/2 — cono D&D
+        keys = [`${x1},${y1}`]              // el ápice siempre dentro
+        const lo = Math.floor(-len), hi = Math.ceil(len)
+        for (let yy = y1 + lo; yy <= y1 + hi; yy++)
+          for (let xx = x1 + lo; xx <= x1 + hi; xx++) {
+            const dd = Math.hypot(xx - x1, yy - y1)
+            if (dd < 0.01 || dd > len) continue
+            let da = Math.atan2(yy - y1, xx - x1) - ang
+            while (da > Math.PI) da -= 2 * Math.PI
+            while (da < -Math.PI) da += 2 * Math.PI
+            if (Math.abs(da) <= half + .02) keys.push(`${xx},${yy}`)
+          }
       } else {
         const [xa, xb] = [Math.min(x1, x2), Math.max(x1, x2)]
         const [ya, yb] = [Math.min(y1, y2), Math.max(y1, y2)]
@@ -330,6 +364,8 @@ export default function MapBoard({ campaign, size = CELL,
             <option value="fog">{t('map.modeFog')}</option>
             <option value="mark">{t('map.modeMark')}</option>
             <option value="blast">{t('map.modeBlast')}</option>
+            <option value="cone">{t('map.modeCone')}</option>
+            <option value="wall">{t('map.modeWall')}</option>
             <option value="pin">{t('map.modePin')}</option>
           </select>
           {mode === 'pin' && (
@@ -340,7 +376,7 @@ export default function MapBoard({ campaign, size = CELL,
                 .map((e) => (
                   <option key={e.id} value={e.id}>{e.name}</option>))}
             </select>)}
-          {(mode === 'mark' || mode === 'blast') && (
+          {(mode === 'mark' || mode === 'blast' || mode === 'cone') && (
             <span className="row" style={{ gap: 2 }}>
               {MARK_COLORS.map((col) => (
                 <button key={col} className="ghost"
@@ -355,7 +391,11 @@ export default function MapBoard({ campaign, size = CELL,
             <button className="ghost"
                     onClick={() => save({ ...d, fog: [] })}>
               {t('map.clearFog')}</button>)}
-          {(mode === 'mark' || mode === 'blast') &&
+          {mode === 'wall' && (d.walls || []).length > 0 && (
+            <button className="ghost"
+                    onClick={() => save({ ...d, walls: [] })}>
+              {t('map.clearWalls')}</button>)}
+          {(mode === 'mark' || mode === 'blast' || mode === 'cone') &&
               Object.keys(d.marks).length > 0 && (
             <button className="ghost"
                     onClick={() => save({ ...d, marks: {} })}>
@@ -520,6 +560,20 @@ export default function MapBoard({ campaign, size = CELL,
                   stroke="#445" strokeWidth="1" />)
         })}
 
+        {/* muros: líneas de bloqueo sobre los bordes de celda —
+            "x,y,E" borde derecho / "x,y,S" borde inferior */}
+        {(d.walls || []).map((w) => {
+          const [wx, wy, ws] = w.split(',')
+          const X = +wx, Y = +wy
+          return ws === 'E'
+            ? <line key={w} x1={(X + 1) * size} y1={Y * size}
+                    x2={(X + 1) * size} y2={(Y + 1) * size}
+                    stroke="#e8b033" strokeWidth="3" />
+            : <line key={w} x1={X * size} y1={(Y + 1) * size}
+                    x2={(X + 1) * size} y2={(Y + 1) * size}
+                    stroke="#e8b033" strokeWidth="3" />
+        })}
+
         {/* alcance del token seleccionado */}
         {!readOnly && sel && (
           <circle cx={(sel.x + .5) * size} cy={(sel.y + .5) * size}
@@ -529,7 +583,22 @@ export default function MapBoard({ campaign, size = CELL,
 
         {/* preview del área al arrastrar: rect para niebla/zona,
             círculo para la plantilla de explosión */}
-        {drag && (drag.kind === 'blast'
+        {drag && (drag.kind === 'cone'
+          ? <polygon
+              points={(() => {
+                const ax = (drag.a[0] + .5) * size
+                const ay = (drag.a[1] + .5) * size
+                const len = Math.hypot(drag.b[0] - drag.a[0],
+                                       drag.b[1] - drag.a[1]) * size
+                const ang = Math.atan2(drag.b[1] - drag.a[1],
+                                       drag.b[0] - drag.a[0])
+                const h = Math.atan(.5)
+                const p = (a2) => `${ax + Math.cos(a2) * len},${ay +
+                  Math.sin(a2) * len}`
+                return `${ax},${ay} ${p(ang - h)} ${p(ang)} ${p(ang + h)}`
+              })()}
+              fill={markColor} opacity=".35" pointerEvents="none" />
+          : drag.kind === 'blast'
           ? <circle cx={(drag.a[0] + .5) * size}
                     cy={(drag.a[1] + .5) * size}
                     r={(Math.hypot(drag.b[0] - drag.a[0],

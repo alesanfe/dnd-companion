@@ -1067,6 +1067,40 @@ def test_token_move_only_own_token():
     assert toks["mio"]["x"] == 7 and toks["ajeno"]["x"] == 4
 
 
+def test_token_move_blocked_by_wall():
+    """Un jugador no puede cruzar un muro adyacente ortogonal; el DM
+    sí (reubica tokens libremente). Diagonal/salto largo = libre."""
+    owner = _auth_headers(f"w{uuid.uuid4().hex[:8]}")
+    player = _auth_headers(f"x{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    code = client.get(f"/api/campaigns/{camp['id']}",
+                      headers=owner).json()["invite_code"]
+    client.post("/api/campaigns/join",
+                json={"invite_code": code}, headers=player)
+    ch = client.post("/api/characters",
+                     json={"name": "P", "campaign_id": camp["id"]},
+                     headers=player).json()
+    ent = client.post(f"/api/campaigns/{camp['id']}/entities", json={
+        "kind": "map", "name": "Mapa", "visibility": "public",
+        "data": {"cols": 8, "rows": 6,
+                 "walls": ["3,3,E"],       # muro E de (3,3)
+                 "tokens": [{"id": "mio", "name": "Yo", "x": 3, "y": 3,
+                             "ref_id": ch["id"]}]}},
+        headers=owner).json()
+
+    def _mv(x, y, h):
+        return client.post(
+            f"/api/campaigns/{camp['id']}/entities/{ent['id']}/token-move",
+            json={"token_id": "mio", "x": x, "y": y}, headers=h)
+
+    # el jugador no cruza el muro (3,3)→(4,3); sí puede ir a (3,4)
+    assert _mv(4, 3, player).status_code == 400
+    assert _mv(3, 4, player).status_code == 200
+    # el DM sí cruza el muro (reubica tokens libremente)
+    assert _mv(4, 3, owner).status_code == 200
+
+
 def test_party_rest_applies_to_all_sheets_dm_only():
     """POST /campaigns/{id}/rest?kind=long aplica character.rest.long a
     cada ficha como op real — PG al máximo, deshacible. DM-only."""

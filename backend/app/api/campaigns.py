@@ -656,6 +656,17 @@ async def token_move(campaign_id: str, entity_id: str,
             owner_uid = prow["player_id"] if prow else None
         if uid is None or owner_uid != uid:
             raise HTTPException(403, "ese token no es tuyo")
+        # muros: una casilla adyacente ortogonal no se cruza si el
+        # borde está murado (saltos largos/diagonales = rodear, libre)
+        walls = set(data.get("walls") or [])
+        dx, dy = int(body.x) - tk["x"], int(body.y) - tk["y"]
+        if abs(dx) + abs(dy) == 1:
+            edge = (f"{tk['x']},{tk['y']},S" if dy == 1 else
+                    f"{tk['x']},{tk['y'] - 1},S" if dy == -1 else
+                    f"{tk['x']},{tk['y']},E" if dx == 1 else
+                    f"{tk['x'] - 1},{tk['y']},E")
+            if edge in walls:
+                raise HTTPException(400, "hay un muro en medio")
     cols = int(data.get("cols") or 16)
     rows = int(data.get("rows") or 10)
     tk["x"] = max(0, min(cols - 1, int(body.x)))

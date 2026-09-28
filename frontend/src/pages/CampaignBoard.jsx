@@ -23,6 +23,7 @@ export default function CampaignBoard() {
   const [sessions, setSessions] = useState([])
   const [rels, setRels] = useState([])
   const [combatView, setCombatView] = useState(null) // vista jugador
+  const [undoSave, setUndoSave] = useState(null)    // op_id deshacer
   const [campTab, setCampTab] = useState('resumen')
   const [presence, setPresence] = useState([]) // quién está en la sala
   const me = currentUser() // para el botón "reclamar ficha"
@@ -195,6 +196,19 @@ export default function CampaignBoard() {
         </section>)}
 
       {campTab === 'resumen' && (<>
+        {/* deshacer la salvación recién tirada (click erróneo) */}
+        {undoSave && (
+          <p className="notice" role="status">
+            {t('sheet.opApplied')}
+            <button onClick={async () => {
+              await api.undoOp(undoSave).catch(() => {})
+              setUndoSave(null)
+              if (combatView)
+                api.getCombat(combatView.id, false)
+                  .then(setCombatView).catch(() => {})
+            }}>{t('sheet.undoBtn')}</button>
+            <button className="ghost" onClick={() => setUndoSave(null)}>✕</button>
+          </p>)}
         {/* tracker de combate en vivo — vista jugador: orden real
             (los muertos/inconscientes se apartan como en Combat.ordered
             del backend), turno activo y estado aproximado (sin PG) */}
@@ -243,8 +257,11 @@ export default function CampaignBoard() {
                 <button onClick={() =>
                   api.applyOp(combatView, 'combatant.death_save_roll',
                               { combatant_id: cb.id }, 'combat')
-                    .then(() => api.getCombat(combatView.id, false)
-                      .then(setCombatView).catch(() => {}))
+                    .then((r) => {
+                      if (r?.operation_id) setUndoSave(r.operation_id)
+                      api.getCombat(combatView.id, false)
+                        .then(setCombatView).catch(() => {})
+                    })
                     .catch(() => {})}>
                   {t('com.deathRoll')}</button>)}
             </div>)

@@ -13,6 +13,26 @@ const DEFAULTS = { cols: 16, rows: 10, cell_ft: 5, tokens: [],
 const cellDist = (x1, y1, x2, y2, ft) =>
   Math.hypot(x2 - x1, y2 - y1) * ft
 
+// segmento (p→q) cruza segmento (a→b)? test de orientación estándar
+const _cross = (o, a, b) =>
+  (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+const segsCross = (p, q, a, b) => {
+  const d1 = _cross(a, b, p), d2 = _cross(a, b, q)
+  const d3 = _cross(p, q, a), d4 = _cross(p, q, b)
+  return (d1 > 0 && d2 < 0 || d1 < 0 && d2 > 0) &&
+         (d3 > 0 && d4 < 0 || d3 < 0 && d4 > 0)
+}
+// el segmento token→celda cruza algún muro? coordenadas de celda
+const blockedByWall = (walls, x1, y1, x2, y2) =>
+  walls.some((w) => {
+    const [wx, wy, ws] = w.split(',')
+    const X = +wx, Y = +wy
+    const [a, b] = ws === 'E'
+      ? [[X + 1, Y], [X + 1, Y + 1]]
+      : [[X, Y + 1], [X + 1, Y + 1]]
+    return segsCross([x1 + .5, y1 + .5], [x2 + .5, y2 + .5], a, b)
+  })
+
 /** Grid táctico estilo Owlbear: varios mapas/escenas por campaña,
     tokens movibles (auto-numeración, PG, renombrar), niebla de
     guerra, zonas pintadas y regla de distancia. Persiste en
@@ -23,7 +43,8 @@ export default function MapBoard({ campaign, size = CELL,
                                   entities = null,
                                   worldEntities = [],
                                   chars = [], myUid = null,
-                                  ping = null }) {
+                                  ping = null,
+                                  activeRef = null }) {
   // entities externas → la lista la gestiona el padre (vista de
   // jugador: mantiene la escena elegida al refrescar por WS)
   const [ownMaps, setMaps] = useState(null)
@@ -309,8 +330,11 @@ export default function MapBoard({ campaign, size = CELL,
   const myToks = readOnly
     ? d.tokens.filter((tk) => tokOwner(tk) === myUid)
     : []
-  const lit = (x, y) => myToks.some((tk) => tk.vision_ft &&
-    cellDist(tk.x, tk.y, x, y, d.cell_ft) <= tk.vision_ft + 0.01)
+  const lit = (x, y) => myToks.some((tk) =>
+    tk.vision_ft &&
+    cellDist(tk.x, tk.y, x, y, d.cell_ft) <= tk.vision_ft + 0.01 &&
+    // los muros bloquean la visión — nada de ver a través de paredes
+    !blockedByWall(d.walls || [], tk.x, tk.y, x, y))
 
   const newMap = async () => {
     const name = prompt(t('map.newPrompt'), `Mapa ${maps.length + 1}`)
@@ -673,8 +697,21 @@ export default function MapBoard({ campaign, size = CELL,
               <circle cx={(lx + tsize * .5) * size}
                       cy={(ly + tsize * .5) * size}
                       r={tr} fill={tk.color}
-                      stroke={sel?.id === tk.id ? '#fff' : '#111'}
-                      strokeWidth={sel?.id === tk.id ? 3 : 1} />
+                      stroke={sel?.id === tk.id ? '#fff'
+                        : (activeRef && tk.ref_id === activeRef)
+                          ? '#ffd700' : '#111'}
+                      strokeWidth={sel?.id === tk.id ||
+                                   (activeRef && tk.ref_id === activeRef)
+                        ? 3 : 1} />
+              {/* turno activo en el tracker → anillo dorado pulsante */}
+              {activeRef && tk.ref_id === activeRef && (
+                <circle cx={(lx + tsize * .5) * size}
+                        cy={(ly + tsize * .5) * size}
+                        r={tr + 3} fill="none" stroke="#ffd700"
+                        strokeWidth={1.5}>
+                  <animate attributeName="opacity" values="1;.3;1"
+                           dur="1.2s" repeatCount="indefinite" />
+                </circle>)}
               <text x={(lx + tsize * .5) * size}
                     y={(ly + tsize * .5) * size + tr * .5}
                     textAnchor="middle" fill="#fff"

@@ -146,6 +146,19 @@ export default function CampaignBoard() {
     map: 'camp.k.map', shop: 'camp.k.shop', scene: 'camp.k.scene',
   }
 
+  // turno activo → anillo dorado sobre el token vinculado en el mapa
+  // (misma lógica de "fuera de combate" que el tracker de abajo)
+  const OUT_C = new Set(['muerto', 'inconsciente', 'estable',
+                         'dead', 'unconscious', 'stable'])
+  const cbs = combatView?.combat?.combatants || []
+  const aliveC = cbs.filter((cb) =>
+    !(cb.conditions || []).some((cn) => OUT_C.has(cn)) &&
+    !(cb.hp_state === 'caído' && cb.kind !== 'character'))
+  const activeRef = aliveC.length
+    ? [...aliveC].sort((a, b) => b.initiative - a.initiative)[
+        combatView.combat.turn_index % aliveC.length]?.ref_id
+    : null
+
   return (
     <main>
       <h1>{camp?.name || t('camp.title')}</h1>
@@ -199,7 +212,7 @@ export default function CampaignBoard() {
                     size={30} entities={byKind.map}
                     worldEntities={entities || []}
                     chars={chars} myUid={me?.user_id}
-                    ping={ping} />
+                    ping={ping} activeRef={activeRef} />
         </section>)}
 
       {campTab === 'resumen' && (<>

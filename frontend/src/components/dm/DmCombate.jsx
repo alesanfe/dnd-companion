@@ -73,6 +73,10 @@ export default function DmCombate({ c }) {
     const token = {
       id: `t${Date.now()}`, name: m.name, x, y, size: sq,
       color: 'hsl(0 70% 45%)',
+      // ref al contenido: si ese monstruo entra en combate, el
+      // combatiente lleva el mismo ref_id → el anillo de turno le
+      // cae encima en el mapa
+      ref_id: m.id || null,
       ...(hp ? { hp, max_hp: hp } : {}),
     }
     await api.patchEntity(campaign.id, map.id, {

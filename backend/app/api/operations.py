@@ -473,6 +473,12 @@ async def apply(op: OperationIn,
         _require_role(conn, camp_id, user)
         if op.entity_kind == "character":
             _char_ownership(conn, op.entity_id, user)
+        elif op.entity_kind == "combat":
+            # el tracker lo dirige el DM: los jugadores ven el orden
+            # y su estado, pero no mueven fichas ni turnos
+            if member_role(camp_id, (user or {}).get("user_id")) \
+                    not in _DM_ROLES:
+                raise HTTPException(403, "solo el DM dirige el combate")
         if user:
             # con token, el autor es el autenticado — no el del body
             op.user_id = user["user_id"]

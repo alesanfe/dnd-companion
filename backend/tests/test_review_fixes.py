@@ -407,6 +407,30 @@ def test_char_ownership_in_owned_campaign():
                          headers=owner).status_code == 200
 
 
+def test_combat_ops_dm_only_in_owned_campaign():
+    """El tracker es del DM: un jugador no puede avanzar turnos ni
+    terminar el combate via /api/operations (vigía, no jugador)."""
+    owner = _auth_headers(f"cm{uuid.uuid4().hex[:8]}")
+    player = _auth_headers(f"cn{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    code = client.get(f"/api/campaigns/{camp['id']}",
+                      headers=owner).json()["invite_code"]
+    client.post("/api/campaigns/join",
+                json={"invite_code": code}, headers=player)
+    comb = client.post("/api/combat", json={
+        "name": "X", "campaign_id": camp["id"]}, headers=owner).json()
+    op = {"operation_id": uuid.uuid4().hex, "entity_id": comb["id"],
+          "entity_version": comb["version"], "client_id": "c",
+          "user_id": "u", "entity_kind": "combat",
+          "operation_type": "combat.end", "payload": {}}
+    assert client.post("/api/operations", json=op,
+                       headers=player).status_code == 403
+    # el DM sí cierra el encuentro
+    assert client.post("/api/operations", json=op,
+                       headers=owner).status_code == 200
+
+
 def test_combat_difficulty_is_dm_only():
     """Los CRs/stat_blocks son info del DM — for-combat exige rol DM
     cuando la campaña tiene dueño; en local queda abierto."""

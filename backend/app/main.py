@@ -155,11 +155,19 @@ async def _dispatch_ws(websocket: WebSocket, campaign_id: str,
             from .api.campaigns import _require_role
             _require_role(conn, entity_camp,
                           {"user_id": resolved} if resolved else None)
+            from .api.operations import _char_ownership
+            from .api.auth import member_role
+            from .api.campaigns import _DM_ROLES, _has_owner
             if op.entity_kind == "character":
-                from .api.operations import _char_ownership
                 _char_ownership(conn, op.entity_id,
                                 {"user_id": resolved}
                                 if resolved else None)
+            elif op.entity_kind == "combat" and \
+                    _has_owner(conn, entity_camp):
+                # mismo modelo que REST: el tracker es del DM
+                if member_role(entity_camp, resolved) not in _DM_ROLES:
+                    raise HTTPException(
+                        403, "solo el DM dirige el combate")
         if resolved:
             # el actor es la identidad de la conexión — el user_id del
             # payload es spoofable y envenenaría la auditoría

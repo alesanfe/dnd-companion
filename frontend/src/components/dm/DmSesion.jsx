@@ -248,7 +248,11 @@ export default function DmSesion({ c }) {
           <input value={rollReq.reason} placeholder={t('ses.reasonPh')}
                  onChange={(e) => setRollReq({ ...rollReq, reason: e.target.value })} />
           <button disabled={!rollReq.character_id}
-                  onClick={() => api.requestRoll(campaign.id, rollReq)}>
+                  onClick={() => api.requestRoll(campaign.id, rollReq)
+                    .then(() => api.pendingRolls(
+                      campaign.id, partyChars.map((p) => p.id)))
+                    .then((r) => setPendingReqs(r.pending || []))
+                    .catch(() => {})}>
             {t('ses.request')}
           </button>
         </div>

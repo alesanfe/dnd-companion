@@ -6,9 +6,11 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from .auth import member_role, optional_user
+from .campaigns import _DM_ROLES, _has_owner, _require_role
 from ..db.connections import state_db
 from ..domain.combat import Combat, Combatant, hp_state
 from ..domain.ruleset import Ruleset
@@ -23,8 +25,12 @@ class CombatCreate(BaseModel):
 
 
 @router.post("", status_code=201)
-def create_combat(body: CombatCreate):
+def create_combat(body: CombatCreate,
+                  user: dict | None = Depends(optional_user)):
     conn = state_db()
+    # crear un encuentro en campaña con dueño es cosa del DM
+    if body.campaign_id:
+        _require_role(conn, body.campaign_id, user, _DM_ROLES)
     cid = uuid.uuid4().hex
     combat = Combat(name=body.name, campaign_id=body.campaign_id,
                     ruleset=body.ruleset.value)
@@ -40,17 +46,23 @@ def create_combat(body: CombatCreate):
 
 
 @router.delete("/{combat_id}")
-def delete_combat(combat_id: str):
+def delete_combat(combat_id: str,
+                  user: dict | None = Depends(optional_user)):
     conn = state_db()
-    cur = conn.execute("DELETE FROM combats WHERE id = ?", (combat_id,))
-    conn.commit()
-    if cur.rowcount == 0:
+    row = conn.execute("SELECT campaign_id FROM combats WHERE id = ?",
+                       (combat_id,)).fetchone()
+    if row is None:
         raise HTTPException(404, "combat not found")
+    if row["campaign_id"]:
+        _require_role(conn, row["campaign_id"], user, _DM_ROLES)
+    conn.execute("DELETE FROM combats WHERE id = ?", (combat_id,))
+    conn.commit()
     return {"deleted": combat_id}
 
 
 @router.post("/{combat_id}/add-party")
-async def add_party(combat_id: str):
+async def add_party(combat_id: str,
+                    user: dict | None = Depends(optional_user)):
     """Añade todos los personajes de la campaña del combate como
     combatientes — cada alta es una op combatant.add real:
     iniciativa tirada (d20+DES), PG de ficha, auditable, deshacible
@@ -67,6 +79,8 @@ async def add_party(combat_id: str):
     if not row["campaign_id"]:
         raise HTTPException(400, "el combate no pertenece a una campaña")
     campaign_id = row["campaign_id"]
+    _require_role(conn, campaign_id, user, _DM_ROLES)
+    uid = (user or {}).get("user_id") or "dm"
     combat = Combat(**json.loads(row["data"]))
     existing = {c.ref_id for c in combat.combatants}
     chars = conn.execute(
@@ -83,7 +97,7 @@ async def add_party(combat_id: str):
         result = apply_to_store(OperationIn(
             operation_id=uuid.uuid4().hex, entity_id=combat_id,
             entity_version=cur, client_id="api:add-party",
-            user_id="dm", operation_type="combatant.add",
+            user_id=uid, operation_type="combatant.add",
             entity_kind="combat",
             payload={
                 "kind": "character", "ref_id": cr["id"],
@@ -101,15 +115,29 @@ async def add_party(combat_id: str):
 
 @router.get("")
 def list_combats(campaign_id: str | None = None,
-                 status: str | None = None):
+                 status: str | None = None,
+                 user: dict | None = Depends(optional_user)):
     """Combates activos/pasados — el DM reabre el tracker desde aquí."""
     conn = state_db()
+    if campaign_id:
+        _require_role(conn, campaign_id, user)
     sql = ("SELECT id, name, campaign_id, ruleset, version, updated_at "
            "FROM combats WHERE 1=1")
     params: list = []
     if campaign_id:
         sql += " AND campaign_id = ?"
         params.append(campaign_id)
+    else:
+        # sin filtro: solo combates locales o de campañas donde el
+        # usuario es miembro — no listar los de mesas ajenas
+        uid = (user or {}).get("user_id")
+        if uid:
+            sql += """ AND (campaign_id IS NULL OR campaign_id IN
+                       (SELECT campaign_id FROM members
+                        WHERE user_id = ?))"""
+            params.append(uid)
+        else:
+            sql += " AND campaign_id IS NULL"
     if status:
         sql += " AND json_extract(data,'$.status') = ?"
         params.append(status)
@@ -119,13 +147,21 @@ def list_combats(campaign_id: str | None = None,
 
 
 @router.get("/{combat_id}")
-def get_combat(combat_id: str, reveal_hp: bool = True):
+def get_combat(combat_id: str, reveal_hp: bool = True,
+               user: dict | None = Depends(optional_user)):
     """reveal_hp=false devuelve la vista de jugador (estados, sin números)."""
     conn = state_db()
     row = conn.execute(
         "SELECT * FROM combats WHERE id = ?", (combat_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "combat not found")
+    if row["campaign_id"] and _has_owner(conn, row["campaign_id"]):
+        _require_role(conn, row["campaign_id"], user)
+        # los PG son información del DM — la vista de jugador los
+        # oculta (solo en campañas con dueño; modo local queda abierto)
+        if member_role(row["campaign_id"],
+                       (user or {}).get("user_id")) not in _DM_ROLES:
+            reveal_hp = False
     combat = Combat(**json.loads(row["data"]))
     out = combat.model_dump()
     if not reveal_hp:

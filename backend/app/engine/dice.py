@@ -58,6 +58,9 @@ def _apply_keep(keep: str | None, rolls: list[int], count: int,
     if keep in ("adv", "dis"):
         if sides != 20:
             raise ValueError("adv/dis solo tiene sentido en d20")
+        if count != 1:
+            raise ValueError("adv/dis es sobre UN d20 — "
+                             "'4d20adv' tiraría 5 dados")
         rolls.append(rng.randint(1, sides))
         return [max(rolls) if keep == "adv" else min(rolls)]
     if keep and keep.startswith(("kh", "kl")):

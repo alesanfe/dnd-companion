@@ -405,11 +405,13 @@ def hit_die_spend(char: Character, p: dict, ctx):
 
 @op("character.hit_die.unspend")
 def hit_die_unspend(char: Character, p: dict, ctx):
+    # snapshot: la inversa natural (hit_die.spend) volvería a TIRAR y
+    # deshacer-el-deshacer podría curar una cantidad distinta
+    inv = _restore_inverse(char.model_dump())
     pool = char.hit_dice[int(p.get("pool", 0))]
     pool.remaining = min(pool.total, pool.remaining + 1)
     char.hp.current = max(0, char.hp.current - int(p["healed"]))
-    return {"operation_type": "character.hit_die.spend",
-            "payload": {"pool": int(p.get("pool", 0))}}, []
+    return inv, []
 
 
 @op("character.rest.short")

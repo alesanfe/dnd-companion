@@ -14,9 +14,11 @@ import re
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from .auth import optional_user
+from .campaigns import _has_owner, _require_role
 from ..db.connections import content_db, state_db
 # Las reglas de condición viven en domain/conditions.py (compartidas
 # con los combatientes); aquí solo se consultan para el personaje.
@@ -425,8 +427,25 @@ def _store_op(conn, op: OperationIn, version: int,
     )
 
 
+def _entity_campaign(conn, op: OperationIn) -> str | None:
+    row = conn.execute(
+        f"SELECT campaign_id FROM {_TABLES[op.entity_kind]} "
+        "WHERE id = ?", (op.entity_id,)).fetchone()
+    return row["campaign_id"] if row else None
+
+
 @router.post("")
-async def apply(op: OperationIn):
+async def apply(op: OperationIn,
+                user: dict | None = Depends(optional_user)):
+    conn = state_db()
+    # la op muta una entidad: en campaña con dueño solo la tocan sus
+    # miembros (antes era abierto a cualquiera con el entity_id)
+    camp_id = _entity_campaign(conn, op)
+    if camp_id and _has_owner(conn, camp_id):
+        _require_role(conn, camp_id, user)
+        if user:
+            # con token, el autor es el autenticado — no el del body
+            op.user_id = user["user_id"]
     result = apply_to_store(op)
     events = result.pop("_event_objs", [])
     if result.get("campaign_id") and not result.get("duplicate"):
@@ -436,9 +455,20 @@ async def apply(op: OperationIn):
 
 
 @router.get("")
-def history(entity_id: str, limit: int = 50):
+def history(entity_id: str, limit: int = 50,
+            user: dict | None = Depends(optional_user)):
     """Historial de operaciones de una entidad (auditoría + deshacer)."""
     conn = state_db()
+    # la entidad puede vivir en characters o combats — el historial
+    # es solo para miembros de su campaña (si tiene dueño)
+    for table in _TABLES.values():
+        row = conn.execute(
+            f"SELECT campaign_id FROM {table} WHERE id = ?",
+            (entity_id,)).fetchone()
+        if row and row["campaign_id"] and _has_owner(
+                conn, row["campaign_id"]):
+            _require_role(conn, row["campaign_id"], user)
+            break
     rows = conn.execute(
         """SELECT operation_id, entity_version, user_id, timestamp,
                   operation_type, payload, status,

@@ -10,7 +10,8 @@ from .api import (
     auth, campaigns, characters, combat, content, dice, encounters,
     inventory, operations, packages, rules,
 )
-from .api.operations import OperationIn, apply_to_store
+from .api.operations import OperationIn, apply_to_store, \
+    _entity_campaign
 from .db.connections import state_db
 from .ws.rooms import manager
 
@@ -135,6 +136,17 @@ async def _dispatch_ws(websocket: WebSocket, campaign_id: str,
         return
     try:
         op = OperationIn(**msg["operation"])
+        # la op debe tocar una entidad de ESTA sala — sin el check un
+        # socket de la sala A podía mutar fichas de la campaña B; y en
+        # campañas con dueño se exige membresía igual que en REST
+        conn = state_db()
+        entity_camp = _entity_campaign(conn, op)
+        if entity_camp and entity_camp != campaign_id:
+            raise HTTPException(400, "la entidad es de otra campaña")
+        if entity_camp:
+            from .api.campaigns import _require_role
+            _require_role(conn, entity_camp,
+                          {"user_id": resolved} if resolved else None)
         if resolved:
             # el actor es la identidad de la conexión — el user_id del
             # payload es spoofable y envenenaría la auditoría

@@ -397,6 +397,14 @@ export default function MapBoard({ campaign, size = CELL,
           </> : (
             <button className="ghost" onClick={setHp}>
               {t('map.tokenHp')}</button>)}
+          {/* tamaño en casillas: 1 medio, 2 grande, 3 enorme… */}
+          <label className="muted">{t('map.tokSize')}
+            <select value={sel.size || 1} aria-label={t('map.tokSizeAria')}
+                    onChange={(e) => patchTok({ size: +e.target.value })}>
+              {[1, 2, 3, 4].map((n) => (
+                <option key={n} value={n}>{n}×{n}</option>))}
+            </select>
+          </label>
           {/* radio de visión (ft): abre la niebla alrededor del token
               en la vista del jugador */}
           <label className="muted">{t('map.visionFt')}
@@ -525,6 +533,10 @@ export default function MapBoard({ campaign, size = CELL,
           const hp = lc ? lc.hp_current : tk.hp
           const hpMax = lc ? lc.hp_max : tk.max_hp
           const movable = canMoveTok(tk)
+          // size = casillas que ocupa (grande 2×2, enorme 3×3…) —
+          // el anchor es la esquina sup. izquierda del footprint
+          const tsize = Math.max(1, +(tk.size || 1))
+          const tr = tsize * size * .5 - 2
           return (
             <g key={tk.id}
                onMouseDown={(e) => {
@@ -542,21 +554,23 @@ export default function MapBoard({ campaign, size = CELL,
                }}
                opacity={dragTok?.id === tk.id ? .55 : 1}
                style={{ cursor: movable ? 'grab' : 'default' }}>
-              <circle cx={(lx + .5) * size} cy={(ly + .5) * size}
-                      r={size * .4} fill={tk.color}
+              <circle cx={(lx + tsize * .5) * size}
+                      cy={(ly + tsize * .5) * size}
+                      r={tr} fill={tk.color}
                       stroke={sel?.id === tk.id ? '#fff' : '#111'}
                       strokeWidth={sel?.id === tk.id ? 3 : 1} />
-              <text x={(lx + .5) * size} y={(ly + .62) * size}
+              <text x={(lx + tsize * .5) * size}
+                    y={(ly + tsize * .5) * size + tr * .5}
                     textAnchor="middle" fill="#fff"
-                    fontSize={size * .32} pointerEvents="none">
+                    fontSize={tr * .72} pointerEvents="none">
                 {tk.name.slice(0, 2).toUpperCase()}</text>
               {hp != null && hpMax != null && (
                 <g>
                   <rect x={lx * size + 2} y={ly * size + 2}
-                        width={size - 4} height={4} rx={2}
+                        width={tsize * size - 4} height={4} rx={2}
                         fill="#000" opacity=".6" />
                   <rect x={lx * size + 2} y={ly * size + 2}
-                        width={(size - 4) *
+                        width={(tsize * size - 4) *
                                Math.max(0, hp / hpMax)}
                         height={4} rx={2}
                         fill={hp / hpMax > .5 ? '#27ae60'

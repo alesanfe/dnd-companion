@@ -31,8 +31,13 @@ export default function DmCombate({ c }) {
     let x = 0, y = 0
     while (used.has(`${x},${y}`)) { x++; if (x >= (data.cols || 16)) {
       x = 0; y++ } }
+    // tamaño del stat block → casillas del token (large 2×2, huge 3×3)
+    const sz = String(cb.stat_block?.size || '').toLowerCase()
+    const sq = sz.includes('gargan') ? 4
+      : (sz.includes('huge') || sz.includes('enorme')) ? 3
+      : (sz.includes('large') || sz.includes('grande')) ? 2 : 1
     const token = {
-      id: `t${Date.now()}`, name: cb.name, x, y,
+      id: `t${Date.now()}`, name: cb.name, x, y, size: sq,
       color: cb.kind === 'character'
         ? 'hsl(210 70% 45%)' : 'hsl(0 70% 45%)',
       ref_id: cb.ref_id || null,

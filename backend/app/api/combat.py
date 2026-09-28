@@ -113,6 +113,57 @@ async def add_party(combat_id: str,
     return {"added": added}
 
 
+@router.post("/{combat_id}/award-xp")
+async def award_xp(combat_id: str,
+                   user: dict | None = Depends(optional_user)):
+    """Reparto de XP al cerrar el encuentro: suma el CR de los monstruos
+    caídos (a 0 PG o marcados muertos) y lo divide entre los PJs — cada
+    parte es una op `character.xp.add` real: auditable, deshacible y con
+    broadcast a la sala."""
+    from ..domain.xp import cr_to_xp
+    from ..ws.rooms import manager
+    from .operations import OperationIn, apply_to_store
+    conn = state_db()
+    row = conn.execute("SELECT data, campaign_id FROM combats WHERE id = ?",
+                       (combat_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "combat not found")
+    if row["campaign_id"]:
+        _require_role(conn, row["campaign_id"], user, _DM_ROLES)
+    combat = Combat(**json.loads(row["data"]))
+    total = 0
+    for c in combat.combatants:
+        if c.kind == "character" or not c.stat_block:
+            continue
+        dead = c.hp_current <= 0 or any(
+            x.strip().lower() in ("muerto", "muerta", "dead")
+            for x in c.conditions)
+        if dead:
+            total += cr_to_xp(c.stat_block.get("cr", 0))
+    pjs = [c for c in combat.combatants
+           if c.kind == "character" and c.ref_id]
+    if total <= 0 or not pjs:
+        return {"total_xp": total, "per_player": 0, "awarded": 0}
+    share = total // len(pjs)
+    awarded = 0
+    for c in pjs:
+        vrow = conn.execute("SELECT version FROM characters WHERE id = ?",
+                            (c.ref_id,)).fetchone()
+        if not vrow:
+            continue
+        result = apply_to_store(OperationIn(
+            operation_id=uuid.uuid4().hex, entity_id=c.ref_id,
+            entity_version=vrow["version"], client_id="api:award-xp",
+            user_id=(user or {}).get("user_id") or "dm",
+            operation_type="character.xp.add",
+            entity_kind="character", payload={"amount": share}))
+        for event in result.pop("_event_objs", []):
+            if row["campaign_id"]:
+                await manager.broadcast(row["campaign_id"], event)
+        awarded += 1
+    return {"total_xp": total, "per_player": share, "awarded": awarded}
+
+
 @router.get("")
 def list_combats(campaign_id: str | None = None,
                  status: str | None = None,

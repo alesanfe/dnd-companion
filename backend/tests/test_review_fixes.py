@@ -865,3 +865,58 @@ def test_rules_ask_survives_fts_operators():
     assert r.status_code == 200          # antes: OperationalError 500
     r2 = client.post("/api/rules/ask", json={"question": "*"})
     assert r2.status_code == 200
+
+
+# --- reparto de XP al cerrar el encuentro ------------------------------
+
+def test_award_xp_splits_fallen_monsters_between_pcs():
+    """award-xp: CR de monstruos caídos entre los PJs, como ops
+    character.xp.add reales (auditable, deshacible). DM-only con owner;
+    monstruos vivos no cuentan."""
+    owner = _auth_headers(f"ax{uuid.uuid4().hex[:8]}")
+    player = _auth_headers(f"ay{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    code = client.get(f"/api/campaigns/{camp['id']}",
+                      headers=owner).json()["invite_code"]
+    client.post("/api/campaigns/join",
+                json={"invite_code": code}, headers=player)
+    ch = client.post("/api/characters",
+                     json={"name": "P", "campaign_id": camp["id"]},
+                     headers=player).json()
+    comb = client.post("/api/combat", json={
+        "name": "X", "campaign_id": camp["id"]}, headers=owner).json()
+    client.post(f"/api/combat/{comb['id']}/add-party", headers=owner)
+
+    def _cop(otype, payload, h):
+        cur = client.get(f"/api/combat/{comb['id']}",
+                         headers=owner).json()["version"]
+        return client.post("/api/operations", json={
+            "operation_id": uuid.uuid4().hex, "entity_id": comb["id"],
+            "entity_version": cur, "client_id": "c", "user_id": "u",
+            "entity_kind": "combat", "operation_type": otype,
+            "payload": payload}, headers=h)
+
+    # un orco caído (CR 1/4 = 50 XP) y un ogro vivo (CR 2 = 450 XP)
+    m1 = _cop("combatant.add", {
+        "kind": "monster", "name": "orco", "hp_max": 15,
+        "stat_block": {"cr": 0.25, "hp": 15, "ac": 13}}, owner)
+    assert m1.status_code == 200
+    mid = client.get(f"/api/combat/{comb['id']}",
+                     headers=owner).json()["combat"]["combatants"]
+    orco = next(c for c in mid if c["name"] == "orco")
+    _cop("combatant.add", {
+        "kind": "monster", "name": "ogro", "hp_max": 59,
+        "stat_block": {"cr": 2, "hp": 59, "ac": 11}}, owner)
+    _cop("combatant.hp.set",
+         {"combatant_id": orco["id"], "current": 0}, owner)
+
+    # jugador no reparte XP; el DM sí — 50 XP al único PJ
+    assert client.post(f"/api/combat/{comb['id']}/award-xp",
+                       headers=player).status_code == 403
+    r = client.post(f"/api/combat/{comb['id']}/award-xp", headers=owner)
+    assert r.status_code == 200
+    assert r.json() == {"total_xp": 50, "per_player": 50, "awarded": 1}
+    xp = client.get(f"/api/characters/{ch['id']}",
+                    headers=player).json()["data"]["xp"]
+    assert xp == 50

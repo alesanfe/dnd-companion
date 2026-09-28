@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../../api.js'
 import { AB_LONG, SKILL_ES } from '../sheet/data.js'
@@ -14,6 +15,7 @@ export default function DmCombate({ c }) {
           areaDmg, setAreaDmg, areaAmt, setAreaAmt, areaType,
           setAreaType, areaResults, setAreaResults,
           setRollReq, setDmTab } = c
+  const [xpMsg, setXpMsg] = useState(null)
   if (!campaign) return null
   const show = dmTab === 'combate'
   return (<>
@@ -84,6 +86,17 @@ export default function DmCombate({ c }) {
             <button className="ghost" aria-expanded={!!areaDmg}
                     onClick={() => setAreaDmg(areaDmg ? null : {})}>
               {t('com.areaDmg')}</button>
+            {/* reparto de XP del encuentro — op xp.add por PJ,
+                auditable y deshacible */}
+            <button className="ghost" title={t('com.xpTitle')}
+                    onClick={async () => {
+                      const r = await api.awardXp(combat.id).catch(() => null)
+                      setXpMsg(r === null ? null
+                        : r.total_xp
+                          ? tf('com.xpAwarded', {
+                              total: r.total_xp, share: r.per_player })
+                          : t('com.xpNone'))
+                    }}>{t('com.xpAward')}</button>
             <button className="dmg" onClick={() => cop('combat.end', {})}>{t('dm.end')}</button>
             <button className="ghost" title={t('com.delTitle')}
                     aria-label={t('com.delTitle')}
@@ -93,6 +106,12 @@ export default function DmCombate({ c }) {
               setCombat(null)
             }}>🗑</button>
           </div>
+          {xpMsg && (
+            <p className="notice" role="status">
+              {xpMsg}
+              <button className="ghost"
+                      onClick={() => setXpMsg(null)}>✕</button>
+            </p>)}
           {areaDmg && (
             <div className="card" role="dialog"
                  aria-label={t('com.areaAria')}

@@ -232,6 +232,8 @@ export const api = {
     req(`/api/combat/${id}?reveal_hp=${reveal}`),
   deleteCombat: (id) =>
     req(`/api/combat/${id}`, { method: 'DELETE' }),
+  awardXp: (id) =>
+    req(`/api/combat/${id}/award-xp`, { method: 'POST' }),
   listPackages: () => req('/api/packages'),
   installPackage: (pkg) =>
     req('/api/packages/install',

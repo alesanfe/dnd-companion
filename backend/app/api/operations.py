@@ -161,7 +161,8 @@ async def character_roll(character_id: str, expression: str = "1d20",
     # si el PJ está en campaña, la tirada se anuncia a la sala WS
     if row["campaign_id"]:
         await _broadcast_roll(conn, row["campaign_id"], character_id,
-                              char.name, roll_type, result, secret)
+                              char.name, roll_type, result, secret,
+                              (user or {}).get("user_id"))
     return result
 
 
@@ -204,7 +205,8 @@ def _insert_keep(expr: str, keep: str) -> str:
 
 async def _broadcast_roll(conn, campaign_id: str, character_id: str,
                           char_name: str, roll_type: str,
-                          result: dict, secret: bool = False) -> None:
+                          result: dict, secret: bool = False,
+                          roller_uid: str | None = None) -> None:
     now = datetime.now(timezone.utc)
     ev = Event(event_id=uuid.uuid4().hex, type=EventType.DICE_ROLL_CREATED,
                campaign_id=campaign_id, aggregate_id=character_id,
@@ -216,7 +218,11 @@ async def _broadcast_roll(conn, campaign_id: str, character_id: str,
                         "secret": secret,
                         # el DM filtra; los clientes de jugador no
                         # deben renderizar el total si secret=true
-                        "visibility": "dm" if secret else "all"})
+                        "visibility": "dm" if secret else "all",
+                        # el que tiró sí la recibe en sus otros
+                        # dispositivos — secreta ≠ invisible para él
+                        **({"for_user": roller_uid}
+                           if secret and roller_uid else {})})
     conn.execute(
         """INSERT INTO events
            (event_id, campaign_id, aggregate_id, aggregate_version,

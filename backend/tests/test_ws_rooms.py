@@ -73,6 +73,28 @@ def test_broadcast_exclude_skips_sender():
     assert len(b.sent) == 1 and '"typing"' in b.sent[0]
 
 
+def test_secret_roll_reaches_roller_but_not_others():
+    """Tirada secreta del jugador: visibility=dm + for_user=roller —
+    el DM y sus otros dispositivos la ven, la mesa no."""
+    mgr = RoomManager()
+    dm, roller, other = FakeWS(), FakeWS(), FakeWS()
+
+    async def run():
+        await mgr.join("camp", dm, role="dm", uid="udm")
+        await mgr.join("camp", roller, role="player", uid="ua")
+        await mgr.join("camp", other, role="player", uid="ub")
+        ev = _ev()
+        ev.payload["visibility"] = "dm"
+        ev.payload["for_user"] = "ua"
+        ev.payload["secret"] = True
+        await mgr.broadcast("camp", ev)
+
+    asyncio.run(run())
+    assert len(dm.sent) == 1
+    assert len(roller.sent) == 1      # su propia tirada secreta sí llega
+    assert other.sent == []           # la mesa no
+
+
 def test_for_user_targeted_delivery():
     """for_user: solo el socket de ese usuario + los DM reciben la
     petición secreta — el resto de la mesa ni la ve."""

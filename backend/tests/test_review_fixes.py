@@ -624,10 +624,48 @@ def test_secret_roll_request_marked_targeted():
     req = [e for e in ev_dm if e["type"] == "dice.roll.requested"]
     assert req and req[0]["payload"]["for_user"] == uid_a
     assert req[0]["payload"]["visibility"] == "dm"
-    # el jugador no la ve en el feed (aunque pendingRolls sí la sirve)
+    # el destinatario SÍ la ve en su feed (le va dirigida) — cualquier
+    # otro jugador no
     ev_pa = client.get(f"/api/campaigns/{camp['id']}/events",
                        headers=pa).json()["events"]
-    assert not [e for e in ev_pa if e["type"] == "dice.roll.requested"]
+    assert any(e["type"] == "dice.roll.requested" for e in ev_pa)
+    pb = _auth_headers(f"sy{uuid.uuid4().hex[:8]}")
+    client.post("/api/campaigns/join",
+                json={"invite_code": code}, headers=pb)
+    ev_pb = client.get(f"/api/campaigns/{camp['id']}/events",
+                       headers=pb).json()["events"]
+    assert not [e for e in ev_pb if e["type"] == "dice.roll.requested"]
+
+
+def test_secret_player_roll_visible_to_roller_in_feed():
+    """La tirada secreta del jugador lleva for_user=uid — en el feed la
+    ven el DM y el propio autor (otros jugadores no)."""
+    owner = _auth_headers(f"sv{uuid.uuid4().hex[:8]}")
+    pa = _auth_headers(f"sw{uuid.uuid4().hex[:8]}")
+    pb = _auth_headers(f"sx{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    code = client.get(f"/api/campaigns/{camp['id']}",
+                      headers=owner).json()["invite_code"]
+    for h in (pa, pb):
+        client.post("/api/campaigns/join",
+                    json={"invite_code": code}, headers=h)
+    cha = client.post("/api/characters",
+                      json={"name": "A", "campaign_id": camp["id"]},
+                      headers=pa).json()
+    r = client.post(
+        f"/api/operations/character/{cha['id']}/roll",
+        params={"expression": "1d20", "secret": "true"}, headers=pa)
+    assert r.status_code == 200
+    feed = lambda h: client.get(
+        f"/api/campaigns/{camp['id']}/events", headers=h
+        ).json()["events"]
+    assert any(e["type"] == "dice.roll.created"
+               for e in feed(pa))      # el autor la ve en su feed
+    assert any(e["type"] == "dice.roll.created"
+               for e in feed(owner))   # el DM también
+    assert not any(e["type"] == "dice.roll.created"
+                   for e in feed(pb))  # otro jugador no
 
 
 def test_entities_and_relationships_require_membership():

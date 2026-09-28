@@ -52,6 +52,21 @@ def _ev_is_dm(row) -> bool:
         return False
 
 
+def _ev_for_uid(row, uid: str | None) -> bool:
+    """El evento es dm-only pero está dirigido a ESTE usuario — su
+    destinatario (p.ej. el que tiró en secreto) sí lo lee en el feed."""
+    if not uid:
+        return False
+    try:
+        return (json.loads(row["payload"]) or {}).get("for_user") == uid
+    except Exception:
+        return False
+
+
+def _ev_visible(row, uid: str | None, is_dm: bool) -> bool:
+    return is_dm or not _ev_is_dm(row) or _ev_for_uid(row, uid)
+
+
 class CampaignCreate(BaseModel):
     name: str
     ruleset: Ruleset = Ruleset.DND5E_2014
@@ -384,7 +399,7 @@ def campaign_state(campaign_id: str,
                        for c in chars],
         "combats": combats_out,
         "events": [dict(e) for e in events
-                   if is_dm or not _ev_is_dm(e)],
+                   if _ev_visible(e, uid, is_dm)],
         # presencia actual en la sala WS (resync tras reconexión)
         "presence": manager.present(campaign_id),
     }
@@ -824,8 +839,7 @@ def campaign_events(campaign_id: str, limit: int = 100,
         (campaign_id, limit)).fetchall()
     return {"events": [
         {**dict(r), "payload": json.loads(r["payload"])} for r in rows
-        if is_dm or (json.loads(r["payload"]) or {}).get("visibility")
-                    != "dm"]}
+        if _ev_visible(r, uid, is_dm)]}
 
 
 @router.get("/{campaign_id}/export")

@@ -43,6 +43,15 @@ def _require_role(conn, campaign_id: str, user: dict | None,
         raise HTTPException(403, "sin permiso en esta campaña")
 
 
+def _ev_is_dm(row) -> bool:
+    """Evento marcado visibility=dm (tirada secreta del DM)."""
+    try:
+        return (json.loads(row["payload"]) or {}).get("visibility") \
+            == "dm"
+    except Exception:
+        return False
+
+
 class CampaignCreate(BaseModel):
     name: str
     ruleset: Ruleset = Ruleset.DND5E_2014
@@ -340,6 +349,12 @@ def campaign_state(campaign_id: str,
     + últimos eventos."""
     conn = state_db()
     _require_role(conn, campaign_id, user)
+    uid = (user or {}).get("user_id")
+    # eventos visibility=dm (tiradas secretas del DM) no se sirven a
+    # jugadores — antes el resync filtraba los totales por REST aunque
+    # el WS sí los ocultara
+    is_dm = not _has_owner(conn, campaign_id) or \
+        member_role(campaign_id, uid) in _DM_ROLES
     chars = conn.execute(
         "SELECT id, name, ruleset, version, data FROM characters "
         "WHERE campaign_id = ?", (campaign_id,)).fetchall()
@@ -354,7 +369,8 @@ def campaign_state(campaign_id: str,
                        for c in chars],
         "combats": [{**dict(c), "data": json.loads(c["data"])}
                     for c in combats],
-        "events": [dict(e) for e in events],
+        "events": [dict(e) for e in events
+                   if is_dm or not _ev_is_dm(e)],
         # presencia actual en la sala WS (resync tras reconexión)
         "presence": manager.present(campaign_id),
     }
@@ -630,6 +646,12 @@ def list_sessions(campaign_id: str,
                   user: dict | None = Depends(optional_user)):
     conn = state_db()
     _require_role(conn, campaign_id, user)
+    # escenas visibility=dm no se sirven a jugadores — el prep del DM
+    # (notas, monstruos) no debe filtrarse a la mesa; en modo local
+    # (sin owner) todo es visible
+    is_dm = not _has_owner(conn, campaign_id) or \
+        member_role(campaign_id, (user or {}).get("user_id")) \
+        in _DM_ROLES
     rows = conn.execute(
         "SELECT * FROM sessions WHERE campaign_id = ? ORDER BY number",
         (campaign_id,)).fetchall()
@@ -644,7 +666,8 @@ def list_sessions(campaign_id: str,
             "AND json_extract(data, '$.session_id') = ?",
             (campaign_id, s["id"])).fetchall()
         s["scenes"] = sorted(
-            [{**dict(x), "data": json.loads(x["data"])} for x in scenes],
+            [{**dict(x), "data": json.loads(x["data"])} for x in scenes
+             if is_dm or x["visibility"] != "dm"],
             key=lambda x: x["data"].get("order", 0))
         out.append(s)
     return {"sessions": out}
@@ -687,8 +710,13 @@ def timeline(campaign_id: str,
     """Cronología del mundo: eventos + relaciones fechadas, ordenadas."""
     conn = state_db()
     _require_role(conn, campaign_id, user)
+    # la línea temporal no filtra los eventos/relaciones del DM a
+    # jugadores (misma regla que entities/relationships)
+    is_dm = not _has_owner(conn, campaign_id) or \
+        member_role(campaign_id, (user or {}).get("user_id")) \
+        in _DM_ROLES
     events = conn.execute(
-        "SELECT id, name, data FROM campaign_entities "
+        "SELECT id, name, data, visibility FROM campaign_entities "
         "WHERE campaign_id = ? AND kind = 'event'", (campaign_id,)
     ).fetchall()
     rels = conn.execute(
@@ -699,11 +727,13 @@ def timeline(campaign_id: str,
          "world_date": json.loads(e["data"]).get("world_date"),
          "data": json.loads(e["data"])}
         for e in events
+        if is_dm or e["visibility"] != "dm"
     ] + [
         {"kind": "relationship", "id": r["id"],
          "name": f"{r['from_id']} → {r['to_id']}",
          "world_date": r["world_date"], "data": dict(r)}
         for r in rels
+        if is_dm or r["visibility"] != "dm"
     ]
     items.sort(key=lambda x: x["world_date"] or "")
     return {"timeline": items}
@@ -764,13 +794,20 @@ def campaign_events(campaign_id: str, limit: int = 100,
     cambios de estado, revelaciones)."""
     conn = state_db()
     _require_role(conn, campaign_id, user)
+    uid = (user or {}).get("user_id")
+    # igual que en /state: las tiradas visibility=dm no se filtran a
+    # jugadores por el feed de auditoría
+    is_dm = not _has_owner(conn, campaign_id) or \
+        member_role(campaign_id, uid) in _DM_ROLES
     rows = conn.execute(
         """SELECT event_id, type, aggregate_id, actor_id, occurred_at,
                   payload FROM events WHERE campaign_id = ?
            ORDER BY occurred_at DESC LIMIT ?""",
         (campaign_id, limit)).fetchall()
     return {"events": [
-        {**dict(r), "payload": json.loads(r["payload"])} for r in rows]}
+        {**dict(r), "payload": json.loads(r["payload"])} for r in rows
+        if is_dm or (json.loads(r["payload"]) or {}).get("visibility")
+                    != "dm"]}
 
 
 @router.get("/{campaign_id}/export")

@@ -543,6 +543,41 @@ def test_combat_ops_dm_only_in_owned_campaign():
                        headers=owner).status_code == 200
 
 
+def test_secret_rolls_not_served_by_rest_state():
+    """La tirada secreta va visibility=dm por WS, pero el resync REST
+    (/state, /events) la servía con el total a cualquier miembro.
+    Ahora un jugador no la recibe ni en el feed ni en el snapshot."""
+    owner = _auth_headers(f"sr{uuid.uuid4().hex[:8]}")
+    player = _auth_headers(f"sq{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    code = client.get(f"/api/campaigns/{camp['id']}",
+                      headers=owner).json()["invite_code"]
+    client.post("/api/campaigns/join",
+                json={"invite_code": code}, headers=player)
+    ch = client.post("/api/characters",
+                     json={"name": "S", "campaign_id": camp["id"]},
+                     headers=owner).json()
+    client.post(f"/api/operations/character/{ch['id']}/roll",
+                params={"expression": "1d20", "secret": "true"},
+                headers=owner)
+    # el jugador no la ve ni en state ni en el feed de eventos
+    st = client.get(f"/api/campaigns/{camp['id']}/state",
+                    headers=player).json()
+    assert not [
+        e for e in st["events"]
+        if (json.loads(e["payload"]) or {}).get("visibility") == "dm"]
+    ev = client.get(f"/api/campaigns/{camp['id']}/events",
+                    headers=player).json()
+    assert all(e["payload"].get("visibility") != "dm"
+               for e in ev["events"])
+    # el DM sí la recibe
+    ev_dm = client.get(f"/api/campaigns/{camp['id']}/events",
+                       headers=owner).json()
+    assert any(e["payload"].get("visibility") == "dm"
+               for e in ev_dm["events"])
+
+
 def test_player_rolls_own_death_save_in_combat():
     """Excepción al tracker DM-only: la salvación de muerte la tira
     el jugador sobre SU combatiente-PJ. Sobre otro combatiente o

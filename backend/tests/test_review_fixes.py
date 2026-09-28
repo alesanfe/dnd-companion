@@ -457,8 +457,32 @@ class _FakeWS:
     def __init__(self):
         self.sent = []
 
+    async def accept(self):
+        pass
+
     async def send_text(self, text):
         self.sent.append(json.loads(text))
+
+
+def test_ws_chat_uses_authenticated_name():
+    """El `from` del mensaje WS es spoofable — el servidor firma con la
+    identidad autenticada del socket."""
+    import asyncio
+    from app.main import _dispatch_ws
+    from app.ws.rooms import manager
+    listener = _FakeWS()
+
+    async def run():
+        await manager.join("camp-chat", listener, role="player",
+                           name="otro")
+        await _dispatch_ws(_FakeWS(), "camp-chat",
+                           {"type": "chat", "from": "DM",
+                            "text": "mensaje"}, resolved="u1",
+                           name="pepito")
+        manager.leave("camp-chat", listener)
+
+    asyncio.run(run())
+    assert listener.sent and listener.sent[0]["from"] == "pepito"
 
 
 def test_ws_op_auth_parity_with_rest():

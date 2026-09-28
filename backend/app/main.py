@@ -71,7 +71,8 @@ async def campaign_ws(websocket: WebSocket, campaign_id: str,
                 await websocket.send_text(
                     json.dumps({"type": "error", "detail": "invalid json"}))
                 continue
-            await _dispatch_ws(websocket, campaign_id, msg, resolved)
+            await _dispatch_ws(websocket, campaign_id, msg, resolved,
+                               name)
     except WebSocketDisconnect:
         manager.leave(campaign_id, websocket)
         await _broadcast_presence(campaign_id)
@@ -117,18 +118,21 @@ async def _broadcast_presence(campaign_id: str) -> None:
 
 
 async def _dispatch_ws(websocket: WebSocket, campaign_id: str,
-                       msg: dict, resolved: str | None = None) -> None:
+                       msg: dict, resolved: str | None = None,
+                       name: str | None = None) -> None:
     """Un mensaje del protocolo de sala: ping / chat / operation."""
     if msg.get("type") == "ping":
         await websocket.send_text(json.dumps({"type": "pong"}))
         return
-    # chat efímero de mesa — no persiste, solo se reparte
+    # chat efímero de mesa — no persiste, solo se reparte. El remitente
+    # es la identidad autenticada del socket — el `from` del cliente es
+    # spoofable (un jugador podría firmar mensajes como "DM")
     if msg.get("type") == "chat":
         text = str(msg.get("text", "")).strip()[:500]
         if text:
             await manager.broadcast(campaign_id, {
                 "type": "chat",
-                "from": str(msg.get("from", "?"))[:80],
+                "from": name or str(msg.get("from", "?"))[:80],
                 "text": text})
         return
     # "X está escribiendo" — efímero: se reparte a los DEMÁS sin
@@ -136,7 +140,7 @@ async def _dispatch_ws(websocket: WebSocket, campaign_id: str,
     if msg.get("type") == "typing":
         await manager.broadcast(campaign_id, {
             "type": "typing",
-            "from": str(msg.get("from", "?"))[:80]},
+            "from": name or str(msg.get("from", "?"))[:80]},
             exclude=websocket)
         return
     if msg.get("type") != "operation":

@@ -209,7 +209,8 @@ def list_characters(campaign_id: str | None = None,
     conn = state_db()
     if campaign_id and _has_owner(conn, campaign_id):
         _require_role(conn, campaign_id, user)
-    sql = """SELECT id, name, ruleset, version, campaign_id, updated_at,
+    sql = """SELECT id, name, ruleset, version, campaign_id, player_id,
+                    updated_at,
                     json_extract(data, '$.hp.current') AS hp_current,
                     json_extract(data, '$.hp.max') AS hp_max,
                     data
@@ -248,6 +249,7 @@ def list_characters(campaign_id: str | None = None,
 class CharPatch(BaseModel):
     name: str | None = None
     campaign_id: str | None = None
+    player_id: str | None = None      # reclamar (uid propio) / soltar
 
 
 @router.patch("/{character_id}")
@@ -278,10 +280,27 @@ def patch_character(character_id: str, body: CharPatch,
                     else row["campaign_id"])
     if "campaign_id" in body.model_fields_set:
         changed.append("campaign_id")
+    new_player = (body.player_id
+                  if "player_id" in body.model_fields_set
+                  else row["player_id"])
+    if "player_id" in body.model_fields_set:
+        changed.append("player_id")
+        if row["campaign_id"] and _has_owner(conn, row["campaign_id"]) \
+                and member_role(row["campaign_id"],
+                                (user or {}).get("user_id")) \
+                not in _DM_ROLES:
+            # reclamar/soltar: un no-DM solo toma fichas LIBRES o
+            # suelta las suyas — nunca reasigna el player_id de otro
+            uid = (user or {}).get("user_id")
+            if new_player not in (None, uid) \
+                    or row["player_id"] not in (None, uid):
+                raise HTTPException(
+                    403, "solo puedes reclamar fichas libres "
+                         "o soltar la tuya")
     conn.execute(
-        """UPDATE characters SET name = ?, campaign_id = ?, data = ?,
-           version = version + 1, updated_at = ? WHERE id = ?""",
-        (data["name"], new_campaign,
+        """UPDATE characters SET name = ?, campaign_id = ?, player_id = ?,
+           data = ?, version = version + 1, updated_at = ? WHERE id = ?""",
+        (data["name"], new_campaign, new_player,
          json.dumps(data), datetime.now(timezone.utc).isoformat(),
          character_id))
     conn.commit()

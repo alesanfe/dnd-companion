@@ -407,6 +407,44 @@ def test_char_ownership_in_owned_campaign():
                          headers=owner).status_code == 200
 
 
+def test_char_claim_and_release():
+    """Reclamar una ficha sin dueño en campaña con owner: player_id
+    pasa a ser el uid del que la reclama; otro jugador ya no puede
+    mutarla; el dueño puede soltarla."""
+    owner = _auth_headers(f"cl{uuid.uuid4().hex[:8]}")
+    pa, pb = _auth_headers(f"cA{uuid.uuid4().hex[:8]}"), \
+             _auth_headers(f"cB{uuid.uuid4().hex[:8]}")
+    uid_a = client.get("/api/auth/me", headers=pa).json()["user_id"]
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    code = client.get(f"/api/campaigns/{camp['id']}",
+                      headers=owner).json()["invite_code"]
+    for h in (pa, pb):
+        client.post("/api/campaigns/join",
+                    json={"invite_code": code}, headers=h)
+    # el DM crea una ficha sin asignar
+    r = client.post("/api/characters",
+                    json={"name": "Free", "campaign_id": camp["id"]},
+                    headers=owner)
+    cid = r.json()["id"]
+    # B intenta reclamarla para OTRO usuario → 403
+    assert client.patch(f"/api/characters/{cid}",
+                        json={"player_id": "otro"},
+                        headers=pb).status_code == 403
+    # A la reclama para sí misma
+    assert client.patch(f"/api/characters/{cid}",
+                        json={"player_id": uid_a},
+                        headers=pa).status_code == 200
+    # ya es de A: B no puede tocarla ni reasignarla
+    assert client.patch(f"/api/characters/{cid}",
+                        json={"player_id": None},
+                        headers=pb).status_code == 403
+    # A la suelta y vuelve a ser libre
+    assert client.patch(f"/api/characters/{cid}",
+                        json={"player_id": None},
+                        headers=pa).status_code == 200
+
+
 def test_combat_ops_dm_only_in_owned_campaign():
     """El tracker es del DM: un jugador no puede avanzar turnos ni
     terminar el combate via /api/operations (vigía, no jugador)."""

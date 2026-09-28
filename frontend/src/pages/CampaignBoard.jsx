@@ -5,6 +5,7 @@ import { campaignSocket } from '../ws.js'
 import { useT } from '../i18n.jsx'
 import MapBoard from '../components/MapBoard.jsx'
 import WikiText from '../components/WikiText.jsx'
+import { currentUser } from '../session.js'
 
 /** Vista de jugador: espacio de la campaña con pestañas —
     Resumen (actividad y personajes), Mundo (entidades reveladas)
@@ -24,6 +25,7 @@ export default function CampaignBoard() {
   const [combatView, setCombatView] = useState(null) // vista jugador
   const [campTab, setCampTab] = useState('resumen')
   const [presence, setPresence] = useState([]) // quién está en la sala
+  const me = currentUser() // para el botón "reclamar ficha"
   // el formulario de unirse solo ocupa espacio si todavía no estás dentro
   const [joined, setJoined] = useState(
     () => localStorage.getItem(`dnd-joined-${id}`) === '1')
@@ -273,6 +275,15 @@ export default function CampaignBoard() {
                       <span className="muted"> · {c.class_names?.join(' · ')}
                         {' '}{t('sheet.lvlShort')}{c.level}</span>
                     </Link>
+                    {me && c.player_id === me.user_id && (
+                      <span className="chip">{t('camp.yours')}</span>)}
+                    {me && !c.player_id && (
+                      <button className="ghost" style={{ minHeight: 26 }}
+                              onClick={() =>
+                                api.patchCharacter(c.id,
+                                    { player_id: me.user_id })
+                                  .then(load).catch(() => {})}>
+                        {t('camp.claim')}</button>)}
                     {c.player_name && (
                       <span className="muted" style={{ fontSize: '.8rem' }}>
                         👤 {c.player_name}</span>)}

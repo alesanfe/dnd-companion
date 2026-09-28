@@ -192,7 +192,8 @@ export default function CampaignBoard() {
         <section className="card">
           <MapBoard campaign={{ id }} readOnly viewer="player"
                     size={30} entities={byKind.map}
-                    worldEntities={entities || []} />
+                    worldEntities={entities || []}
+                    chars={chars} myUid={me?.user_id} />
         </section>)}
 
       {campTab === 'resumen' && (<>

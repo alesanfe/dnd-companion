@@ -1024,6 +1024,49 @@ def test_split_loot_shares_treasure_dm_only():
     assert sorted(p["gp"] for p in purses) == [5, 6]
 
 
+def test_token_move_only_own_token():
+    """token-move: el DM mueve cualquiera; el jugador solo el token
+    vinculado a su ficha (ref_id o player_id). Fuera de la rejilla se
+    clampa, no error."""
+    owner = _auth_headers(f"tm{uuid.uuid4().hex[:8]}")
+    player = _auth_headers(f"tn{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    code = client.get(f"/api/campaigns/{camp['id']}",
+                      headers=owner).json()["invite_code"]
+    client.post("/api/campaigns/join",
+                json={"invite_code": code}, headers=player)
+    ch = client.post("/api/characters",
+                     json={"name": "P", "campaign_id": camp["id"]},
+                     headers=player).json()
+    ent = client.post(f"/api/campaigns/{camp['id']}/entities", json={
+        "kind": "map", "name": "Mapa", "visibility": "public",
+        "data": {"cols": 8, "rows": 6, "tokens": [
+            {"id": "mio", "name": "Yo", "x": 0, "y": 0,
+             "ref_id": ch["id"]},
+            {"id": "ajeno", "name": "Otro", "x": 1, "y": 1}]}},
+        headers=owner).json()
+
+    def _mv(tok, x, y, h):
+        return client.post(
+            f"/api/campaigns/{camp['id']}/entities/{ent['id']}/token-move",
+            json={"token_id": tok, "x": x, "y": y}, headers=h)
+
+    assert _mv("ajeno", 3, 3, player).status_code == 403
+    r = _mv("mio", 99, -3, player)             # fuera → clamp
+    assert r.status_code == 200
+    assert r.json() == {"x": 7, "y": 0}
+    # el DM mueve el token ajeno sin problema
+    assert _mv("ajeno", 4, 4, owner).status_code == 200
+    # el movimiento persiste en la entidad
+    data = client.get(
+        f"/api/campaigns/{camp['id']}/entities",
+        headers=owner).json()["entities"]
+    toks = {t["id"]: t for t in
+            next(e for e in data if e["id"] == ent["id"])["data"]["tokens"]}
+    assert toks["mio"]["x"] == 7 and toks["ajeno"]["x"] == 4
+
+
 def test_party_rest_applies_to_all_sheets_dm_only():
     """POST /campaigns/{id}/rest?kind=long aplica character.rest.long a
     cada ficha como op real — PG al máximo, deshacible. DM-only."""

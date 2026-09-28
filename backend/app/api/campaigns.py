@@ -588,6 +588,56 @@ def delete_relationship(campaign_id: str, rel_id: str,
         raise HTTPException(404, "relationship not found")
 
 
+class TokenMove(BaseModel):
+    token_id: str
+    x: int
+    y: int
+
+
+@router.post("/{campaign_id}/entities/{entity_id}/token-move")
+async def token_move(campaign_id: str, entity_id: str,
+                     body: TokenMove,
+                     user: dict | None = Depends(optional_user)):
+    """Mueve un token del mapa. El DM mueve cualquiera; un jugador
+    solo el suyo — el token vinculado a su ficha (`player_id` del
+    token o del personaje referenciado por `ref_id`)."""
+    conn = state_db()
+    _require_role(conn, campaign_id, user)
+    row = conn.execute(
+        "SELECT * FROM campaign_entities WHERE id = ? AND campaign_id = ?",
+        (entity_id, campaign_id)).fetchone()
+    if row is None:
+        raise HTTPException(404, "entity not found")
+    data = json.loads(row["data"])
+    tk = next((t for t in (data.get("tokens") or [])
+               if t.get("id") == body.token_id), None)
+    if tk is None:
+        raise HTTPException(404, "token not found")
+    uid = (user or {}).get("user_id")
+    is_dm = not _has_owner(conn, campaign_id) or \
+        member_role(campaign_id, uid) in _DM_ROLES
+    if not is_dm:
+        # solo el token cuya ficha pertenece al jugador
+        owner_uid = tk.get("player_id")
+        if owner_uid is None and tk.get("ref_id"):
+            prow = conn.execute(
+                "SELECT player_id FROM characters WHERE id = ?",
+                (tk["ref_id"],)).fetchone()
+            owner_uid = prow["player_id"] if prow else None
+        if uid is None or owner_uid != uid:
+            raise HTTPException(403, "ese token no es tuyo")
+    cols = int(data.get("cols") or 16)
+    rows = int(data.get("rows") or 10)
+    tk["x"] = max(0, min(cols - 1, int(body.x)))
+    tk["y"] = max(0, min(rows - 1, int(body.y)))
+    conn.execute("UPDATE campaign_entities SET data = ? WHERE id = ?",
+                 (json.dumps(data), entity_id))
+    conn.commit()
+    await _notify_entity(campaign_id, entity_id, ["data"],
+                         row["visibility"], "map", row["name"])
+    return {"x": tk["x"], "y": tk["y"]}
+
+
 class EntityPatch(BaseModel):
     name: str | None = None
     data: dict | None = None

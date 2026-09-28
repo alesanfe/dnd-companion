@@ -17,7 +17,8 @@ const DEFAULTS = { cols: 16, rows: 10, cell_ft: 5, tokens: [],
 export default function MapBoard({ campaign, size = CELL,
                                   readOnly = false, viewer = 'dm',
                                   entities = null,
-                                  worldEntities = [] }) {
+                                  worldEntities = [],
+                                  chars = [], myUid = null }) {
   // entities externas → la lista la gestiona el padre (vista de
   // jugador: mantiene la escena elegida al refrescar por WS)
   const [ownMaps, setMaps] = useState(null)
@@ -30,6 +31,8 @@ export default function MapBoard({ campaign, size = CELL,
   const [pinEnt, setPinEnt] = useState('')   // entidad a enlazar (modo pin)
   const [measure, setMeasure] = useState(null) // {a:[x,y], b:[x,y]}
   const [drag, setDrag] = useState(null)    // pintar área {a,b,kind}
+  const [dragTok, setDragTok] = useState(null) // arrastrar token {id,x,y}
+  const [tokMoved, setTokMoved] = useState(false)
   const [suppress, setSuppress] = useState(false)
   const [speeds, setSpeeds] = useState(() => {
     try { return JSON.parse(localStorage.getItem('map.speeds')) ||
@@ -119,11 +122,23 @@ export default function MapBoard({ campaign, size = CELL,
     save({ ...d, tokens: [...d.tokens, token] })
   }
 
-  const patchTok = (patch) => {
+  const patchTok = (patch, tok = sel) => {
     const tokens = d.tokens.map((tk) =>
-      tk.id === sel.id ? { ...tk, ...patch } : tk)
+      tk.id === tok.id ? { ...tk, ...patch } : tk)
     save({ ...d, tokens })
-    setSel((s) => ({ ...s, ...patch }))
+    if (tok.id === sel?.id) setSel((s) => ({ ...s, ...patch }))
+  }
+
+  // ficha vinculada al token: PG en vivo + el jugador mueve SU token
+  const linkedChar = (tk) => tk.ref_id
+    ? chars.find((c) => c.id === tk.ref_id) : null
+  const tokOwner = (tk) => tk.player_id
+    || linkedChar(tk)?.player_id || null
+  const canMoveTok = (tk) => !readOnly
+    || (myUid != null && tokOwner(tk) === myUid)
+  const moveTokRemote = (tk, x, y) => {
+    if (!readOnly) { patchTok({ x, y }, tk); return }
+    api.moveToken(campaign.id, map.id, tk.id, x, y).catch(() => {})
   }
 
   const renameTok = () => {
@@ -154,10 +169,15 @@ export default function MapBoard({ campaign, size = CELL,
   }
 
   const onSvgClick = (e) => {
-    if (readOnly) return
+    if (tokMoved) { setTokMoved(false); return }
     if (suppress) { setSuppress(false); return }
     const [x, y] = cellAt(e)
     if (x < 0 || y < 0 || x >= d.cols || y >= d.rows) return
+    // vista de jugador: solo mueve su propio token (click→destino)
+    if (readOnly) {
+      if (sel && canMoveTok(sel)) { moveTokRemote(sel, x, y); setSel(null) }
+      return
+    }
     if (mode === 'move' && sel) {
       patchTok({ x, y }); setSel(null); return
     }
@@ -175,6 +195,16 @@ export default function MapBoard({ campaign, size = CELL,
   }
 
   const onSvgUp = () => {
+    // soltar tras arrastrar un token → commit de la posición
+    if (dragTok) {
+      const tk = d.tokens.find((t2) => t2.id === dragTok.id)
+      if (tk && (tk.x !== dragTok.x || tk.y !== dragTok.y)) {
+        moveTokRemote(tk, dragTok.x, dragTok.y)
+        setTokMoved(true)          // el click posterior no alterna selección
+      }
+      setDragTok(null)
+      return
+    }
     if (!drag) return
     const [x1, y1] = drag.a, [x2, y2] = drag.b
     if (x1 !== x2 || y1 !== y2) {
@@ -206,8 +236,9 @@ export default function MapBoard({ campaign, size = CELL,
     const [x, y] = cellAt(e)
     if (x < 0 || y < 0 || x >= d.cols || y >= d.rows) return
     if (drag) setDrag((m) => ({ ...m, b: [x, y] }))
+    if (dragTok) setDragTok((m) => ({ ...m, x, y }))
     if (measure) setMeasure((m) => ({ ...m, b: [x, y] }))
-    else if (e.shiftKey) setMeasure({ a: [x, y], b: [x, y] })
+    else if (e.shiftKey && !dragTok) setMeasure({ a: [x, y], b: [x, y] })
   }
 
   const dist = measure
@@ -362,10 +393,34 @@ export default function MapBoard({ campaign, size = CELL,
           <span className="muted">
             {tf('map.range',
                 { ft: Math.max(...Object.values(speeds)) })}</span>
+          {/* vincular a ficha: PG en vivo en el mapa y el jugador
+              mueve SU token en la vista de jugador */}
+          {chars.length > 0 && (
+            <select value={sel.ref_id || ''} aria-label={t('map.linkChar')}
+                    style={{ maxWidth: 140 }}
+                    onChange={(e) => {
+                      const ch = chars.find(
+                        (c) => c.id === e.target.value) || null
+                      patchTok({
+                        ref_id: ch?.id || null,
+                        player_id: ch?.player_id || null,
+                        ...(ch ? { hp: ch.hp_current,
+                                   max_hp: ch.hp_max } : {}),
+                      })
+                    }}>
+              <option value="">{t('map.linkNone')}</option>
+              {chars.map((ch) => (
+                <option key={ch.id} value={ch.id}>{ch.name}</option>))}
+            </select>)}
           <button className="ghost" onClick={dropTok}>
             {t('map.tokenDel')}</button>
         </div>
       )}
+      {/* vista de jugador: seleccionado su token — pista de destino */}
+      {readOnly && sel && (
+        <p className="muted" style={{ fontSize: '.9rem' }}>
+          <strong>{sel.name}</strong> — {t('map.moveHint')}
+        </p>)}
       {dist > 0 && (
         <p className="muted">{tf('map.dist', {
           ft: dist.toFixed(0),
@@ -428,33 +483,49 @@ export default function MapBoard({ campaign, size = CELL,
         {d.tokens.map((tk) => {
           if (readOnly && d.fog.includes(`${tk.x},${tk.y}`))
             return null
+          const lx = dragTok?.id === tk.id ? dragTok.x : tk.x
+          const ly = dragTok?.id === tk.id ? dragTok.y : tk.y
+          const lc = linkedChar(tk)
+          // PG: vinculado a ficha → en vivo; suelto → hp del token
+          const hp = lc ? lc.hp_current : tk.hp
+          const hpMax = lc ? lc.hp_max : tk.max_hp
+          const movable = canMoveTok(tk)
           return (
             <g key={tk.id}
+               onMouseDown={(e) => {
+                 // arrastrar = mover (modo move del DM o token propio)
+                 if (movable && (mode === 'move' || readOnly)) {
+                   e.stopPropagation()   // no arranca pintura de niebla
+                   setDragTok({ id: tk.id, x: tk.x, y: tk.y })
+                 }
+               }}
                onClick={(e) => {
                  e.stopPropagation()
-                 if (!readOnly)
+                 if (tokMoved) { setTokMoved(false); return }
+                 if (movable)
                    setSel(sel?.id === tk.id ? null : tk)
                }}
-               style={{ cursor: readOnly ? 'default' : 'pointer' }}>
-              <circle cx={(tk.x + .5) * size} cy={(tk.y + .5) * size}
+               opacity={dragTok?.id === tk.id ? .55 : 1}
+               style={{ cursor: movable ? 'grab' : 'default' }}>
+              <circle cx={(lx + .5) * size} cy={(ly + .5) * size}
                       r={size * .4} fill={tk.color}
                       stroke={sel?.id === tk.id ? '#fff' : '#111'}
                       strokeWidth={sel?.id === tk.id ? 3 : 1} />
-              <text x={(tk.x + .5) * size} y={(tk.y + .62) * size}
+              <text x={(lx + .5) * size} y={(ly + .62) * size}
                     textAnchor="middle" fill="#fff"
                     fontSize={size * .32} pointerEvents="none">
                 {tk.name.slice(0, 2).toUpperCase()}</text>
-              {tk.hp != null && tk.max_hp != null && (
+              {hp != null && hpMax != null && (
                 <g>
-                  <rect x={tk.x * size + 2} y={tk.y * size + 2}
+                  <rect x={lx * size + 2} y={ly * size + 2}
                         width={size - 4} height={4} rx={2}
                         fill="#000" opacity=".6" />
-                  <rect x={tk.x * size + 2} y={tk.y * size + 2}
+                  <rect x={lx * size + 2} y={ly * size + 2}
                         width={(size - 4) *
-                               Math.max(0, tk.hp / tk.max_hp)}
+                               Math.max(0, hp / hpMax)}
                         height={4} rx={2}
-                        fill={tk.hp / tk.max_hp > .5 ? '#27ae60'
-                              : tk.hp > 0 ? '#e67e22' : '#c0392b'} />
+                        fill={hp / hpMax > .5 ? '#27ae60'
+                              : hp > 0 ? '#e67e22' : '#c0392b'} />
                 </g>)}
             </g>)
         })}

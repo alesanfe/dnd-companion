@@ -118,6 +118,10 @@ export const api = {
   patchCharacter: (id, body) =>
     req(`/api/characters/${id}`, {
       method: 'PATCH', body: JSON.stringify(body) }),
+  moveToken: (campaignId, entityId, tokenId, x, y) =>
+    req(`/api/campaigns/${campaignId}/entities/${entityId}/token-move`,
+        { method: 'POST',
+          body: JSON.stringify({ token_id: tokenId, x, y }) }),
   patchEntity: (campaignId, entityId, body) =>
     req(`/api/campaigns/${campaignId}/entities/${entityId}`, {
       method: 'PATCH', body: JSON.stringify(body),

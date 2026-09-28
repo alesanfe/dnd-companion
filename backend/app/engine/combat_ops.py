@@ -14,6 +14,7 @@ from typing import Callable
 
 from ..domain import statblock
 from ..domain.combat import Combat, Combatant, hp_state
+from ..rules import rules
 from .dice import roll
 
 Handler = Callable[[Combat, dict, object], tuple[dict, list[dict]]]
@@ -35,9 +36,14 @@ def _find(combat: Combat, cid: str) -> Combatant:
 
 
 def _hp_inverse(c: Combatant) -> dict:
+    """Snapshot completo del estado vital: curar/dañar también toca
+    death_saves y las condiciones muerto/estable — la inversa debe
+    restaurarlo todo o un undo dejaría el estado inconsistente."""
     return {"operation_type": "combatant.hp.set",
             "payload": {"combatant_id": c.id, "current": c.hp_current,
-                        "temp": c.hp_temp}}
+                        "temp": c.hp_temp,
+                        "conditions": list(c.conditions),
+                        "death_saves": dict(c.death_saves)}}
 
 
 def _char_ref(c: Combatant) -> dict:
@@ -68,6 +74,10 @@ def _sync_character(c: Combatant, ctx) -> None:
     ch = Character(**json.loads(row["data"]))
     ch.hp.current = c.hp_current
     ch.hp.temp = c.hp_temp
+    # la ficha refleja el estado vital del tablero — si el DM deja al
+    # PJ muerto/estable en combate, la hoja no puede quedar desfasada
+    ch.conditions = list(c.conditions)
+    ch.death_saves = dict(c.death_saves)
     conn.execute("UPDATE characters SET data = ? WHERE id = ?",
                  (ch.model_dump_json(), c.ref_id))
 
@@ -237,12 +247,40 @@ def combatant_damage(combat: Combat, p: dict, ctx):
             amount, note = amount * 2, f"vulnerable a {dtype} (×2)"
     absorbed = min(c.hp_temp, amount)
     c.hp_temp -= absorbed
-    c.hp_current = max(0, c.hp_current - (amount - absorbed))
+    dmg = amount - absorbed
+    was_zero = c.hp_current == 0
+    overflow = dmg - c.hp_current    # daño que sobra tras llegar a 0
+    c.hp_current = max(0, c.hp_current - dmg)
+    payload = {"combatant": c.name, "amount": amount,
+               "state": hp_state(c), **_char_ref(c),
+               **({"note": note} if note else {})}
+    _death_rules_cbt(c, dmg, was_zero, overflow, payload)
     _sync_character(c, ctx)
     return inv, [{"type": "character.hp.changed",
-                  "payload": {"combatant": c.name, "amount": amount,
-                              "state": hp_state(c), **_char_ref(c),
-                              **({"note": note} if note else {})}}]
+                  "payload": payload}]
+
+
+def _death_rules_cbt(c: Combatant, dmg: int, was_zero: bool,
+                     overflow: int, payload: dict) -> None:
+    """Reglas de muerte SRD para combatientes PJ (misma lógica que
+    ops._death_rules de la ficha): daño masivo (resto ≥ PG máx) mata
+    al instante; un golpe estando a 0 PG es un fallo de salvación."""
+    if c.kind != "character" or dmg <= 0 or c.hp_max <= 0:
+        return
+    cs = rules()["combat"]
+    if overflow >= c.hp_max:
+        c.death_saves["fail"] = cs["death_save_fails"]
+        if "muerto" not in c.conditions:
+            c.conditions.append("muerto")
+        payload["instant_death"] = True
+    elif was_zero:
+        c.death_saves["fail"] = min(
+            cs["death_save_fails"], c.death_saves["fail"] + 1)
+        payload["death_fail_at_zero"] = c.death_saves["fail"]
+        if c.death_saves["fail"] >= cs["death_save_fails"] and \
+                "muerto" not in c.conditions:
+            c.conditions.append("muerto")
+            payload["instant_death"] = True
 
 
 @op("combatant.heal")
@@ -349,6 +387,12 @@ def combatant_hp_set(combat: Combat, p: dict, ctx):
     inv = _hp_inverse(c)
     c.hp_current = max(0, min(c.hp_max, int(p["current"])))
     c.hp_temp = max(0, int(p.get("temp", c.hp_temp)))
+    # las inversas de _hp_inverse traen el snapshot completo; las
+    # llamadas directas de la API solo fijan PG
+    if "conditions" in p:
+        c.conditions = list(p["conditions"])
+    if "death_saves" in p:
+        c.death_saves = dict(p["death_saves"])
     _sync_character(c, ctx)
     return inv, [{"type": "character.hp.changed",
                   "payload": {"combatant": c.name,
@@ -511,9 +555,14 @@ def combatant_check(combat: Combat, p: dict, ctx):
     """Tirada de habilidad del combatiente: total de stat_block.skills
     si existe (p.ej. Perception +12), si no mod de habilidad ligada."""
     c = _find(combat, p["combatant_id"])
-    skill = p["skill"].lower()
+    # normaliza 'sleight-of-hand' ≡ 'sleight of hand' — los schemas
+    # de contenido usan ambas grafías
+    skill = p["skill"].strip().lower().replace("-", " ")
     block = c.stat_block or {}
-    total_mod = (block.get("skills") or {}).get(skill)
+    skills = block.get("skills") or {}
+    total_mod = skills.get(skill)
+    if total_mod is None:
+        total_mod = skills.get(skill.replace(" ", "-"))
     if total_mod is None:
         ability = SKILL_ABILITY.get(skill, "int")
         total_mod = (block.get("abilities") or {}).get(ability, 10)
@@ -550,6 +599,9 @@ def noop(entity, p: dict, ctx):
 def combatant_cond_remove(combat: Combat, p: dict, ctx):
     c = _find(combat, p["combatant_id"])
     cond = p["condition"]
+    if cond not in c.conditions and cond not in c.condition_durations:
+        # no-op: inversa noop para que deshacer no cree la condición
+        return {"operation_type": "noop", "payload": {}}, []
     had_rounds = c.condition_durations.get(cond)
     inv = {"operation_type": "combatant.condition.apply",
            "payload": {"combatant_id": c.id, "condition": cond,

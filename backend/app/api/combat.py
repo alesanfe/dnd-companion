@@ -50,39 +50,52 @@ def delete_combat(combat_id: str):
 
 
 @router.post("/{combat_id}/add-party")
-def add_party(combat_id: str):
+async def add_party(combat_id: str):
     """Añade todos los personajes de la campaña del combate como
-    combatientes (con su HP real de ficha)."""
+    combatientes — cada alta es una op combatant.add real:
+    iniciativa tirada (d20+DES), PG de ficha, auditable, deshacible
+    y con broadcast a la sala."""
+    from ..domain.character import Character
+    from ..engine.dice import roll
+    from ..ws.rooms import manager
+    from .operations import OperationIn, apply_to_store
     conn = state_db()
     row = conn.execute("SELECT data, campaign_id FROM combats WHERE id = ?",
                        (combat_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "combat not found")
-    combat = Combat(**json.loads(row["data"]))
     if not row["campaign_id"]:
         raise HTTPException(400, "el combate no pertenece a una campaña")
+    campaign_id = row["campaign_id"]
+    combat = Combat(**json.loads(row["data"]))
+    existing = {c.ref_id for c in combat.combatants}
     chars = conn.execute(
         "SELECT id, data FROM characters WHERE campaign_id = ?",
-        (row["campaign_id"],)).fetchall()
-    from ..domain.character import Character
+        (campaign_id,)).fetchall()
     added = 0
-    existing = {c.ref_id for c in combat.combatants}
     for cr in chars:
         if cr["id"] in existing:
             continue
         ch = Character(**json.loads(cr["data"]))
-        combat.combatants.append(Combatant(
-            id=uuid.uuid4().hex, kind="character", name=ch.name,
-            ref_id=cr["id"], initiative=ch.abilities.modifier("dex"),
-            hp_current=ch.hp.current, hp_max=ch.hp.max,
-            hp_temp=ch.hp.temp))
+        cur = conn.execute(
+            "SELECT version FROM combats WHERE id = ?",
+            (combat_id,)).fetchone()["version"]
+        result = apply_to_store(OperationIn(
+            operation_id=uuid.uuid4().hex, entity_id=combat_id,
+            entity_version=cur, client_id="api:add-party",
+            user_id="dm", operation_type="combatant.add",
+            entity_kind="combat",
+            payload={
+                "kind": "character", "ref_id": cr["id"],
+                "name": ch.name,
+                # combatant.add tira 1d20+initiative_mod del bloque;
+                # para PJs el mod es DES de la ficha
+                "initiative":
+                    roll("1d20").total + ch.abilities.modifier("dex"),
+            }))
+        for event in result.pop("_event_objs", []):
+            await manager.broadcast(campaign_id, event)
         added += 1
-    conn.execute(
-        "UPDATE combats SET data = ?, version = version + 1, "
-        "updated_at = ? WHERE id = ?",
-        (json.dumps(combat.model_dump()),
-         datetime.now(timezone.utc).isoformat(), combat_id))
-    conn.commit()
     return {"added": added}
 
 

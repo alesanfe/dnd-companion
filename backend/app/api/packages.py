@@ -40,39 +40,43 @@ def install_package(body: PackageIn):
     m = body.manifest
     source_id = f"pkg:{m.id}"
     now = datetime.now(timezone.utc).isoformat()
-    conn.execute(
-        """INSERT OR REPLACE INTO content_sources
-           (id, name, version, license, attribution_text, imported_at,
-            distribution_allowed)
-           VALUES (?,?,?,?,?,?,?)""",
-        (source_id, m.name, m.version, m.license, m.attribution, now,
-         int(m.distribution_allowed)))
-
     count = 0
-    for entity_type, rows in body.content.items():
-        for row in rows:
-            index = row.get("index") or row.get("name")
-            name = row.get("name") or index
-            if not index or not name:
-                continue
-            eid = f"{source_id}:{index}"
-            blob = json.dumps(row, ensure_ascii=False)
-            ruleset = (m.compatible_rulesets[0]
-                       if len(m.compatible_rulesets) == 1 else "mixed")
-            conn.execute(
-                """INSERT OR REPLACE INTO content_entities
-                   (id, entity_type, name, ruleset, source_id,
-                    source_version, license, is_redistributable, data)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
-                (eid, entity_type, str(name), ruleset, source_id,
-                 m.version, m.license, int(m.distribution_allowed), blob))
-            conn.execute(
-                "DELETE FROM content_fts WHERE entity_id = ?", (eid,))
-            conn.execute(
-                "INSERT INTO content_fts (entity_id, name, body) "
-                "VALUES (?,?,?)", (eid, str(name), blob))
-            count += 1
-    conn.commit()
+    try:
+        conn.execute(
+            """INSERT OR REPLACE INTO content_sources
+               (id, name, version, license, attribution_text, imported_at,
+                distribution_allowed)
+               VALUES (?,?,?,?,?,?,?)""",
+            (source_id, m.name, m.version, m.license, m.attribution, now,
+             int(m.distribution_allowed)))
+        for entity_type, rows in body.content.items():
+            for row in rows:
+                index = row.get("index") or row.get("name")
+                name = row.get("name") or index
+                if not index or not name:
+                    continue
+                eid = f"{source_id}:{index}"
+                blob = json.dumps(row, ensure_ascii=False)
+                ruleset = (m.compatible_rulesets[0]
+                           if len(m.compatible_rulesets) == 1 else "mixed")
+                conn.execute(
+                    """INSERT OR REPLACE INTO content_entities
+                       (id, entity_type, name, ruleset, source_id,
+                        source_version, license, is_redistributable, data)
+                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (eid, entity_type, str(name), ruleset, source_id,
+                     m.version, m.license, int(m.distribution_allowed),
+                     blob))
+                conn.execute(
+                    "DELETE FROM content_fts WHERE entity_id = ?", (eid,))
+                conn.execute(
+                    "INSERT INTO content_fts (entity_id, name, body) "
+                    "VALUES (?,?,?)", (eid, str(name), blob))
+                count += 1
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     return {"package": m.id, "entities": count}
 
 

@@ -44,35 +44,40 @@ def transfer(body: TransferIn):
         conn.rollback()
         raise HTTPException(404, "character not found")
 
-    src = Character(**json.loads(src_row["data"]))
-    dst = Character(**json.loads(dst_row["data"]))
+    try:
+        src = Character(**json.loads(src_row["data"]))
+        dst = Character(**json.loads(dst_row["data"]))
 
-    item = next((i for i in src.inventory if i.id == body.item_id), None)
-    qty = min(body.quantity, item.quantity) if item else 0
-    if qty <= 0:
+        item = next((i for i in src.inventory if i.id == body.item_id), None)
+        qty = min(body.quantity, item.quantity) if item else 0
+        if qty <= 0:
+            raise HTTPException(400, "item not found or quantity is 0")
+
+        now = datetime.now(timezone.utc).isoformat()
+        moved = _move_item(src, dst, item, qty)
+
+        for row, char in ((src_row, src), (dst_row, dst)):
+            conn.execute(
+                "UPDATE characters SET data=?, version=?, updated_at=?"
+                " WHERE id=?",
+                (json.dumps(char.model_dump()), row["version"] + 1, now,
+                 row["id"]))
+            conn.execute(
+                """INSERT INTO operations
+                   (operation_id, entity_id, entity_version, client_id,
+                    user_id, timestamp, operation_type, payload, status,
+                    inverse)
+                   VALUES (?,?,?,?,?,?,?,?, 'synced', NULL)""",
+                (f"{body.transfer_id}:{'out' if row is src_row else 'in'}",
+                 row["id"], row["version"] + 1, "transfer", body.user_id,
+                 now, "inventory.transfer",
+                 json.dumps({"item": moved.name, "quantity": qty,
+                             "peer": dst_row["id"] if row is src_row
+                             else src_row["id"]})))
+        conn.commit()
+    except Exception:
         conn.rollback()
-        raise HTTPException(400, "item not found or quantity is 0")
-
-    now = datetime.now(timezone.utc).isoformat()
-    moved = _move_item(src, dst, item, qty)
-
-    for row, char in ((src_row, src), (dst_row, dst)):
-        conn.execute(
-            "UPDATE characters SET data=?, version=?, updated_at=? WHERE id=?",
-            (json.dumps(char.model_dump()), row["version"] + 1, now,
-             row["id"]))
-        conn.execute(
-            """INSERT INTO operations
-               (operation_id, entity_id, entity_version, client_id, user_id,
-                timestamp, operation_type, payload, status, inverse)
-               VALUES (?,?,?,?,?,?,?,?, 'synced', NULL)""",
-            (f"{body.transfer_id}:{'out' if row is src_row else 'in'}",
-             row["id"], row["version"] + 1, "transfer", body.user_id, now,
-             "inventory.transfer",
-             json.dumps({"item": moved.name, "quantity": qty,
-                         "peer": dst_row["id"] if row is src_row
-                         else src_row["id"]})))
-    conn.commit()
+        raise
     return {"duplicate": False, "transfer_id": body.transfer_id,
             "moved": {"name": moved.name, "quantity": qty}}
 

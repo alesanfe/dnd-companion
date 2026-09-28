@@ -11,6 +11,7 @@ from .api import (
     inventory, operations, packages, rules,
 )
 from .api.operations import OperationIn, apply_to_store
+from .db.connections import state_db
 from .ws.rooms import manager
 
 app = FastAPI(title="D&D Companion", version="0.1.0")
@@ -68,7 +69,7 @@ async def campaign_ws(websocket: WebSocket, campaign_id: str,
                 await websocket.send_text(
                     json.dumps({"type": "error", "detail": "invalid json"}))
                 continue
-            await _dispatch_ws(websocket, campaign_id, msg)
+            await _dispatch_ws(websocket, campaign_id, msg, resolved)
     except WebSocketDisconnect:
         manager.leave(campaign_id, websocket)
         await _broadcast_presence(campaign_id)
@@ -95,6 +96,15 @@ def _ws_identity(campaign_id: str, token: str | None,
         # member_role también reconoce al owner aunque falte la fila
         role = member_role(campaign_id, resolved) or \
             ("player" if token else "local")
+    else:
+        # sin identidad resoluble: 'local' (rol privilegiado, recibe
+        # eventos visibility=dm) solo en campañas sin dueño. Con owner,
+        # un socket anónimo es espectador — no ve tiradas secretas
+        row = state_db().execute(
+            "SELECT owner_id FROM campaigns WHERE id = ?",
+            (campaign_id,)).fetchone()
+        if row and row["owner_id"]:
+            role = "spectator"
     return role, resolved, name
 
 
@@ -105,7 +115,7 @@ async def _broadcast_presence(campaign_id: str) -> None:
 
 
 async def _dispatch_ws(websocket: WebSocket, campaign_id: str,
-                       msg: dict) -> None:
+                       msg: dict, resolved: str | None = None) -> None:
     """Un mensaje del protocolo de sala: ping / chat / operation."""
     if msg.get("type") == "ping":
         await websocket.send_text(json.dumps({"type": "pong"}))
@@ -125,6 +135,10 @@ async def _dispatch_ws(websocket: WebSocket, campaign_id: str,
         return
     try:
         op = OperationIn(**msg["operation"])
+        if resolved:
+            # el actor es la identidad de la conexión — el user_id del
+            # payload es spoofable y envenenaría la auditoría
+            op.user_id = resolved
         result = apply_to_store(op)
     except HTTPException as exc:
         detail = exc.detail

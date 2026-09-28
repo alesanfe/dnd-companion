@@ -20,6 +20,13 @@ router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
 _DM_ROLES = ("owner", "co_dm")
 
 
+def _has_owner(conn, campaign_id: str) -> bool:
+    row = conn.execute(
+        "SELECT owner_id FROM campaigns WHERE id = ?",
+        (campaign_id,)).fetchone()
+    return bool(row and row["owner_id"])
+
+
 def _require_role(conn, campaign_id: str, user: dict | None,
                   roles: tuple = _DM_ROLES + ("player", "guest")) -> None:
     """Si la campaña tiene dueño, exige membresía con el rol pedido;
@@ -104,10 +111,13 @@ def join_campaign(body: JoinIn,
         raise HTTPException(404, "campaign not found")
     uid = (user or {}).get("user_id") or body.user_id
     if uid:
+        # entrar con código siempre es player/guest — los roles DM los
+        # asigna un DM existente, nunca el propio cliente
+        role = body.role if body.role in ("player", "guest") else "player"
         conn.execute(
             "INSERT OR IGNORE INTO members "
             "(campaign_id, user_id, role, joined_at) VALUES (?,?,?,?)",
-            (row["id"], uid, body.role,
+            (row["id"], uid, role,
              datetime.now(timezone.utc).isoformat()))
         conn.commit()
     return {"id": row["id"], "name": row["name"], "ruleset": row["ruleset"]}
@@ -185,59 +195,66 @@ def import_campaign(body: dict):
     if conn.execute("SELECT 1 FROM campaigns WHERE invite_code = ?",
                     (invite,)).fetchone():
         invite = uuid.uuid4().hex[:8]       # código ya en uso → nuevo
-    conn.execute(
-        "INSERT INTO campaigns (id, name, ruleset, invite_code, "
-        "created_at, updated_at, owner_id) VALUES (?,?,?,?,?,?,?)",
-        (camp["id"], camp["name"], camp.get("ruleset", "dnd5e-2014"),
-         invite, camp.get("created_at", now), camp.get("updated_at", now),
-         camp.get("owner_id")))
-    for e in body.get("entities", []):
+    try:
         conn.execute(
-            "INSERT OR IGNORE INTO campaign_entities "
-            "(id, campaign_id, kind, name, visibility, known_to, data, "
-            " revealed_at, created_at, updated_at, version) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (e["id"], camp["id"], e["kind"], e["name"], e["visibility"],
-             e.get("known_to", "[]"), e.get("data", "{}"),
-             e.get("revealed_at"), e.get("created_at", now),
-             e.get("updated_at", now), e.get("version", 1)))
-    for m in body.get("members", []):
-        conn.execute(
-            "INSERT OR IGNORE INTO members (id, campaign_id, user_id, "
-            "role, joined_at) VALUES (?,?,?,?,?)",
-            (m["id"], camp["id"], m["user_id"], m["role"],
-             m.get("joined_at", now)))
-    for s in body.get("sessions", []):
-        conn.execute(
-            "INSERT OR IGNORE INTO sessions (id, campaign_id, number, "
-            "title, status, data, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
-            (s["id"], camp["id"], s.get("number"), s["title"],
-             s.get("status", "prep"), s.get("data", "{}"),
-             s.get("created_at", now), s.get("updated_at", now)))
-    for c in body.get("combats", []):
-        conn.execute(
-            "INSERT OR IGNORE INTO combats (id, campaign_id, name, "
-            "ruleset, version, data, updated_at) VALUES (?,?,?,?,?,?,?)",
-            (c["id"], camp["id"], c["name"], c.get("ruleset"),
-             c.get("version", 1), c.get("data", "{}"),
-             c.get("updated_at", now)))
-    for ch in body.get("characters", []):
-        conn.execute(
-            "INSERT OR IGNORE INTO characters (id, name, player_id, "
-            "campaign_id, ruleset, version, data, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
-            (ch["id"], ch["name"], ch.get("player_id"), camp["id"],
-             ch.get("ruleset", "dnd5e-2014"), ch.get("version", 1),
-             ch.get("data", "{}"), ch.get("updated_at", now)))
-    conn.commit()
+            "INSERT INTO campaigns (id, name, ruleset, invite_code, "
+            "created_at, updated_at, owner_id) VALUES (?,?,?,?,?,?,?)",
+            (camp["id"], camp["name"], camp.get("ruleset", "dnd5e-2014"),
+             invite, camp.get("created_at", now),
+             camp.get("updated_at", now), camp.get("owner_id")))
+        for e in body.get("entities", []):
+            conn.execute(
+                "INSERT OR IGNORE INTO campaign_entities "
+                "(id, campaign_id, kind, name, visibility, known_to, data,"
+                " revealed_at, created_at, updated_at, version) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (e["id"], camp["id"], e["kind"], e["name"], e["visibility"],
+                 e.get("known_to", "[]"), e.get("data", "{}"),
+                 e.get("revealed_at"), e.get("created_at", now),
+                 e.get("updated_at", now), e.get("version", 1)))
+        for m in body.get("members", []):
+            conn.execute(
+                "INSERT OR IGNORE INTO members (id, campaign_id, user_id, "
+                "role, joined_at) VALUES (?,?,?,?,?)",
+                (m["id"], camp["id"], m["user_id"], m["role"],
+                 m.get("joined_at", now)))
+        for s in body.get("sessions", []):
+            conn.execute(
+                "INSERT OR IGNORE INTO sessions (id, campaign_id, number, "
+                "title, status, data, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (s["id"], camp["id"], s.get("number"), s["title"],
+                 s.get("status", "prep"), s.get("data", "{}"),
+                 s.get("created_at", now), s.get("updated_at", now)))
+        for c in body.get("combats", []):
+            conn.execute(
+                "INSERT OR IGNORE INTO combats (id, campaign_id, name, "
+                "ruleset, version, data, updated_at) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (c["id"], camp["id"], c["name"], c.get("ruleset"),
+                 c.get("version", 1), c.get("data", "{}"),
+                 c.get("updated_at", now)))
+        for ch in body.get("characters", []):
+            conn.execute(
+                "INSERT OR IGNORE INTO characters (id, name, player_id, "
+                "campaign_id, ruleset, version, data, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (ch["id"], ch["name"], ch.get("player_id"), camp["id"],
+                 ch.get("ruleset", "dnd5e-2014"), ch.get("version", 1),
+                 ch.get("data", "{}"), ch.get("updated_at", now)))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     return {"id": camp["id"], "entities": len(body.get("entities", [])),
             "characters": len(body.get("characters", []))}
 
 
 @router.get("/{campaign_id}/members")
-def list_members(campaign_id: str):
+def list_members(campaign_id: str,
+                 user: dict | None = Depends(optional_user)):
     conn = state_db()
+    _require_role(conn, campaign_id, user)
     rows = conn.execute(
         "SELECT user_id, role, joined_at FROM members "
         "WHERE campaign_id = ?", (campaign_id,)).fetchall()
@@ -245,22 +262,32 @@ def list_members(campaign_id: str):
 
 
 @router.get("/{campaign_id}")
-def get_campaign(campaign_id: str):
+def get_campaign(campaign_id: str,
+                 user: dict | None = Depends(optional_user)):
     """Ficha mínima de campaña (nombre, ruleset, código)."""
     conn = state_db()
     row = conn.execute(
-        "SELECT id, name, ruleset, invite_code, created_at "
+        "SELECT id, name, ruleset, invite_code, owner_id, created_at "
         "FROM campaigns WHERE id = ?", (campaign_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "campaign not found")
-    return dict(row)
+    out = dict(row)
+    # el invite_code es la única credencial de acceso: solo lo ve el DM
+    if row["owner_id"] is not None and \
+            member_role(campaign_id, (user or {}).get("user_id")) \
+            not in _DM_ROLES:
+        out.pop("invite_code", None)
+    out.pop("owner_id", None)
+    return out
 
 
 @router.get("/{campaign_id}/state")
-def campaign_state(campaign_id: str):
+def campaign_state(campaign_id: str,
+                   user: dict | None = Depends(optional_user)):
     """Snapshot para resync tras reconexión: personajes + combate activo
     + últimos eventos."""
     conn = state_db()
+    _require_role(conn, campaign_id, user)
     chars = conn.execute(
         "SELECT id, name, ruleset, version, data FROM characters "
         "WHERE campaign_id = ?", (campaign_id,)).fetchall()
@@ -331,6 +358,9 @@ def list_entities(campaign_id: str, kind: str | None = None,
     if user is not None:
         is_dm = member_role(campaign_id, uid) in ("owner", "co_dm")
         viewer_id = uid
+    elif _has_owner(conn, campaign_id):
+        # con dueño, un anónimo nunca es DM — solo ve lo público
+        is_dm, viewer_id = False, ""
     else:
         is_dm = (viewer or "dm") == "dm"  # compat modo local
         viewer_id = viewer or "dm"
@@ -430,7 +460,9 @@ def list_relationships(campaign_id: str, entity_id: str | None = None,
     if user is not None:
         is_dm = member_role(campaign_id, uid) in ("owner", "co_dm")
     else:
-        is_dm = (viewer or "dm") == "dm"  # compat modo local
+        # ?viewer solo vale en modo local; con dueño, anónimo ≠ DM
+        is_dm = not _has_owner(conn, campaign_id) \
+            and (viewer or "dm") == "dm"
     sql = "SELECT * FROM relationships WHERE campaign_id = ?"
     params: list = [campaign_id]
     if entity_id:
@@ -450,9 +482,9 @@ def delete_relationship(campaign_id: str, rel_id: str,
     cur = conn.execute(
         "DELETE FROM relationships WHERE id = ? AND campaign_id = ?",
         (rel_id, campaign_id))
+    conn.commit()
     if cur.rowcount == 0:
         raise HTTPException(404, "relationship not found")
-    conn.commit()
 
 
 class EntityPatch(BaseModel):
@@ -474,6 +506,14 @@ async def patch_entity(campaign_id: str, entity_id: str, body: EntityPatch,
         (entity_id, campaign_id)).fetchone()
     if row is None:
         raise HTTPException(404, "entity not found")
+    if (body.visibility is not None or body.known_to is not None) \
+            and _has_owner(conn, campaign_id) \
+            and member_role(campaign_id, (user or {}).get("user_id")) \
+            not in _DM_ROLES:
+        # la visibilidad es del DM — un jugador podría revelar
+        # entidades ocultas (dm→public) u ocultarlas (public→dm)
+        raise HTTPException(
+            403, "solo el DM puede cambiar la visibilidad")
     sets, params = [], []
     if body.name is not None:
         sets.append("name = ?")
@@ -534,8 +574,10 @@ def create_session(campaign_id: str, body: SessionIn,
 
 
 @router.get("/{campaign_id}/sessions")
-def list_sessions(campaign_id: str):
+def list_sessions(campaign_id: str,
+                  user: dict | None = Depends(optional_user)):
     conn = state_db()
+    _require_role(conn, campaign_id, user)
     rows = conn.execute(
         "SELECT * FROM sessions WHERE campaign_id = ? ORDER BY number",
         (campaign_id,)).fetchall()
@@ -588,9 +630,11 @@ def patch_session(campaign_id: str, session_id: str, body: SessionPatch,
 
 
 @router.get("/{campaign_id}/timeline")
-def timeline(campaign_id: str):
+def timeline(campaign_id: str,
+             user: dict | None = Depends(optional_user)):
     """Cronología del mundo: eventos + relaciones fechadas, ordenadas."""
     conn = state_db()
+    _require_role(conn, campaign_id, user)
     events = conn.execute(
         "SELECT id, name, data FROM campaign_entities "
         "WHERE campaign_id = ? AND kind = 'event'", (campaign_id,)
@@ -662,10 +706,12 @@ def start_scene_combat(campaign_id: str, scene_id: str,
 
 
 @router.get("/{campaign_id}/events")
-def campaign_events(campaign_id: str, limit: int = 100):
+def campaign_events(campaign_id: str, limit: int = 100,
+                    user: dict | None = Depends(optional_user)):
     """Feed de auditoría: todos los eventos de la campaña (tiradas,
     cambios de estado, revelaciones)."""
     conn = state_db()
+    _require_role(conn, campaign_id, user)
     rows = conn.execute(
         """SELECT event_id, type, aggregate_id, actor_id, occurred_at,
                   payload FROM events WHERE campaign_id = ?
@@ -676,10 +722,12 @@ def campaign_events(campaign_id: str, limit: int = 100):
 
 
 @router.get("/{campaign_id}/export")
-def export_campaign(campaign_id: str):
+def export_campaign(campaign_id: str,
+                    user: dict | None = Depends(optional_user)):
     """Backup completo de la campaña en JSON: entidades, miembros,
     sesiones, combates, personajes y eventos."""
     conn = state_db()
+    _require_role(conn, campaign_id, user, _DM_ROLES)
     def rows(table, where="campaign_id = ?"):
         return [dict(r) for r in conn.execute(
             f"SELECT * FROM {table} WHERE {where}",
@@ -704,12 +752,14 @@ def export_campaign(campaign_id: str):
 
 
 @router.get("/{campaign_id}/export-vtt")
-def export_vtt(campaign_id: str):
+def export_vtt(campaign_id: str,
+               user: dict | None = Depends(optional_user)):
     """Export neutral para VTTs (Foundry/Roll20/…): personajes y
     combatientes como actores genéricos {name, type, hp, ac, abilities,
     conditions, cr}. No es un schema propietario — cada VTT lo mapea
     con un importador."""
     conn = state_db()
+    _require_role(conn, campaign_id, user, _DM_ROLES)
     camp = conn.execute("SELECT id, name FROM campaigns WHERE id = ?",
                         (campaign_id,)).fetchone()
     if camp is None:
@@ -804,7 +854,8 @@ async def request_roll(campaign_id: str, body: RollRequestIn,
 
 
 @router.get("/{campaign_id}/roll-requests/pending")
-def pending_roll_requests(campaign_id: str, character_ids: str = ""):
+def pending_roll_requests(campaign_id: str, character_ids: str = "",
+                          user: dict | None = Depends(optional_user)):
     """Peticiones de tirada aún sin responder.
 
     Una petición dice.roll.requested cuenta pendiente si el último
@@ -815,6 +866,7 @@ def pending_roll_requests(campaign_id: str, character_ids: str = ""):
     if not ids:
         return {"pending": []}
     conn = state_db()
+    _require_role(conn, campaign_id, user)
     rows = conn.execute(
         f"""SELECT aggregate_id, type, occurred_at, payload
             FROM events

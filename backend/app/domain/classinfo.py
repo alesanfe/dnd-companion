@@ -1,10 +1,12 @@
 """Extractores de info de clase/especie/trasfondo — multi-schema.
 
-Usados por la creación de personaje (api/characters.py) y por el
-render de entidades (domain/render.py).
+Usados por la creación de personaje (api/characters.py), por el
+render de entidades (domain/render.py) y por el motor de efectos
+(engine/ops.py) para validar mejoras de característica.
 """
 from __future__ import annotations
 
+import json
 import re
 
 _ABILITY_SHORT = {"strength": "str", "dexterity": "dex",
@@ -124,3 +126,34 @@ def background_skills(bg: dict) -> list[str]:
             out.extend(k for k, v in grp.items()
                        if v is True and k != "choose")
     return out
+
+
+def asi_earned(char, content) -> int:
+    """Puntos de mejora de característica ganados (2 por nivel con
+    ability_score_bonuses en la tabla de la clase; +2, +1/+1 o dote).
+    `content` es una conexión a la content DB."""
+    earned = 0
+    for cl in char.classes:
+        idx = cl.class_id.split(":")[-1]
+        row = content.execute(
+            "SELECT data FROM content_entities WHERE id = ?",
+            (cl.class_id,)).fetchone()
+        cls_name = (json.loads(row["data"]) if row else {}) \
+            .get("name", idx)
+        try:
+            n = content.execute(
+                """SELECT MAX(json_extract(data, '$.ability_score_bonuses'))
+                   FROM content_entities
+                   WHERE entity_type = 'level'
+                   AND lower(COALESCE(
+                         json_extract(data, '$.class.index'),
+                         json_extract(data, '$.class.name'),
+                         json_extract(data, '$.class_id'),
+                         json_extract(data, '$.className'), ''))
+                       IN (?, ?)
+                   AND json_extract(data, '$.level') <= ?""",
+                (idx, str(cls_name).lower(), cl.level)).fetchone()[0]
+            earned += (n or 0) * 2   # ab es acumulado por clase
+        except Exception:
+            pass
+    return earned

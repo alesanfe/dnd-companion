@@ -14,6 +14,7 @@ from ..domain.character import (
     AbilityScores, Character, ClassLevel, HitDicePool, HitPoints,
 )
 from ..domain.classinfo import (
+    asi_earned as _asi_earned,
     background_languages as _background_languages,
     background_skills as _background_skills,
     hit_die as _hit_die,
@@ -197,14 +198,17 @@ def patch_character(character_id: str, body: CharPatch):
     if body.name is not None:
         data["name"] = body.name
         changed.append("name")
-    if body.campaign_id is not None:
+    # fields_set distingue "no enviado" de null explícito — un
+    # campaign_id=null saca al PJ de la campaña (antes era imposible)
+    new_campaign = (body.campaign_id
+                    if "campaign_id" in body.model_fields_set
+                    else row["campaign_id"])
+    if "campaign_id" in body.model_fields_set:
         changed.append("campaign_id")
     conn.execute(
         """UPDATE characters SET name = ?, campaign_id = ?, data = ?,
            version = version + 1, updated_at = ? WHERE id = ?""",
-        (data["name"],
-         body.campaign_id if body.campaign_id is not None
-         else row["campaign_id"],
+        (data["name"], new_campaign,
          json.dumps(data), datetime.now(timezone.utc).isoformat(),
          character_id))
     conn.commit()
@@ -518,28 +522,7 @@ def _asi_available(char) -> int:
     """Mejoras de característica ganadas − gastadas (puntos).
     Cada nivel con ability_score_bonuses en la tabla de la clase
     otorga 2 puntos de mejora (+2, +1/+1 o una dote)."""
-    content = content_db()
-    earned = 0
-    for cl in char.classes:
-        idx = cl.class_id.split(":")[-1]
-        cls_name = (_content_row(cl.class_id) or {}).get("name", idx)
-        try:
-            n = content.execute(
-                """SELECT MAX(json_extract(data, '$.ability_score_bonuses'))
-                   FROM content_entities
-                   WHERE entity_type = 'level'
-                   AND lower(COALESCE(
-                         json_extract(data, '$.class.index'),
-                         json_extract(data, '$.class.name'),
-                         json_extract(data, '$.class_id'),
-                         json_extract(data, '$.className'), ''))
-                       IN (?, ?)
-                   AND json_extract(data, '$.level') <= ?""",
-                (idx, str(cls_name).lower(), cl.level)).fetchone()[0]
-            earned += (n or 0) * 2   # ab es acumulado por clase
-        except Exception:
-            pass
-    return max(0, earned - char.asi_used)
+    return max(0, _asi_earned(char, content_db()) - char.asi_used)
 
 
 @router.get("/{character_id}")

@@ -10,6 +10,7 @@ Dispatch por entity_kind: 'character' (default) o 'combat'.
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -175,13 +176,22 @@ def _augment_expr(char, expr: str, roll_type: str,
     if fail:
         return expr, True
     if "adv" not in expr and "dis" not in expr and "d20" in expr:
+        # adv/dis va pegado al d20, ANTES del modificador —
+        # "1d20+5adv" no parsea (el regex exige keep antes del mod)
         if adv and not dis:
-            expr += "adv"
+            expr = _insert_keep(expr, "adv")
         elif dis and not adv:
-            expr += "dis"
+            expr = _insert_keep(expr, "dis")
     if extra_mod:
         expr += f"{extra_mod:+d}"
     return expr, False
+
+
+def _insert_keep(expr: str, keep: str) -> str:
+    """'1d20+5'+adv → '1d20adv+5': inserta kh/kl/adv/dis antes del
+    modificador final."""
+    m = re.search(r"[+-]\d+$", expr)
+    return expr[:m.start()] + keep + m.group(0) if m else expr + keep
 
 
 async def _broadcast_roll(conn, campaign_id: str, character_id: str,
@@ -273,6 +283,7 @@ def character_attack(character_id: str, item_name: str,
 def _weapon_stats(char, item):
     """(mod de característica, bonificador de impacto, dados de daño)
     del arma — finesse/ranged → DES, el resto → FUE."""
+    from ..engine.ops import _item_damage
     w = {}
     if item.source_id:
         r = content_db().execute(
@@ -283,12 +294,19 @@ def _weapon_stats(char, item):
     mod = char.abilities.modifier(
         "dex" if "finesse" in props or "ranged" in
         str(w.get("weapon_range", "")).lower() else "str")
+    # multi-schema: dmg1 (5etools), damage como str (codexMUNDI)…
     return (mod, char.proficiency_bonus + mod,
-            (w.get("damage") or {}).get("damage_dice", "1d4"))
+            _item_damage(w) or "1d4")
 
 
 _MODELS = {"character": Character, "combat": Combat}
 _TABLES = {"character": "characters", "combat": "combats"}
+
+
+class _ConcurrentUpdate(Exception):
+    """El UPDATE con guardia de versión no tocó fila: otro proceso
+    escribió entre nuestro SELECT y el UPDATE (busy_timeout evita el
+    error de lock, no el lost-update)."""
 
 
 def apply_to_store(op: OperationIn) -> dict:
@@ -329,41 +347,62 @@ def apply_to_store(op: OperationIn) -> dict:
             inverse, events = apply_operation(
                 entity, op.operation_type, op.payload, OpContext(conn))
     except (KeyError, ValueError, IndexError) as exc:
+        # los handlers escriben sobre esta misma conexión (tiendas);
+        # rollback descarta escrituras parciales antes de registrar
+        conn.rollback()
         _store_op(conn, op, row["version"], OperationStatus.REJECTED, None)
         conn.commit()
         raise HTTPException(400, str(exc)) from exc
+    except Exception:
+        conn.rollback()
+        raise
 
     new_version = row["version"] + 1
     now = datetime.now(timezone.utc).isoformat()
-    conn.execute(
-        f"UPDATE {table} SET data = ?, version = ?, updated_at = ? WHERE id = ?",
-        (json.dumps(entity.model_dump()), new_version, now, op.entity_id))
-    _store_op(conn, op, new_version, OperationStatus.SYNCED, inverse)
-
     campaign_id = row["campaign_id"] or ""
     out_events = []
-    for ev in events:
-        event = Event(
-            event_id=uuid.uuid4().hex,
-            type=EventType(ev["type"]),
-            campaign_id=campaign_id,
-            aggregate_id=op.entity_id,
-            aggregate_version=new_version,
-            actor_id=op.user_id,
-            occurred_at=datetime.now(timezone.utc),
-            payload=ev["payload"],
-        )
-        conn.execute(
-            """INSERT INTO events
-               (event_id, campaign_id, aggregate_id, aggregate_version,
-                actor_id, occurred_at, type, payload)
-               VALUES (?,?,?,?,?,?,?,?)""",
-            (event.event_id, event.campaign_id, event.aggregate_id,
-             event.aggregate_version, event.actor_id,
-             event.occurred_at.isoformat(), event.type.value,
-             json.dumps(event.payload)))
-        out_events.append(event)
-    conn.commit()
+    try:
+        cur = conn.execute(
+            f"UPDATE {table} SET data = ?, version = ?, updated_at = ?"
+            " WHERE id = ? AND version = ?",
+            (json.dumps(entity.model_dump()), new_version, now,
+             op.entity_id, row["version"]))
+        if cur.rowcount == 0:
+            raise _ConcurrentUpdate()
+        _store_op(conn, op, new_version, OperationStatus.SYNCED, inverse)
+        for ev in events:
+            event = Event(
+                event_id=uuid.uuid4().hex,
+                type=EventType(ev["type"]),
+                campaign_id=campaign_id,
+                aggregate_id=op.entity_id,
+                aggregate_version=new_version,
+                actor_id=op.user_id,
+                occurred_at=datetime.now(timezone.utc),
+                payload=ev["payload"],
+            )
+            conn.execute(
+                """INSERT INTO events
+                   (event_id, campaign_id, aggregate_id, aggregate_version,
+                    actor_id, occurred_at, type, payload)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (event.event_id, event.campaign_id, event.aggregate_id,
+                 event.aggregate_version, event.actor_id,
+                 event.occurred_at.isoformat(), event.type.value,
+                 json.dumps(event.payload)))
+            out_events.append(event)
+        conn.commit()
+    except _ConcurrentUpdate:
+        conn.rollback()
+        cur_v = _current_version(conn, op.entity_id, op.entity_kind)
+        _store_op(conn, op, cur_v, OperationStatus.CONFLICT, None)
+        conn.commit()
+        raise HTTPException(409, {
+            "error": "version conflict",
+            "expected": cur_v, "got": op.entity_version}) from None
+    except Exception:
+        conn.rollback()
+        raise
 
     return {"operation_id": op.operation_id, "duplicate": False,
             "version": new_version, "status": "synced",
@@ -435,6 +474,13 @@ async def undo(operation_id: str):
         (operation_id,)).fetchone()
     if op_row is None or not op_row["inverse"]:
         raise HTTPException(404, "operation not found or not reversible")
+    # doble-undo: si ya existe una op que revirtió esta, aplicar la
+    # inversa otra vez curaría/dañaría dos veces
+    if conn.execute(
+            """SELECT 1 FROM operations WHERE entity_id = ?
+               AND json_extract(payload, '$._undoes') = ?""",
+            (op_row["entity_id"], operation_id)).fetchone():
+        raise HTTPException(409, "operation already undone")
     inv = json.loads(op_row["inverse"])
     entity_kind = "combat" if conn.execute(
         "SELECT 1 FROM combats WHERE id = ?",
@@ -448,7 +494,9 @@ async def undo(operation_id: str):
         user_id=op_row["user_id"],
         operation_type=inv["operation_type"],
         entity_kind=entity_kind,
-        payload=inv["payload"],
+        # el marcador _undoes identifica esta op como la reversión de
+        # operation_id — los handlers ignoran claves extra del payload
+        payload={**inv["payload"], "_undoes": operation_id},
     )
     return await apply(inverse_op)
 

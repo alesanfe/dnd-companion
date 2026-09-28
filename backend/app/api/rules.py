@@ -95,7 +95,9 @@ def _fts_query(question: str) -> str:
             "of", "how", "what", "is", "does", "do", "can", "i", "my"}
     terms = [t.strip("¿?¡!.,;:()\"'") for t in question.lower().split()]
     terms = [t for t in terms if len(t) > 2 and t not in stop]
-    return " OR ".join(terms) if terms else '""'
+    # cada término va entre comillas: un * o NEAR sin sanear rompería
+    # el MATCH con OperationalError (mismo patrón que content._fts_query)
+    return " OR ".join(f'"{t}"' for t in terms) if terms else '""'
 
 
 def _rule_text(data: dict) -> str:

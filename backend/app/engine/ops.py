@@ -218,8 +218,9 @@ def condition_apply(char: Character, p: dict, ctx):
     # target 'condition:<nombre>' o 'condition:*' (la inversa de
     # condition.remove lleva force=True para que deshacer sea fiel)
     if not p.get("force") and _immune_to(char, cond):
-        return {"operation_type": "character.condition.remove",
-                "payload": {"condition": cond}}, [
+        # inversa noop: deshacer un apply que no aplicó no debe
+        # quitar una condición que ya estuviera
+        return {"operation_type": "noop", "payload": {}}, [
             {"type": "character.condition.immune",
              "payload": {"condition": cond}}]
     if delta is not None and delta < 0 and \
@@ -272,6 +273,12 @@ def _shrink_condition(char: Character, cond: str, delta: int) -> None:
 @op("character.condition.remove")
 def condition_remove(char: Character, p: dict, ctx):
     cond = p["condition"]
+    if cond not in char.conditions \
+            and cond not in char.condition_stacks \
+            and cond not in char.condition_durations:
+        # quitar una condición ausente es no-op; si la inversa fuese
+        # condition.apply, deshacer crearía una condición fantasma
+        return {"operation_type": "noop", "payload": {}}, []
     had_rounds = char.condition_durations.get(cond)
     had_stacks = char.condition_stacks.get(cond)
     inv = {"operation_type": "character.condition.apply",
@@ -342,8 +349,11 @@ def slot_use(char: Character, p: dict, ctx):
     count = int(p.get("count", 1))
     pool = _slots_for(char, lvl, p.get("pool"))
     slot = pool.setdefault(lvl, {"total": 0, "used": 0})
+    # la inversa guarda el pool RESUELTO — si pact_slots cambia entre
+    # la op y su undo, re-resolver 'None' podría caer en otro pool
+    resolved_pool = "pact" if pool is char.pact_slots else "regular"
     inv = {"operation_type": "character.spell_slot.restore",
-           "payload": {"level": int(lvl), "pool": p.get("pool"),
+           "payload": {"level": int(lvl), "pool": resolved_pool,
                        "count": min(count, slot["total"] - slot["used"])}}
     slot["used"] = min(slot["total"], slot["used"] + count)
     return inv, [{"type": "resource.usage.changed",
@@ -358,11 +368,14 @@ def slot_restore(char: Character, p: dict, ctx):
     arcana, descanso, corrección manual). Reversible."""
     lvl = str(p["level"])
     count = int(p.get("count", 1))
-    slot = _slots_for(char, lvl, p.get("pool")).get(lvl)
+    pool = _slots_for(char, lvl, p.get("pool"))
+    slot = pool.get(lvl)
     if not slot or slot["used"] <= 0:
         raise ValueError("nada que recuperar")
     inv = {"operation_type": "character.spell_slot.use",
-           "payload": {"level": int(lvl), "pool": p.get("pool"),
+           "payload": {"level": int(lvl),
+                       "pool": "pact" if pool is char.pact_slots
+                               else "regular",
                        "count": min(count, slot["used"])}}
     slot["used"] = max(0, slot["used"] - count)
     return inv, [{"type": "resource.usage.changed",
@@ -417,6 +430,12 @@ def rest_long(char: Character, p: dict, ctx):
     before = char.model_dump()
     char.hp.current = char.hp.max
     char.hp.temp = 0
+    # levantarse a PG máximos limpia el estado de muerte — como hp_heal
+    char.death_saves = {"success": 0, "fail": 0}
+    for dead in ("muerto", "estable"):
+        if dead in char.conditions:
+            char.conditions.remove(dead)
+        char.condition_durations.pop(dead, None)
     for slot in char.spell_slots.values():
         slot["used"] = 0
     for slot in char.pact_slots.values():
@@ -735,7 +754,14 @@ def inventory_add(char: Character, p: dict, ctx):
         source_id=p.get("source_id"),
         weight=float(weight or 0),
     )
-    char.inventory.append(item)
+    # si el id ya existe (p.ej. undo de un remove parcial) se fusiona
+    # la cantidad — duplicar el id rompería las búsquedas por item_id
+    existing = next((i for i in char.inventory if i.id == item.id), None)
+    if existing is not None:
+        existing.quantity += item.quantity
+        item = existing
+    else:
+        char.inventory.append(item)
     return {"operation_type": "character.inventory.remove",
             "payload": {"item_id": item.id, "quantity": item.quantity}}, [
         {"type": "inventory.item.transferred",
@@ -922,6 +948,10 @@ def spell_cast(char: Character, p: dict, ctx):
     spell_id = p["spell_id"]
     sp = _content(ctx, spell_id) or {}
     level, spell_level = _cast_level(sp, int(p.get("level", 0)))
+    # si el PJ tiene lista de conjuros conocidos, se lanza de ahí
+    # (la lista vacía = permisivo: fuentes externas, dm fiat…)
+    if char.spells_known and spell_id not in char.spells_known:
+        raise ValueError("conjuro no conocido")
     # clases que preparan: solo se lanzan conjuros preparados
     # (la lista vacía = lanzador "conocido" como brujo/hechicero)
     if (spell_level > 0 and char.spells_prepared
@@ -1132,6 +1162,14 @@ def asi_apply(char: Character, p: dict, ctx):
         raise ValueError("+1 a cada una: amount=1 con dos características")
     if not a2 and amount not in (1, 2):
         raise ValueError("la mejora es +1 o +2")
+    cost = amount * (2 if a2 else 1)
+    if ctx is not None:
+        # sin contexto (tests unitarios) no se puede consultar la
+        # content DB — la API siempre pasa ctx y aquí se valida
+        from ..domain.classinfo import asi_earned
+        if char.asi_used + cost > asi_earned(char, ctx.content_db()):
+            raise ValueError(
+                "sin mejoras de característica disponibles")
     before = char.asi_used
     inv = {"operation_type": "character.state.restore",
            "payload": {"data": char.model_dump()}}
@@ -1142,7 +1180,7 @@ def asi_apply(char: Character, p: dict, ctx):
         key = _AL.get(ab.lower(), ab.lower())
         setattr(char.abilities, key,
                 min(30, getattr(char.abilities, key) + amount))
-    char.asi_used += amount * (2 if a2 else 1)  # +1+1 = 2 puntos
+    char.asi_used += cost                  # +1+1 = 2 puntos
     return inv, [{"type": "resource.usage.changed",
                   "payload": {"asi": {"ability": a1, "ability2": a2,
                                       "amount": amount,
@@ -1153,6 +1191,11 @@ def asi_apply(char: Character, p: dict, ctx):
 @op("character.asi.spent")
 def asi_spent(char: Character, p: dict, ctx):
     """Marca una mejora como gastada al elegir una dote en su lugar."""
+    if ctx is not None:
+        from ..domain.classinfo import asi_earned
+        if char.asi_used + 2 > asi_earned(char, ctx.content_db()):
+            raise ValueError(
+                "sin mejoras de característica disponibles")
     inv = {"operation_type": "character.state.restore",
            "payload": {"data": char.model_dump()}}
     char.asi_used += 2                     # una dote = una mejora (+2)
@@ -1444,6 +1487,9 @@ def feat_learn(char: Character, p: dict, ctx):
     fid = p["feat_id"]
     if fid in char.feats_known:
         raise ValueError("dote ya conocida")
+    # snapshot: la dote puede subir características (ASI fija) —
+    # feat.forget como inversa no revertiría esos puntos
+    inv = _restore_inverse(char.model_dump())
     char.feats_known.append(fid)
     # Dotes con mejora fija de característica (5etools ability:[{str:1}])
     asi = []
@@ -1457,8 +1503,7 @@ def feat_learn(char: Character, p: dict, ctx):
                     setattr(char.abilities, attr,
                             getattr(char.abilities, attr) + v)
                     asi.append(f"{k} +{v}")
-    return {"operation_type": "character.feat.forget",
-            "payload": {"feat_id": fid}}, [
+    return inv, [
         {"type": "resource.usage.changed",
          "payload": {"feat_learned": fid,
                      **({"asi": asi} if asi else {})}}]
@@ -1709,6 +1754,13 @@ def _run_trigger(char: Character, trigger: Trigger) -> None:
     """Aplica los Effect con este trigger (p.ej. 'regain ki on short rest')."""
     from .engine import apply_triggered
     apply_triggered(char, trigger)
+
+
+@op("noop")
+def noop(entity, p: dict, ctx):
+    """Inversa de operaciones sin efecto (condición inmune, remove
+    sobre ausente, tiradas puras)."""
+    return {"operation_type": "noop", "payload": {}}, []
 
 
 def apply_operation(char: Character, operation_type: str,

@@ -357,25 +357,31 @@ def create_homebrew(body: HomebrewIn):
     import uuid
     from datetime import datetime, timezone
     conn = content_db()
-    conn.execute(
-        """INSERT OR IGNORE INTO content_sources
-           (id, name, license, imported_at, distribution_allowed)
-           VALUES ('homebrew', 'Contenido homebrew del usuario',
-                   'user-created', ?, 1)""",
-        (datetime.now(timezone.utc).isoformat(),))
     eid = f"homebrew:{uuid.uuid4().hex[:12]}"
     data = {**body.data, "name": body.name, "index": eid.split(":")[-1]}
-    conn.execute(
-        """INSERT INTO content_entities
-           (id, entity_type, name, ruleset, source_id, license,
-            is_redistributable, data)
-           VALUES (?,?,?,?, 'homebrew', ?, ?, ?)""",
-        (eid, body.entity_type, body.name, body.ruleset, body.license,
-         int(body.redistributable), json.dumps(data, ensure_ascii=False)))
-    conn.execute(
-        "INSERT INTO content_fts (entity_id, name, body) VALUES (?,?,?)",
-        (eid, body.name, json.dumps(data, ensure_ascii=False)))
-    conn.commit()
+    try:
+        conn.execute(
+            """INSERT OR IGNORE INTO content_sources
+               (id, name, license, imported_at, distribution_allowed)
+               VALUES ('homebrew', 'Contenido homebrew del usuario',
+                       'user-created', ?, 1)""",
+            (datetime.now(timezone.utc).isoformat(),))
+        conn.execute(
+            """INSERT INTO content_entities
+               (id, entity_type, name, ruleset, source_id, license,
+                is_redistributable, data)
+               VALUES (?,?,?,?, 'homebrew', ?, ?, ?)""",
+            (eid, body.entity_type, body.name, body.ruleset, body.license,
+             int(body.redistributable),
+             json.dumps(data, ensure_ascii=False)))
+        conn.execute(
+            "INSERT INTO content_fts (entity_id, name, body) "
+            "VALUES (?,?,?)",
+            (eid, body.name, json.dumps(data, ensure_ascii=False)))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     return {"id": eid}
 
 

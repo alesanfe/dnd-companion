@@ -922,6 +922,40 @@ def test_award_xp_splits_fallen_monsters_between_pcs():
     assert xp == 50
 
 
+def test_campaign_state_redacts_combat_hp_for_players():
+    """El resync /state servía el combate crudo: PG exactos y stat
+    blocks de monstruos. Para jugadores se redacta igual que la vista
+    reveal_hp=0; para el DM queda íntegro."""
+    owner = _auth_headers(f"cs{uuid.uuid4().hex[:8]}")
+    player = _auth_headers(f"ct{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    code = client.get(f"/api/campaigns/{camp['id']}",
+                      headers=owner).json()["invite_code"]
+    client.post("/api/campaigns/join",
+                json={"invite_code": code}, headers=player)
+    comb = client.post("/api/combat", json={
+        "name": "X", "campaign_id": camp["id"]}, headers=owner).json()
+    ver = client.get(f"/api/combat/{comb['id']}",
+                     headers=owner).json()["version"]
+    client.post("/api/operations", json={
+        "operation_id": uuid.uuid4().hex, "entity_id": comb["id"],
+        "entity_version": ver, "client_id": "c", "user_id": "u",
+        "entity_kind": "combat", "operation_type": "combatant.add",
+        "payload": {"kind": "monster", "name": "orco", "hp_max": 15,
+                    "stat_block": {"cr": 0.25, "hp": 15, "ac": 13}}},
+        headers=owner)
+    st_p = client.get(f"/api/campaigns/{camp['id']}/state",
+                      headers=player).json()
+    cmb_p = st_p["combats"][0]["data"]["combatants"][0]
+    assert cmb_p["hp_current"] is None and cmb_p["stat_block"] is None
+    assert cmb_p["hp_state"] is not None
+    st_o = client.get(f"/api/campaigns/{camp['id']}/state",
+                      headers=owner).json()
+    cmb_o = st_o["combats"][0]["data"]["combatants"][0]
+    assert cmb_o["hp_current"] == 15 and cmb_o["stat_block"]["cr"] == 0.25
+
+
 def test_split_loot_shares_treasure_dm_only():
     """split-loot reparte el tesoro entre las fichas como ops
     currency.earn; resto redondeado a las primeras. DM-only con owner."""

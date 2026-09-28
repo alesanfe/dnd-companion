@@ -361,14 +361,28 @@ def campaign_state(campaign_id: str,
     combats = conn.execute(
         "SELECT id, name, version, data FROM combats WHERE campaign_id = ?",
         (campaign_id,)).fetchall()
+    # vista de jugador en el resync: los PG exactos y los stat blocks
+    # son del DM — misma redacción que GET /api/combat/{id}?reveal_hp=0
+    from ..domain.combat import Combat, hp_state
+    combats_out = []
+    for cb in combats:
+        data = json.loads(cb["data"])
+        if not is_dm:
+            combat = Combat(**data)
+            data = combat.model_dump()
+            for i, c in enumerate(combat.combatants):
+                data["combatants"][i]["hp_state"] = hp_state(c)
+                for k in ("hp_current", "hp_max", "hp_temp",
+                          "stat_block"):
+                    data["combatants"][i][k] = None
+        combats_out.append({**dict(cb), "data": data})
     events = conn.execute(
         "SELECT * FROM events WHERE campaign_id = ? "
         "ORDER BY occurred_at DESC LIMIT 50", (campaign_id,)).fetchall()
     return {
         "characters": [{**dict(c), "data": json.loads(c["data"])}
                        for c in chars],
-        "combats": [{**dict(c), "data": json.loads(c["data"])}
-                    for c in combats],
+        "combats": combats_out,
         "events": [dict(e) for e in events
                    if is_dm or not _ev_is_dm(e)],
         # presencia actual en la sala WS (resync tras reconexión)

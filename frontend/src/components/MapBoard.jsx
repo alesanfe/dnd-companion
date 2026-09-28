@@ -97,7 +97,7 @@ export default function MapBoard({ campaign, size = CELL,
       const k = `${x},${y}`
       save({ ...d, fog: d.fog.includes(k)
         ? d.fog.filter((f) => f !== k) : [...d.fog, k] })
-    } else if (mode === 'mark') {
+    } else if (mode === 'mark' || mode === 'blast') {
       const k = `${x},${y}`
       const marks = { ...d.marks }
       if (marks[k] === markColor) delete marks[k]
@@ -193,7 +193,8 @@ export default function MapBoard({ campaign, size = CELL,
      cubre (o limpia, si la celda ancla ya lo estaba) el
      rectángulo entero */
   const onSvgDown = (e) => {
-    if (readOnly || (mode !== 'fog' && mode !== 'mark')) return
+    if (readOnly || (mode !== 'fog' && mode !== 'mark' &&
+                     mode !== 'blast')) return
     const [x, y] = cellAt(e)
     if (x < 0 || y < 0 || x >= d.cols || y >= d.rows) return
     setDrag({ a: [x, y], b: [x, y], kind: mode })
@@ -213,11 +214,23 @@ export default function MapBoard({ campaign, size = CELL,
     if (!drag) return
     const [x1, y1] = drag.a, [x2, y2] = drag.b
     if (x1 !== x2 || y1 !== y2) {
-      const [xa, xb] = [Math.min(x1, x2), Math.max(x1, x2)]
-      const [ya, yb] = [Math.min(y1, y2), Math.max(y1, y2)]
-      const keys = []
-      for (let y = ya; y <= yb; y++)
-        for (let x = xa; x <= xb; x++) keys.push(`${x},${y}`)
+      let keys
+      if (drag.kind === 'blast') {
+        // plantilla circular: el radio en casillas desde el ancla —
+        // bola de fuego 20 ft = 4 casillas de 5 ft
+        const rad = Math.hypot(x2 - x1, y2 - y1) + .5
+        keys = []
+        for (let y = Math.floor(y1 - rad); y <= Math.ceil(y1 + rad); y++)
+          for (let x = Math.floor(x1 - rad); x <= Math.ceil(x1 + rad); x++)
+            if (Math.hypot(x - x1, y - y1) <= rad)
+              keys.push(`${x},${y}`)
+      } else {
+        const [xa, xb] = [Math.min(x1, x2), Math.max(x1, x2)]
+        const [ya, yb] = [Math.min(y1, y2), Math.max(y1, y2)]
+        keys = []
+        for (let y = ya; y <= yb; y++)
+          for (let x = xa; x <= xb; x++) keys.push(`${x},${y}`)
+      }
       if (drag.kind === 'fog') {
         const clearing = d.fog.includes(`${x1},${y1}`)
         const fog = clearing
@@ -315,6 +328,7 @@ export default function MapBoard({ campaign, size = CELL,
             <option value="move">{t('map.modeMove')}</option>
             <option value="fog">{t('map.modeFog')}</option>
             <option value="mark">{t('map.modeMark')}</option>
+            <option value="blast">{t('map.modeBlast')}</option>
             <option value="pin">{t('map.modePin')}</option>
           </select>
           {mode === 'pin' && (
@@ -325,7 +339,7 @@ export default function MapBoard({ campaign, size = CELL,
                 .map((e) => (
                   <option key={e.id} value={e.id}>{e.name}</option>))}
             </select>)}
-          {mode === 'mark' && (
+          {(mode === 'mark' || mode === 'blast') && (
             <span className="row" style={{ gap: 2 }}>
               {MARK_COLORS.map((col) => (
                 <button key={col} className="ghost"
@@ -340,7 +354,8 @@ export default function MapBoard({ campaign, size = CELL,
             <button className="ghost"
                     onClick={() => save({ ...d, fog: [] })}>
               {t('map.clearFog')}</button>)}
-          {mode === 'mark' && Object.keys(d.marks).length > 0 && (
+          {(mode === 'mark' || mode === 'blast') &&
+              Object.keys(d.marks).length > 0 && (
             <button className="ghost"
                     onClick={() => save({ ...d, marks: {} })}>
               {t('map.clearMarks')}</button>)}
@@ -504,9 +519,16 @@ export default function MapBoard({ campaign, size = CELL,
                   fill="none" stroke="#4da3ff" strokeWidth="2"
                   strokeDasharray="6 4" opacity=".6" />)}
 
-        {/* preview del rectángulo de niebla/zona al arrastrar */}
-        {drag && (
-          <rect x={Math.min(drag.a[0], drag.b[0]) * size}
+        {/* preview del área al arrastrar: rect para niebla/zona,
+            círculo para la plantilla de explosión */}
+        {drag && (drag.kind === 'blast'
+          ? <circle cx={(drag.a[0] + .5) * size}
+                    cy={(drag.a[1] + .5) * size}
+                    r={(Math.hypot(drag.b[0] - drag.a[0],
+                                   drag.b[1] - drag.a[1]) + .5) * size}
+                    fill={markColor} opacity=".35"
+                    pointerEvents="none" />
+          : <rect x={Math.min(drag.a[0], drag.b[0]) * size}
                 y={Math.min(drag.a[1], drag.b[1]) * size}
                 width={(Math.abs(drag.b[0] - drag.a[0]) + 1) * size}
                 height={(Math.abs(drag.b[1] - drag.a[1]) + 1) * size}

@@ -233,7 +233,8 @@ export default function MapBoard({ campaign, size = CELL,
      rectángulo entero */
   const onSvgDown = (e) => {
     if (readOnly || (mode !== 'fog' && mode !== 'mark' &&
-                     mode !== 'blast' && mode !== 'cone')) return
+                     mode !== 'blast' && mode !== 'cone' &&
+                     mode !== 'line')) return
     const [x, y] = cellAt(e)
     if (x < 0 || y < 0 || x >= d.cols || y >= d.rows) return
     setDrag({ a: [x, y], b: [x, y], kind: mode })
@@ -280,6 +281,17 @@ export default function MapBoard({ campaign, size = CELL,
             while (da < -Math.PI) da += 2 * Math.PI
             if (Math.abs(da) <= half + .02) keys.push(`${xx},${yy}`)
           }
+      } else if (drag.kind === 'line') {
+        // línea 5e (relámpago, aliento lineal): supercover — toda celda
+        // que atraviesa el segmento ancla→borde
+        keys = []
+        const steps = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1), 1)
+        for (let s = 0; s <= steps; s++) {
+          const tx = x1 + (x2 - x1) * s / steps
+          const ty = y1 + (y2 - y1) * s / steps
+          const kx = Math.round(tx), ky = Math.round(ty)
+          if (!keys.includes(`${kx},${ky}`)) keys.push(`${kx},${ky}`)
+        }
       } else {
         const [xa, xb] = [Math.min(x1, x2), Math.max(x1, x2)]
         const [ya, yb] = [Math.min(y1, y2), Math.max(y1, y2)]
@@ -389,6 +401,7 @@ export default function MapBoard({ campaign, size = CELL,
             <option value="mark">{t('map.modeMark')}</option>
             <option value="blast">{t('map.modeBlast')}</option>
             <option value="cone">{t('map.modeCone')}</option>
+            <option value="line">{t('map.modeLine')}</option>
             <option value="wall">{t('map.modeWall')}</option>
             <option value="pin">{t('map.modePin')}</option>
           </select>
@@ -400,7 +413,8 @@ export default function MapBoard({ campaign, size = CELL,
                 .map((e) => (
                   <option key={e.id} value={e.id}>{e.name}</option>))}
             </select>)}
-          {(mode === 'mark' || mode === 'blast' || mode === 'cone') && (
+          {(mode === 'mark' || mode === 'blast' || mode === 'cone' ||
+            mode === 'line') && (
             <span className="row" style={{ gap: 2 }}>
               {MARK_COLORS.map((col) => (
                 <button key={col} className="ghost"
@@ -419,7 +433,8 @@ export default function MapBoard({ campaign, size = CELL,
             <button className="ghost"
                     onClick={() => save({ ...d, walls: [] })}>
               {t('map.clearWalls')}</button>)}
-          {(mode === 'mark' || mode === 'blast' || mode === 'cone') &&
+          {(mode === 'mark' || mode === 'blast' || mode === 'cone' ||
+            mode === 'line') &&
               Object.keys(d.marks).length > 0 && (
             <button className="ghost"
                     onClick={() => save({ ...d, marks: {} })}>
@@ -607,7 +622,14 @@ export default function MapBoard({ campaign, size = CELL,
 
         {/* preview del área al arrastrar: rect para niebla/zona,
             círculo para la plantilla de explosión */}
-        {drag && (drag.kind === 'cone'
+        {drag && (drag.kind === 'line'
+          ? <line x1={(drag.a[0] + .5) * size}
+                  y1={(drag.a[1] + .5) * size}
+                  x2={(drag.b[0] + .5) * size}
+                  y2={(drag.b[1] + .5) * size}
+                  stroke={markColor} strokeWidth={size * .35}
+                  opacity=".35" pointerEvents="none" />
+          : drag.kind === 'cone'
           ? <polygon
               points={(() => {
                 const ax = (drag.a[0] + .5) * size

@@ -136,8 +136,75 @@ export default function Settings() {
         <SyncConflicts />
       </section>
 
+      <PushCard user={user} />
       <PackagesCard />
     </main>
+  )
+}
+
+/** Notificaciones push PWA: suscripción Web Push por dispositivo —
+    el roll-request del DM llega con la app cerrada (VAPID). */
+function PushCard({ user }) {
+  const { t } = useT()
+  const [status, setStatus] = useState('idle')   // idle|on|off|denied
+  const [msg, setMsg] = useState(null)
+  useEffect(() => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setStatus('off'); return
+    }
+    navigator.serviceWorker.ready
+      .then((r) => r.pushManager.getSubscription())
+      .then((s) => setStatus(s ? 'on' : 'idle'))
+      .catch(() => setStatus('off'))
+  }, [])
+
+  const urlB64 = (s) =>
+    Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')),
+                   (c) => c.charCodeAt(0))
+
+  const subscribe = async () => {
+    try {
+      const perm = await Notification.requestPermission()
+      if (perm !== 'granted') { setStatus('denied'); return }
+      const { public_key } = await api.vapidKey()
+      const reg = await navigator.serviceWorker.ready
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlB64(public_key),
+      })
+      await api.pushSubscribe(sub)
+      setStatus('on'); setMsg('✓')
+    } catch (e) { setMsg(`⚠ ${e.message}`) }
+  }
+  const unsubscribe = async () => {
+    try {
+      const reg = await navigator.serviceWorker.ready
+      const sub = await reg.pushManager.getSubscription()
+      if (sub) {
+        await api.pushUnsubscribe(sub.endpoint).catch(() => {})
+        await sub.unsubscribe()
+      }
+      setStatus('idle')
+    } catch (e) { setMsg(`⚠ ${e.message}`) }
+  }
+
+  if (status === 'off') return null
+  return (
+    <section className="card">
+      <h2>{t('push.title')}</h2>
+      <p className="muted" style={{ fontSize: '.85rem' }}>
+        {t('push.hint')}</p>
+      {status === 'denied' && (
+        <p className="muted" role="alert">{t('push.denied')}</p>)}
+      {status !== 'on'
+        ? <button disabled={!user}
+                  title={!user ? t('push.needAccount') : undefined}
+                  onClick={subscribe}>{t('push.enable')}</button>
+        : <button className="ghost"
+                  onClick={unsubscribe}>{t('push.disable')}</button>}
+      {!user && <p className="muted">{t('push.needAccount')}</p>}
+      {msg && <p className="muted" role="status">{msg}</p>}
+    </section>
   )
 }
 

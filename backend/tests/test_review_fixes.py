@@ -1139,6 +1139,30 @@ def test_packages_install_deps_and_uninstall():
     assert client.delete("/api/packages/srd:2014").status_code == 404
 
 
+def test_export_vtt_includes_scenes():
+    """El export VTT lleva el estado táctico: grid, muros, niebla,
+    tokens con visión/luz — no solo actores y combates."""
+    owner = _auth_headers(f"v{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    client.post(f"/api/campaigns/{camp['id']}/entities", json={
+        "kind": "map", "name": "Mazmorra", "visibility": "public",
+        "data": {"cols": 8, "rows": 6, "cell_ft": 5,
+                 "walls": ["3,3,E"], "fog": ["1,1"],
+                 "tokens": [{"id": "t1", "name": "Mago", "x": 2, "y": 2,
+                             "size": 1, "vision_ft": 60,
+                             "light_ft": 20}]}}, headers=owner)
+    r = client.get(f"/api/campaigns/{camp['id']}/export-vtt",
+                   headers=owner)
+    assert r.status_code == 200
+    sc = r.json()["scenes"]
+    assert len(sc) == 1
+    m = sc[0]
+    assert m["walls"] == ["3,3,E"] and m["fog"] == ["1,1"]
+    tk = m["tokens"][0]
+    assert tk["vision_ft"] == 60 and tk["light_ft"] == 20
+
+
 def test_present_only_dm_and_public():
     """'Mostrar al grupo': solo el DM proyecta, solo entidades
     públicas — una nota oculta no debe llegar al modal de nadie."""

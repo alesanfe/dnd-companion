@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api } from '../api.js'
 import { campaignSocket } from '../ws.js'
 import { useT } from '../i18n.jsx'
 import MapBoard from '../components/MapBoard.jsx'
+import VoiceChat from '../components/VoiceChat.jsx'
 import WikiText from '../components/WikiText.jsx'
 import { currentUser } from '../session.js'
 
@@ -28,6 +29,8 @@ export default function CampaignBoard() {
   const [presence, setPresence] = useState([]) // quién está en la sala
   const [ping, setPing] = useState(null)       // ping de mapa en vivo
   const [presented, setPresented] = useState(null) // entidad proyectada
+  const [rtcMsg, setRtcMsg] = useState(null)   // señal WebRTC entrante
+  const sockRef = useRef(null)
   const me = currentUser() // para el botón "reclamar ficha"
   // el formulario de unirse solo ocupa espacio si todavía no estás dentro
   const [joined, setJoined] = useState(
@@ -114,9 +117,13 @@ export default function CampaignBoard() {
         if (ev?.type === 'campaign.presence') {
           setPresence(ev.payload?.members || [])
         }
+        if (ev?.type === 'rtc.signal') {
+          setRtcMsg({ ...ev, k: Date.now() })
+        }
       },
     })
-    return () => sock.close()
+    sockRef.current = sock
+    return () => { sockRef.current = null; sock.close() }
   }, [id])
 
   // deep-link desde el omnibox o un wiki-link: /campaign/:id#ent-<id>
@@ -176,16 +183,21 @@ export default function CampaignBoard() {
         <p className="muted">
           {camp.ruleset ? t(`ruleset.${camp.ruleset}`) : ''}
           {' · '}{t('ses.invite')}: <code>{camp.invite_code}</code></p>)}
-      {/* presencia estilo Discord: quién está en la sala ahora */}
-      {presence.length > 0 && (
-        <p className="muted">
+      {/* presencia estilo Discord: quién está en la sala ahora +
+          botón de voz P2P sobre la señalización de la sala */}
+      {(presence.length > 0 || me?.user_id) && (
+        <p className="muted" style={{ display: 'flex',
+                                     alignItems: 'center', gap: 6 }}>
           🟢 {t('camp.online')}: {presence.map((m) =>
             m.count
               ? `+${m.count} ${t('camp.guests')}`
               : m.name +
                 (['owner', 'dm', 'co_dm'].includes(m.role)
                   ? ` (${t('camp.roleDm')})` : '')
-          ).join(' · ')}</p>)}
+          ).join(' · ')}
+          <VoiceChat sock={sockRef} me={me?.user_id}
+                     presence={presence} rtcMsg={rtcMsg} />
+        </p>)}
       {err && <p className="error">{err}</p>}
 
       {/* peticiones de tirada del DM para mis personajes */}

@@ -1055,12 +1055,41 @@ def export_vtt(campaign_id: str,
         combats_out.append(cbt)
         actors.extend(cbt["combatants"])
 
+    # escenas/mapa: el estado táctico completo (grid, niebla, muros,
+    # luz, plantillas) para que otro VTT reconstruya el tablero
+    scenes = []
+    for r in conn.execute(
+            """SELECT name, data FROM campaign_entities
+               WHERE campaign_id = ? AND kind = 'map'""",
+            (campaign_id,)).fetchall():
+        d = json.loads(r["data"])
+        scenes.append({
+            "name": r["name"],
+            "cols": d.get("cols"), "rows": d.get("rows"),
+            "cell_ft": d.get("cell_ft"),
+            "background_image": d.get("image_url"),
+            "ambient_music": d.get("music_url"),
+            "fog": d.get("fog") or [],
+            "walls": d.get("walls") or [],
+            "marks": d.get("marks") or {},
+            "pins": d.get("pins") or [],
+            "tokens": [{
+                "name": tk.get("name"), "x": tk.get("x"), "y": tk.get("y"),
+                "size": tk.get("size", 1), "color": tk.get("color"),
+                "hp": tk.get("hp"), "hp_max": tk.get("max_hp"),
+                "vision_ft": tk.get("vision_ft"),
+                "light_ft": tk.get("light_ft"),
+                "actor_ref": tk.get("ref_id"),
+            } for tk in d.get("tokens", [])],
+        })
+
     return {
         "format": "vtt-generic",
-        "format_version": 1,
+        "format_version": 2,
         "campaign": dict(camp),
         "actors": actors,
         "combats": combats_out,
+        "scenes": scenes,
     }
 
 
@@ -1111,6 +1140,17 @@ async def request_roll(campaign_id: str, body: RollRequestIn,
          json.dumps(event.payload)))
     conn.commit()
     await manager.broadcast(campaign_id, event)
+    # push PWA al dueño de la ficha — le llega aunque tenga la app
+    # cerrada (móvil en bolsillo antes de la sesión)
+    prow = conn.execute(
+        "SELECT player_id FROM characters WHERE id = ?",
+        (body.character_id,)).fetchone()
+    if prow and prow["player_id"]:
+        from .push import send_push
+        send_push(prow["player_id"],
+                  "Tirada solicitada",
+                  f"{body.reason or body.expression}",
+                  url=f"/campaign/{campaign_id}")
     return {"event_id": event.event_id}
 
 

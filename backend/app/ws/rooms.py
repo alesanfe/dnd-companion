@@ -67,20 +67,35 @@ class RoomManager:
         for ws in dead:
             self.leave(campaign_id, ws)
 
+    async def send_to(self, campaign_id: str, uid: str,
+                      data: dict) -> None:
+        """Entrega dirigida exacta (señalización WebRTC) — solo el
+        socket(s) de ese uid; ni broadcast ni DMs."""
+        room = self._rooms.get(campaign_id, {})
+        text = json.dumps(data)
+        for ws, info in room.items():
+            if isinstance(info, tuple) and len(info) > 2 and \
+                    info[2] == uid:
+                try:
+                    await ws.send_text(text)
+                except Exception:
+                    self.leave(campaign_id, ws)
+
     def present(self, campaign_id: str) -> list[dict]:
         """Miembros conectados ahora mismo — lista estilo Discord:
         nombres únicos con su rol + nº de invitados sin cuenta."""
         room = self._rooms.get(campaign_id, {})
-        seen: dict[str, str] = {}
+        seen: dict[str, tuple[str, str | None]] = {}
         guests = 0
         for info in room.values():
-            role, name = (info[0], info[1]) \
-                if isinstance(info, tuple) else (info, None)
+            role, name, uid = (info[0], info[1], info[2]) \
+                if isinstance(info, tuple) else (info, None, None)
             if name:
-                seen.setdefault(name, role)
+                seen.setdefault(name, (role, uid))
             else:
                 guests += 1
-        out = [{"name": n, "role": r} for n, r in seen.items()]
+        out = [{"name": n, "role": r, "uid": u}
+               for n, (r, u) in seen.items()]
         if guests:
             out.append({"name": "local", "role": "local",
                         "count": guests})

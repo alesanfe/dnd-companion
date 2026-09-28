@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api import (
     auth, campaigns, characters, combat, content, dice, encounters,
-    inventory, operations, packages, rules,
+    inventory, operations, packages, push, rules,
 )
 from .api.operations import OperationIn, apply_to_store, \
     _entity_campaign
@@ -36,6 +36,7 @@ app.include_router(auth.router)
 app.include_router(packages.router)
 app.include_router(rules.router)
 app.include_router(dice.router)
+app.include_router(push.router)
 
 
 @app.get("/api/health")
@@ -151,6 +152,15 @@ async def _dispatch_ws(websocket: WebSocket, campaign_id: str,
             "type": "typing",
             "from": name or str(msg.get("from", "?"))[:80]},
             exclude=websocket)
+        return
+    # señalización WebRTC (voz de mesa): {to: uid, data: sdp/ice} —
+    # relay dirigido; el servidor no toca el SDP
+    if msg.get("type") == "rtc.signal":
+        target = str(msg.get("to") or "")[:80]
+        if target and resolved:
+            await manager.send_to(campaign_id, target, {
+                "type": "rtc.signal", "from": resolved,
+                "from_name": name, "data": msg.get("data")})
         return
     if msg.get("type") != "operation":
         await websocket.send_text(

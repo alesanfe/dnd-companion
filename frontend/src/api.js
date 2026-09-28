@@ -122,6 +122,15 @@ export const api = {
     req(`/api/campaigns/${campaignId}/ping`,
         { method: 'POST',
           body: JSON.stringify({ entity_id: entityId, x, y }) }),
+  vapidKey: () => req('/api/push/vapid-key'),
+  pushSubscribe: (sub) =>
+    // sub.toJSON() = {endpoint, keys:{p256dh,auth}} en base64url
+    // nativo — el formato que pywebpush espera
+    req('/api/push/subscribe', { method: 'POST',
+        body: JSON.stringify(sub.toJSON()) }),
+  pushUnsubscribe: (endpoint) =>
+    req('/api/push/unsubscribe', { method: 'POST',
+        body: JSON.stringify({ endpoint }) }),
   present: (campaignId, entityId) =>
     req(`/api/campaigns/${campaignId}/present`,
         { method: 'POST', body: JSON.stringify({ entity_id }) }),

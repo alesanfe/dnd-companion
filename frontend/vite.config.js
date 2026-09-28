@@ -22,6 +22,8 @@ export default defineConfig({
       workbox: {
         // la ficha debe funcionar sin conexión en la mesa
         navigateFallback: '/index.html',
+        // push notifications (roll-request del DM) — public/push.js
+        importScripts: ['push.js'],
       },
     }),
   ],

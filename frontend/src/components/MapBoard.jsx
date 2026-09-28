@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api.js'
+import { blockedByWall, inCone } from '../mapMath.js'
 import { useT } from '../i18n.jsx'
 import WikiText from './WikiText.jsx'
 
@@ -13,25 +14,7 @@ const DEFAULTS = { cols: 16, rows: 10, cell_ft: 5, tokens: [],
 const cellDist = (x1, y1, x2, y2, ft) =>
   Math.hypot(x2 - x1, y2 - y1) * ft
 
-// segmento (p→q) cruza segmento (a→b)? test de orientación estándar
-const _cross = (o, a, b) =>
-  (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
-const segsCross = (p, q, a, b) => {
-  const d1 = _cross(a, b, p), d2 = _cross(a, b, q)
-  const d3 = _cross(p, q, a), d4 = _cross(p, q, b)
-  return (d1 > 0 && d2 < 0 || d1 < 0 && d2 > 0) &&
-         (d3 > 0 && d4 < 0 || d3 < 0 && d4 > 0)
-}
-// el segmento token→celda cruza algún muro? coordenadas de celda
-const blockedByWall = (walls, x1, y1, x2, y2) =>
-  walls.some((w) => {
-    const [wx, wy, ws] = w.split(',')
-    const X = +wx, Y = +wy
-    const [a, b] = ws === 'E'
-      ? [[X + 1, Y], [X + 1, Y + 1]]
-      : [[X, Y + 1], [X + 1, Y + 1]]
-    return segsCross([x1 + .5, y1 + .5], [x2 + .5, y2 + .5], a, b)
-  })
+
 
 /** Grid táctico estilo Owlbear: varios mapas/escenas por campaña,
     tokens movibles (auto-numeración, PG, renombrar), niebla de
@@ -342,22 +325,14 @@ export default function MapBoard({ campaign, size = CELL,
             if (Math.hypot(x - x1, y - y1) <= rad)
               keys.push(`${x},${y}`)
       } else if (drag.kind === 'cone') {
-        // cono 5e: el ancho igual a la longitud en cada punto —
-        // celda dentro si está a ≤ alcance y a ≤26.6° del eje
+        // cono 5e: ancho = largo en cada punto (53.13°) — inCone en
+        // mapMath (unit-tested)
         const len = Math.hypot(x2 - x1, y2 - y1) + .5
-        const ang = Math.atan2(y2 - y1, x2 - x1)
-        const half = Math.atan(.5)          // 53.13°/2 — cono D&D
         keys = [`${x1},${y1}`]              // el ápice siempre dentro
         const lo = Math.floor(-len), hi = Math.ceil(len)
         for (let yy = y1 + lo; yy <= y1 + hi; yy++)
-          for (let xx = x1 + lo; xx <= x1 + hi; xx++) {
-            const dd = Math.hypot(xx - x1, yy - y1)
-            if (dd < 0.01 || dd > len) continue
-            let da = Math.atan2(yy - y1, xx - x1) - ang
-            while (da > Math.PI) da -= 2 * Math.PI
-            while (da < -Math.PI) da += 2 * Math.PI
-            if (Math.abs(da) <= half + .02) keys.push(`${xx},${yy}`)
-          }
+          for (let xx = x1 + lo; xx <= x1 + hi; xx++)
+            if (inCone(x1, y1, x2, y2, xx, yy)) keys.push(`${xx},${yy}`)
       } else if (drag.kind === 'line') {
         // línea 5e (relámpago, aliento lineal): supercover — toda celda
         // que atraviesa el segmento ancla→borde

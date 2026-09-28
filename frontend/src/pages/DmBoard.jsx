@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api.js'
+import { currentUser } from '../session.js'
 import { campaignSocket } from '../ws.js'
+import VoiceChat from '../components/VoiceChat.jsx'
 import { useT } from '../i18n.jsx'
 import DmSesion from '../components/dm/DmSesion.jsx'
 import DmCombate from '../components/dm/DmCombate.jsx'
@@ -50,6 +52,7 @@ export default function DmBoard() {
   const [typing, setTyping] = useState(null)   // {from, at} efímero
   const typingSent = useRef(0)
   const sockRef = useRef(null)                 // WS vivo para el chat
+  const [rtcMsg, setRtcMsg] = useState(null)   // señal WebRTC entrante
 
   // feed en vivo: tiradas de los jugadores en la sala
   useEffect(() => {
@@ -82,6 +85,9 @@ export default function DmBoard() {
         }
         if (ev?.type === 'campaign.presence') {
           setPresence(ev.payload?.members || [])
+        }
+        if (ev?.type === 'rtc.signal') {
+          setRtcMsg({ ...ev, k: Date.now() })
         }
       },
     })
@@ -230,11 +236,17 @@ export default function DmBoard() {
               <> · {rollFeed.length} {t('dm.rollsCount')}</>}
           </p>)}
         {/* presencia estilo Discord: quién está en la sala ahora */}
-        {presence.length > 0 && (
-          <p className="muted" style={{ fontSize: '.8rem' }}>
+        {(presence.length > 0 || currentUser()?.user_id) && (
+          <p className="muted" style={{ fontSize: '.8rem',
+                                       display: 'flex', gap: 4,
+                                       alignItems: 'center' }}>
             🟢 {t('camp.online')}: {presence.map((m) =>
               m.count ? `+${m.count} ${t('camp.guests')}` : m.name
-            ).join(' · ')}</p>)}
+            ).join(' · ')}
+            <VoiceChat sock={sockRef}
+                       me={currentUser()?.user_id}
+                       presence={presence} rtcMsg={rtcMsg} />
+          </p>)}
       </aside>
       <div className="dm-main">
       {err && <p className="error">{err}</p>}

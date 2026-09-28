@@ -459,6 +459,7 @@ es: {
   'act.reversible': '(reversible)',
   'act.undoToHere': 'Deshace esta operación y todas las posteriores, en orden inverso',
   'act.undoTo': 'Hasta aquí',
+  'act.undone': 'revertida',
 
   'pan.castAria': 'Lanzar {name}',
   'pan.slotLevel': 'Nivel de espacio',
@@ -1269,6 +1270,7 @@ en: {
   'act.reversible': '(reversible)',
   'act.undoToHere': 'Undoes this operation and every later one, in reverse order',
   'act.undoTo': 'Up to here',
+  'act.undone': 'reverted',
 
   'pan.castAria': 'Cast {name}',
   'pan.slotLevel': 'Slot level',

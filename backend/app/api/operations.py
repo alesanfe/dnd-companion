@@ -126,7 +126,8 @@ def _norm(s: str) -> str:
 async def character_roll(character_id: str, expression: str = "1d20",
                          roll_type: str = "check",
                          use_inspiration: bool = False,
-                         secret: bool = False):
+                         secret: bool = False,
+                         user: dict | None = Depends(optional_user)):
     """Tirada a través del motor de efectos: ventaja/desventaja y mods
     declarativos (efectos pasivos o before_roll) + reglas de condición.
     roll_type: attack|check|save|damage|save:dex|skill:x."""
@@ -136,6 +137,8 @@ async def character_roll(character_id: str, expression: str = "1d20",
         (character_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "character not found")
+    if row["campaign_id"] and _has_owner(conn, row["campaign_id"]):
+        _require_role(conn, row["campaign_id"], user)
     char = Character(**json.loads(row["data"]))
 
     expr = expression.strip().lower()
@@ -238,7 +241,8 @@ _SKILL_ABILITIES = {
 @router.post("/character/{character_id}/attack")
 def character_attack(character_id: str, item_name: str,
                      mode: str = "normal",
-                     target_ac: int | None = None):
+                     target_ac: int | None = None,
+                     user: dict | None = Depends(optional_user)):
     """Ataque completo con un arma del inventario: tirada de impacto
     (d20 + mod + prof, con condiciones/efectos) + tirada de daño.
 
@@ -247,10 +251,12 @@ def character_attack(character_id: str, item_name: str,
     target_ac: si se informa, el resultado indica impacto/fallo."""
     conn = state_db()
     row = conn.execute(
-        "SELECT data FROM characters WHERE id = ?", (character_id,)
-    ).fetchone()
+        "SELECT data, campaign_id FROM characters WHERE id = ?",
+        (character_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "character not found")
+    if row["campaign_id"] and _has_owner(conn, row["campaign_id"]):
+        _require_role(conn, row["campaign_id"], user)
     char = Character(**json.loads(row["data"]))
     item = next((i for i in char.inventory
                  if i.name.lower() == item_name.lower()), None)
@@ -428,9 +434,13 @@ def _store_op(conn, op: OperationIn, version: int,
 
 
 def _entity_campaign(conn, op: OperationIn) -> str | None:
+    table = _TABLES.get(op.entity_kind)
+    if table is None:
+        raise HTTPException(400, f"unknown entity_kind "
+                                 f"{op.entity_kind!r}")
     row = conn.execute(
-        f"SELECT campaign_id FROM {_TABLES[op.entity_kind]} "
-        "WHERE id = ?", (op.entity_id,)).fetchone()
+        f"SELECT campaign_id FROM {table} WHERE id = ?",
+        (op.entity_id,)).fetchone()
     return row["campaign_id"] if row else None
 
 

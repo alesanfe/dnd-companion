@@ -6,9 +6,11 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from .auth import optional_user
+from .campaigns import _has_owner, _require_role
 from ..db.connections import content_db, state_db
 from ..domain.character import (
     AbilityScores, Character, ClassLevel, HitDicePool, HitPoints,
@@ -27,6 +29,25 @@ from ..engine.engine import resolve_stat
 router = APIRouter(prefix="/api/characters", tags=["characters"])
 
 
+def _char_camp_guard(conn, campaign_id: str | None,
+                     user: dict | None) -> None:
+    """Si la ficha vive en una campaña con dueño, solo sus miembros
+    la leen/mutan. Sin campaña (o campaña local sin owner) = abierto."""
+    if campaign_id and _has_owner(conn, campaign_id):
+        _require_role(conn, campaign_id, user)
+
+
+def _member_camps(conn, uid: str | None) -> set[str]:
+    """Campañas donde el usuario es miembro u owner directo."""
+    if not uid:
+        return set()
+    owned = {r["id"] for r in conn.execute(
+        "SELECT id FROM campaigns WHERE owner_id = ?", (uid,))}
+    joined = {r["campaign_id"] for r in conn.execute(
+        "SELECT campaign_id FROM members WHERE user_id = ?", (uid,))}
+    return owned | joined
+
+
 class CharacterCreate(BaseModel):
     name: str
     ruleset: Ruleset = Ruleset.DND5E_2014
@@ -36,8 +57,10 @@ class CharacterCreate(BaseModel):
 
 
 @router.post("", status_code=201)
-def create_character(body: CharacterCreate):
+def create_character(body: CharacterCreate,
+                     user: dict | None = Depends(optional_user)):
     conn = state_db()
+    _char_camp_guard(conn, body.campaign_id, user)
     cid = uuid.uuid4().hex
     now = datetime.now(timezone.utc).isoformat()
     char = Character(name=body.name, ruleset=body.ruleset, **body.data)
@@ -72,9 +95,12 @@ def _content_row(entity_id: str) -> dict | None:
 
 
 @router.post("/create-from-options", status_code=201)
-def create_from_options(body: WizardCreate):
+def create_from_options(body: WizardCreate,
+                        user: dict | None = Depends(optional_user)):
     """Construye un Character nivel 1 desde la content DB:
     HP = hit_die + mod CON, pool de hit dice, spell slots si es caster."""
+    conn = state_db()
+    _char_camp_guard(conn, body.campaign_id, user)
     cls = _content_row(body.class_id)
     if cls is None:
         raise HTTPException(400, "class not found in content DB")
@@ -145,10 +171,13 @@ def create_from_options(body: WizardCreate):
 
 
 @router.get("")
-def list_characters(campaign_id: str | None = None):
+def list_characters(campaign_id: str | None = None,
+                    user: dict | None = Depends(optional_user)):
     """Lista enriquecida: nivel total, PG y clase principal extraídos
     del JSON para la vista de tarjetas."""
     conn = state_db()
+    if campaign_id and _has_owner(conn, campaign_id):
+        _require_role(conn, campaign_id, user)
     sql = """SELECT id, name, ruleset, version, campaign_id, updated_at,
                     json_extract(data, '$.hp.current') AS hp_current,
                     json_extract(data, '$.hp.max') AS hp_max,
@@ -159,8 +188,15 @@ def list_characters(campaign_id: str | None = None):
         sql += " WHERE campaign_id = ?"
         params.append(campaign_id)
     rows = conn.execute(sql, params).fetchall()
+    # fichas de campañas con dueño solo las ven sus miembros; el resto
+    # (locales o sin campaña) sigue visible en modo local
+    owned = {r["id"] for r in conn.execute(
+        "SELECT id FROM campaigns WHERE owner_id IS NOT NULL")}
+    mine = _member_camps(conn, (user or {}).get("user_id"))
     out = []
     for r in rows:
+        if r["campaign_id"] in owned and r["campaign_id"] not in mine:
+            continue
         d = dict(r)
         data = json.loads(d.pop("data"))
         classes = data.get("classes") or []
@@ -184,7 +220,8 @@ class CharPatch(BaseModel):
 
 
 @router.patch("/{character_id}")
-def patch_character(character_id: str, body: CharPatch):
+def patch_character(character_id: str, body: CharPatch,
+                    user: dict | None = Depends(optional_user)):
     """Renombrar / reasignar campaña (los cambios de estado de juego van
     por /api/operations; esto es solo metadata)."""
     conn = state_db()
@@ -193,6 +230,11 @@ def patch_character(character_id: str, body: CharPatch):
     ).fetchone()
     if row is None:
         raise HTTPException(404, "character not found")
+    _char_camp_guard(conn, row["campaign_id"], user)
+    # mover A una campaña con dueño también exige membresía — si no,
+    # cualquiera colaba fichas en mesas ajenas
+    if "campaign_id" in body.model_fields_set and body.campaign_id:
+        _char_camp_guard(conn, body.campaign_id, user)
     data = json.loads(row["data"])
     changed = []
     if body.name is not None:
@@ -216,9 +258,15 @@ def patch_character(character_id: str, body: CharPatch):
 
 
 @router.delete("/{character_id}")
-def delete_character(character_id: str):
+def delete_character(character_id: str,
+                     user: dict | None = Depends(optional_user)):
     """Borra la ficha (sus operaciones quedan en el historial)."""
     conn = state_db()
+    row = conn.execute("SELECT campaign_id FROM characters WHERE id = ?",
+                       (character_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "character not found")
+    _char_camp_guard(conn, row["campaign_id"], user)
     cur = conn.execute("DELETE FROM characters WHERE id = ?",
                        (character_id,))
     conn.commit()
@@ -231,7 +279,8 @@ EXPORT_VERSION = 1
 
 
 @router.get("/{character_id}/export")
-def export_character(character_id: str):
+def export_character(character_id: str,
+                     user: dict | None = Depends(optional_user)):
     """JSON versionado y portable de la ficha completa."""
     conn = state_db()
     row = conn.execute(
@@ -239,6 +288,7 @@ def export_character(character_id: str):
     ).fetchone()
     if row is None:
         raise HTTPException(404, "character not found")
+    _char_camp_guard(conn, row["campaign_id"], user)
     return {
         "format": "dnd-companion-character",
         "format_version": EXPORT_VERSION,
@@ -254,10 +304,12 @@ class ImportIn(BaseModel):
 
 
 @router.post("/import", status_code=201)
-def import_character(body: ImportIn):
+def import_character(body: ImportIn,
+                     user: dict | None = Depends(optional_user)):
     """Importa una ficha exportada. Revalida contra el modelo actual."""
     char = Character(**body.character)
     conn = state_db()
+    _char_camp_guard(conn, body.campaign_id, user)
     cid = uuid.uuid4().hex
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
@@ -271,16 +323,18 @@ def import_character(body: ImportIn):
 
 
 @router.get("/{character_id}/actions")
-def contextual_actions(character_id: str):
+def contextual_actions(character_id: str,
+                       user: dict | None = Depends(optional_user)):
     """Acciones agrupadas por economía de acción: qué puede hacer el
     personaje AHORA. Deriva de inventario (armas), conjuros conocidos
     (por casting_time) y efectos activos (grant_action/reaction)."""
     conn = state_db()
     row = conn.execute(
-        "SELECT data FROM characters WHERE id = ?", (character_id,)
-    ).fetchone()
+        "SELECT data, campaign_id FROM characters WHERE id = ?",
+        (character_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "character not found")
+    _char_camp_guard(conn, row["campaign_id"], user)
     char = Character(**json.loads(row["data"]))
 
     groups: dict[str, list] = {
@@ -357,30 +411,34 @@ def _effect_actions(char, groups) -> None:
 
 
 @router.get("/{character_id}/derived/{stat}")
-def derived_stat(character_id: str, stat: str, base: float = 10):
+def derived_stat(character_id: str, stat: str, base: float = 10,
+                 user: dict | None = Depends(optional_user)):
     """Stat resuelto por el motor de efectos, con trazabilidad:
     'CA 18 = 10 base +3 armadura +2 escudo'."""
     conn = state_db()
     row = conn.execute(
-        "SELECT data FROM characters WHERE id = ?", (character_id,)
-    ).fetchone()
+        "SELECT data, campaign_id FROM characters WHERE id = ?",
+        (character_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "character not found")
+    _char_camp_guard(conn, row["campaign_id"], user)
     char = Character(**json.loads(row["data"]))
     return resolve_stat(stat, base, char.effects).model_dump()
 
 
 @router.get("/{character_id}/derived")
-def derived_all(character_id: str):
+def derived_all(character_id: str,
+                user: dict | None = Depends(optional_user)):
     """Resumen derivado de la ficha: CA (armadura equipada + DES +
     escudo + efectos), iniciativa, percepción pasiva, CD/ataque de
     conjuro. Todo calculado — nada se guarda."""
     conn = state_db()
     row = conn.execute(
-        "SELECT data FROM characters WHERE id = ?", (character_id,)
-    ).fetchone()
+        "SELECT data, campaign_id FROM characters WHERE id = ?",
+        (character_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "character not found")
+    _char_camp_guard(conn, row["campaign_id"], user)
     char = Character(**json.loads(row["data"]))
     content = content_db()
     dex_mod = char.abilities.modifier("dex")
@@ -526,13 +584,15 @@ def _asi_available(char) -> int:
 
 
 @router.get("/{character_id}")
-def get_character(character_id: str):
+def get_character(character_id: str,
+                  user: dict | None = Depends(optional_user)):
     conn = state_db()
     row = conn.execute(
         "SELECT * FROM characters WHERE id = ?", (character_id,)
     ).fetchone()
     if row is None:
         raise HTTPException(404, "character not found")
+    _char_camp_guard(conn, row["campaign_id"], user)
     out = dict(row)
     out["data"] = json.loads(out["data"])
     return out

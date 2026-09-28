@@ -28,11 +28,23 @@ export default function TabActividad({ c }) {
       </Section>)}
     {history && (
     <Section title={<>{t('sheet.history')} <span className="muted">{t('act.reversible')}</span></>}  hidden={!show('actividad')} extraClass="optional">
-      {history.map((h) => (
+      {/* ops ya revertidas (alguien aplicó su inversa) quedan
+          tachadas; las reversiones llevan ↺ y marcan a su objetivo */}
+      {(() => {
+        const undone = new Set(history.map((h) =>
+          h.payload?._undoes).filter(Boolean))
+        return history.map((h) => (
         <div key={h.operation_id} className="row">
           <span className="muted">{h.timestamp.slice(11, 19)}</span>
-          <span style={{ flex: 1 }}>{h.operation_type}</span>
-          {h.reversible ? (
+          <span style={{ flex: 1,
+                         textDecoration: undone.has(h.operation_id)
+                           ? 'line-through' : undefined }}
+                className={undone.has(h.operation_id) ? 'muted' : ''}>
+            {h.payload?._undoes ? `↺ ${h.operation_type}`
+                                : h.operation_type}
+            {undone.has(h.operation_id) && ` · ${t('act.undone')}`}
+          </span>
+          {h.reversible && !undone.has(h.operation_id) ? (
             <>
             <button onClick={async () => {
               try { await api.undoOp(h.operation_id) }
@@ -54,8 +66,8 @@ export default function TabActividad({ c }) {
             }}>{t('act.undoTo')}</button>
             </>
           ) : <span className="muted">—</span>}
-        </div>
-      ))}
+        </div>))
+      })()}
     </Section>)}
   </>)
 }

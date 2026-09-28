@@ -502,6 +502,13 @@ export default function MapBoard({ campaign, size = CELL,
             // undefined no se serializa (no llegaría a borrar)
             save({ ...d, image_url: u.trim() })
           }}>🖼</button>
+          <button className="ghost" title={t('map.musicTitle')}
+                  aria-label={t('map.musicTitle')}
+                  onClick={() => {
+            const u = prompt(t('map.musicPrompt'), d.music_url || '')
+            if (u === null) return
+            save({ ...d, music_url: u.trim() })
+          }}>♪</button>
           <label className="muted">{t('map.cellFt')}
             <input type="number" min="1" max="50" defaultValue={d.cell_ft}
                    key={`${map.id}:${d.cell_ft}`}
@@ -620,6 +627,14 @@ export default function MapBoard({ campaign, size = CELL,
         <p className="muted" style={{ fontSize: '.9rem' }}>
           <strong>{sel.name}</strong> — {t('map.moveHint')}
         </p>)}
+      {/* música ambiental del mapa: url que el DM puso — en la vista
+          de jugador aparece un reproductor; el autoplay lo decide el
+          navegador (se muestra con controles propios) */}
+      {d.music_url && (
+        <audio key={d.music_url} controls preload="none" loop
+               src={d.music_url}
+               style={{ display: 'block', width: '100%', maxWidth: 320,
+                        height: 30, opacity: .85 }} />)}
       {zoneLog && (
         <p className="muted" role="status" style={{ fontSize: '.85rem' }}
            onClick={() => setZoneLog(null)}>

@@ -529,6 +529,10 @@ es: {
   'ses.lootCoin': 'moneda',
   'ses.lootSplitBtn': 'Repartir',
   'ses.lootSplit': '{share} {coin} para cada PJ ({n} fichas)',
+  'ses.restShort': 'Descanso corto',
+  'ses.restLong': 'Descanso largo',
+  'ses.restedShort': 'grupo descansado (corto)',
+  'ses.restedLong': 'grupo descansado (largo)',
 
   'com.levelsPh': 'niveles: 3,3,4',
   'com.crsPh': 'CRs: 1/4,1/2,2',
@@ -1357,6 +1361,10 @@ en: {
   'ses.lootCoin': 'coin',
   'ses.lootSplitBtn': 'Split',
   'ses.lootSplit': '{share} {coin} each ({n} sheets)',
+  'ses.restShort': 'Short rest',
+  'ses.restLong': 'Long rest',
+  'ses.restedShort': 'party rested (short)',
+  'ses.restedLong': 'party rested (long)',
 
   'com.levelsPh': 'levels: 3,3,4',
   'com.crsPh': 'CRs: 1/4,1/2,2',

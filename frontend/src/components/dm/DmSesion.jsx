@@ -258,6 +258,20 @@ export default function DmSesion({ c }) {
             {t('ses.request')}
           </button>
         </div>
+        {/* descanso del grupo — una op rest.<kind> por ficha */}
+        {partyChars.length > 0 && (
+          <div className="row" style={{ marginTop: '.5rem' }}>
+            <button className="ghost"
+                    onClick={() => api.partyRest(campaign.id, 'short')
+                      .then(() => setLootMsg(t('ses.restedShort')))
+                      .catch(() => {})}>
+              {t('ses.restShort')}</button>
+            <button className="ghost"
+                    onClick={() => api.partyRest(campaign.id, 'long')
+                      .then(() => setLootMsg(t('ses.restedLong')))
+                      .catch(() => {})}>
+              {t('ses.restLong')}</button>
+          </div>)}
         {/* reparto del botín — una op currency.earn por PJ */}
         {partyChars.length > 0 && (
           <div className="row" style={{ marginTop: '.5rem' }}>

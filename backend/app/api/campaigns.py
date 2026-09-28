@@ -1014,6 +1014,34 @@ async def split_loot(campaign_id: str, body: LootSplit,
     return {"share": share, "awarded": awarded}
 
 
+@router.post("/{campaign_id}/rest")
+async def party_rest(campaign_id: str, kind: str = "long",
+                     user: dict | None = Depends(optional_user)):
+    """Descanso del grupo: aplica `character.rest.<kind>` a cada ficha
+    de la campaña como op real (auditable, deshacible, broadcast) —
+    el DM declara el descanso y todas las fichas se recuperan a la vez."""
+    from .operations import OperationIn, apply_to_store
+    if kind not in ("short", "long"):
+        raise HTTPException(400, "kind debe ser short|long")
+    conn = state_db()
+    if _has_owner(conn, campaign_id):
+        _require_role(conn, campaign_id, user, _DM_ROLES)
+    rows = conn.execute(
+        "SELECT id, version FROM characters WHERE campaign_id = ?",
+        (campaign_id,)).fetchall()
+    uid = (user or {}).get("user_id") or "dm"
+    for r in rows:
+        result = apply_to_store(OperationIn(
+            operation_id=uuid.uuid4().hex, entity_id=r["id"],
+            entity_version=r["version"], client_id="api:party-rest",
+            user_id=uid,
+            operation_type=f"character.rest.{kind}",
+            entity_kind="character", payload={}))
+        for event in result.pop("_event_objs", []):
+            await manager.broadcast(campaign_id, event)
+    return {"rested": len(rows), "kind": kind}
+
+
 @router.get("/{campaign_id}/roll-requests/pending")
 def pending_roll_requests(campaign_id: str, character_ids: str = "",
                           user: dict | None = Depends(optional_user)):

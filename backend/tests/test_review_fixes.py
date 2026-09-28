@@ -984,3 +984,36 @@ def test_split_loot_shares_treasure_dm_only():
               for cid in (a["id"], b["id"])]
     # 11 gp / 2 fichas → 6 y 5, sin resto perdido
     assert sorted(p["gp"] for p in purses) == [5, 6]
+
+
+def test_party_rest_applies_to_all_sheets_dm_only():
+    """POST /campaigns/{id}/rest?kind=long aplica character.rest.long a
+    cada ficha como op real — PG al máximo, deshacible. DM-only."""
+    owner = _auth_headers(f"pr{uuid.uuid4().hex[:8]}")
+    player = _auth_headers(f"ps{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    code = client.get(f"/api/campaigns/{camp['id']}",
+                      headers=owner).json()["invite_code"]
+    client.post("/api/campaigns/join",
+                json={"invite_code": code}, headers=player)
+    a = client.post("/api/characters",
+                    json={"name": "A", "campaign_id": camp["id"]},
+                    headers=player).json()
+    # daña al PJ: hp 8 → 3
+    ver = client.get(f"/api/characters/{a['id']}",
+                     headers=player).json()["version"]
+    client.post("/api/operations", json={
+        "operation_id": uuid.uuid4().hex, "entity_id": a["id"],
+        "entity_version": ver, "client_id": "c", "user_id": "u",
+        "entity_kind": "character",
+        "operation_type": "character.hp.damage",
+        "payload": {"amount": 5}}, headers=player)
+    assert client.post(f"/api/campaigns/{camp['id']}/rest?kind=long",
+                       headers=player).status_code == 403
+    r = client.post(f"/api/campaigns/{camp['id']}/rest?kind=long",
+                    headers=owner)
+    assert r.status_code == 200 and r.json()["rested"] == 1
+    hp = client.get(f"/api/characters/{a['id']}",
+                    headers=player).json()["data"]["hp"]
+    assert hp["current"] == hp["max"]

@@ -14,6 +14,8 @@ export default function DmBoard() {
   const [campaign, setCampaign] = useState(null)
   const [campName, setCampName] = useState('')
   const [combat, setCombat] = useState(null)   // {id, version, combat}
+  const combatRef = useRef(null)              // para el handler WS
+  combatRef.current = combat
   const [combatName, setCombatName] = useState('')
   const [query, setQuery] = useState('')
   const [monsters, setMonsters] = useState([])
@@ -88,6 +90,14 @@ export default function DmBoard() {
         }
         if (ev?.type === 'rtc.signal') {
           setRtcMsg({ ...ev, k: Date.now() })
+        }
+        // eventos del combate abierto (hp/saves/turno desde OTRO
+        // dispositivo — la salvación del jugador, otro DM): los tipos
+        // son character.hp.changed etc., no combat.* — sin esto el
+        // tablero mostraba PG viejos hasta tocar algo
+        if (combatRef.current &&
+            ev?.aggregate_id === combatRef.current.id) {
+          refresh(combatRef.current.id)
         }
       },
     })

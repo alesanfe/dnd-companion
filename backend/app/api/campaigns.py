@@ -616,11 +616,11 @@ async def map_ping(campaign_id: str, body: PingIn,
                campaign_id=campaign_id,
                aggregate_id=body.entity_id or campaign_id,
                aggregate_version=0,
-               actor_id=(user or {}).get("name") or "?",
+               actor_id=(user or {}).get("user_id") or "?",
                occurred_at=datetime.now(timezone.utc),
                payload={"x": int(body.x), "y": int(body.y),
                         "entity_id": body.entity_id,
-                        "by": (user or {}).get("name") or "?",
+                        "by": (user or {}).get("username") or "?",
                         # el destinatario puede verificar que el ping
                         # es del mapa que está viendo
                         })
@@ -661,7 +661,7 @@ async def present_entity(campaign_id: str, body: PresentIn,
                campaign_id=campaign_id,
                aggregate_id=body.entity_id or campaign_id,
                aggregate_version=0,
-               actor_id=(user or {}).get("name") or "?",
+               actor_id=(user or {}).get("user_id") or "?",
                occurred_at=datetime.now(timezone.utc),
                payload=payload)
     await manager.broadcast(campaign_id, ev)
@@ -721,8 +721,14 @@ async def token_move(campaign_id: str, entity_id: str,
     rows = int(data.get("rows") or 10)
     tk["x"] = max(0, min(cols - 1, int(body.x)))
     tk["y"] = max(0, min(rows - 1, int(body.y)))
-    conn.execute("UPDATE campaign_entities SET data = ? WHERE id = ?",
-                 (json.dumps(data), entity_id))
+    # bump de version/updated_at como patch_entity: sin él un resync
+    # no notaba la posición nueva y un PATCH concurrente del DM (fog,
+    # muros) podía pisar el movimiento con su copia de data
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "UPDATE campaign_entities SET data = ?, version = version+1, "
+        "updated_at = ? WHERE id = ?",
+        (json.dumps(data), now, entity_id))
     conn.commit()
     await _notify_entity(campaign_id, entity_id, ["data"],
                          row["visibility"], "map", row["name"])
@@ -962,8 +968,8 @@ def timeline(campaign_id: str,
 
 
 @router.post("/{campaign_id}/scenes/{scene_id}/start", status_code=201)
-def start_scene_combat(campaign_id: str, scene_id: str,
-                       user: dict | None = Depends(optional_user)):
+async def start_scene_combat(campaign_id: str, scene_id: str,
+                             user: dict | None = Depends(optional_user)):
     """Inicia el combate preparado en una escena: crea el Combat con el
     nombre de la escena y añade los monstruos de data.monsters
     (content entity ids) como combatientes."""
@@ -1005,6 +1011,27 @@ def start_scene_combat(campaign_id: str, scene_id: str,
         (cid, campaign_id, combat.name, "dnd5e-2014",
          json.dumps(combat.model_dump()), now))
     conn.commit()
+    # combat.started — mismo evento que POST /combat: sin él la sala
+    # no se enteraba de que la escena arrancó un encuentro
+    from ..domain.events import Event, EventType
+    ev = Event(event_id=uuid.uuid4().hex,
+               type=EventType.COMBAT_STARTED,
+               campaign_id=campaign_id, aggregate_id=cid,
+               aggregate_version=1,
+               actor_id=(user or {}).get("user_id") or "dm",
+               occurred_at=datetime.now(timezone.utc),
+               payload={"combat_id": cid, "name": combat.name,
+                        "scene_id": scene_id})
+    conn.execute(
+        """INSERT INTO events
+           (event_id, campaign_id, aggregate_id, aggregate_version,
+            actor_id, occurred_at, type, payload)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (ev.event_id, campaign_id, cid, 1, ev.actor_id,
+         ev.occurred_at.isoformat(), ev.type.value,
+         json.dumps(ev.payload)))
+    conn.commit()
+    await manager.broadcast(campaign_id, ev)
     return {"combat_id": cid, "scene": name,
             "combatants": len(combat.combatants)}
 

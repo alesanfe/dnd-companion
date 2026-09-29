@@ -362,8 +362,10 @@ function SyncConflicts() {
       <ul style={{ margin: '.3rem 0', paddingLeft: '1rem' }}>
         {rows.map((r) => (
           <li key={r.operation_id} className="row">
-            <Link to={`/character/${r.entity_id}/actividad`}>
-              {r.operation_type}</Link>
+            {r.entity_kind === 'character' ? (
+              <Link to={`/character/${r.entity_id}/actividad`}>
+                {r.operation_type}</Link>
+            ) : <span>{r.operation_type}</span>}
             <span className="muted"
                   title={JSON.stringify(r.payload)}>
               {' '}· {r.timestamp?.slice(11, 19)}

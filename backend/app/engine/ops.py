@@ -9,6 +9,7 @@ change. Events describe what happened for WS broadcast + log.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Callable
 
 from ..domain.character import Character, Narrative
@@ -828,8 +829,10 @@ def _spend(char: Character, amount_cp: int) -> None:
 
 @op("character.currency.earn")
 def currency_earn(char: Character, p: dict, ctx):
-    inv = {"operation_type": "character.currency.spend",
-           "payload": dict(p)}
+    # snapshot, no spend: si ya se gastó parte del botín, spend daba
+    # "fondos insuficientes" y normalizaba las denominaciones
+    inv = {"operation_type": "character.currency.set",
+           "payload": {"purse": dict(char.purse)}}
     for coin, n in p.items():
         if coin in _CP:
             char.purse[coin] = char.purse.get(coin, 0) + max(0, int(n))
@@ -883,17 +886,27 @@ def shop_buy(char: Character, p: dict, ctx):
         char, {"name": p["item"], "quantity": 1,
                "source_id": entry.get("source_id")}, ctx)
     entry["quantity"] -= 1
+    # bump de version + evento: la tienda es una entidad de campaña —
+    # sin esto su stock quedaba desincronizado (ni evento ni versión)
+    now = datetime.now(timezone.utc).isoformat()
     ctx.state_db().execute(
-        "UPDATE campaign_entities SET data = ? WHERE id = ?",
-        (json.dumps(shop), p["shop_id"]))
-    # inversa real: devuelve objeto, repone stock y reembolsa monedas
+        "UPDATE campaign_entities SET data = ?, version = version+1, "
+        "updated_at = ? WHERE id = ?",
+        (json.dumps(shop), now, p["shop_id"]))
+    # inversa real: devuelve objeto, repone stock y reembolsa monedas.
+    # item_id = el objeto EXACTO añadido (por nombre quitaría el stack
+    # de otra poción homónima ya en el inventario)
     inv = {"operation_type": "character.shop.refund",
            "payload": {"shop_id": p["shop_id"], "item": p["item"],
+                       "item_id": inv_add["payload"]["item_id"],
                        "price_cp": price_cp}}
     return inv, [
         {"type": "inventory.item.transferred",
          "payload": {"bought": p["item"], "price_cp": price_cp,
-                     "purse": char.purse}}]
+                     "purse": char.purse}},
+        {"type": "campaign.entity.updated",
+         "payload": {"entity_id": p["shop_id"], "kind": "shop",
+                     "reason": "sold"}}]
 
 
 @op("character.effect.add")
@@ -1110,7 +1123,11 @@ def shop_refund(char: Character, p: dict, ctx):
     reembolsa las monedas — todo en la transacción de la operación."""
     if ctx is None or ctx.state_db() is None:
         raise ValueError("shop.refund requiere contexto de estado")
-    item = next((i for i in char.inventory if i.name == p["item"]), None)
+    # item_id exacto (ops nuevas); por nombre solo en inversas viejas
+    item = (next((i for i in char.inventory if i.id == p.get("item_id")),
+                 None) if p.get("item_id")
+            else next((i for i in char.inventory
+                       if i.name == p["item"]), None))
     if item is None:
         raise ValueError("objeto no encontrado para devolver")
     item.quantity -= 1
@@ -1127,9 +1144,11 @@ def shop_refund(char: Character, p: dict, ctx):
             if s.get("name") == p["item"]:
                 s["quantity"] = s.get("quantity", 0) + 1
                 break
+        now = datetime.now(timezone.utc).isoformat()
         ctx.state_db().execute(
-            "UPDATE campaign_entities SET data = ? WHERE id = ?",
-            (json.dumps(shop), p["shop_id"]))
+            "UPDATE campaign_entities SET data = ?, version = version+1,"
+            " updated_at = ? WHERE id = ?",
+            (json.dumps(shop), now, p["shop_id"]))
     return {"operation_type": "character.shop.buy",
             "payload": {"shop_id": p["shop_id"], "item": p["item"]}}, [
         {"type": "inventory.item.transferred",

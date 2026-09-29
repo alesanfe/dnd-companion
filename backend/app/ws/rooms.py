@@ -43,7 +43,10 @@ class RoomManager:
         payload = payload or {}
         dm_only = payload.get("visibility") == "dm"
         # for_user: entrega dirigida (petición secreta del DM) — solo el
-        # socket de ese usuario + los DM; el resto de la mesa ni la ve
+        # socket de ese usuario + los DM; el resto de la mesa ni la ve.
+        # co_dm estaba fuera: su rol real es 'co_dm', no 'dm' — un
+        # subdirector autenticado no veía tiradas secretas ni eventos
+        # dm-only aunque REST sí se los sirve (_DM_ROLES).
         target = payload.get("for_user")
         data = (event.model_dump_json()
                 if hasattr(event, "model_dump_json")
@@ -54,11 +57,11 @@ class RoomManager:
                 continue
             role, uid = (info[0], info[2] if len(info) > 2 else None) \
                 if isinstance(info, tuple) else (info, None)
-            if dm_only and role not in ("dm", "owner", "local") \
-                    and not (uid and uid == target):
+            priv = role in ("dm", "owner", "co_dm", "local")
+            if dm_only and not priv and not (uid and uid == target):
                 continue
             if target and not dm_only and not (uid and uid == target) \
-                    and role not in ("dm", "owner", "local"):
+                    and not priv:
                 continue
             try:
                 await ws.send_text(data)

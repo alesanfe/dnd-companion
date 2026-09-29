@@ -51,7 +51,7 @@ async def create_combat(body: CombatCreate,
                    type=EventType.COMBAT_STARTED,
                    campaign_id=body.campaign_id, aggregate_id=cid,
                    aggregate_version=1,
-                   actor_id=(user or {}).get("name") or "dm",
+                   actor_id=(user or {}).get("user_id") or "dm",
                    occurred_at=datetime.now(timezone.utc),
                    payload={"combat_id": cid, "name": body.name})
         conn.execute(

@@ -602,19 +602,20 @@ def conflicts(limit: int = 20,
     uid = (user or {}).get("user_id")
     out = []
     for r in rows:
-        camp = None
-        for table in _TABLES.values():
+        camp, kind = None, None
+        for k, table in _TABLES.items():
             er = conn.execute(
                 f"SELECT campaign_id FROM {table} WHERE id = ?",
                 (r["entity_id"],)).fetchone()
             if er:
-                camp = er["campaign_id"]
+                camp, kind = er["campaign_id"], k
                 break
         if (camp and _has_owner(conn, camp)
                 and member_role(camp, uid)
                 not in _DM_ROLES + ("player", "guest")):
             continue
-        out.append({**dict(r), "payload": json.loads(r["payload"])})
+        out.append({**dict(r), "entity_kind": kind,
+                    "payload": json.loads(r["payload"])})
         if len(out) >= limit:
             break
     return {"conflicts": out}

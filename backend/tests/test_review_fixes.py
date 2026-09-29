@@ -1602,3 +1602,75 @@ def test_character_secrets_redacted_for_other_members():
                       headers=pa).json()["data"]["narrative"]["secrets"]
     assert client.get(f"/api/characters/{ch['id']}",
                       headers=owner).json()["data"]["narrative"]["secrets"]
+
+def test_ws_dm_visibility_reaches_co_dm():
+    """broadcast() solo dejaba pasar visibility=dm a ('dm','owner',
+    'local') — un co_dm autenticado no veía tiradas secretas ni
+    eventos dm-only aunque REST sí se los sirve (_DM_ROLES)."""
+    import asyncio
+    from app.ws.rooms import manager
+    co = _FakeWS()
+    ply = _FakeWS()
+
+    async def run():
+        await manager.join("camp-cd", co, role="co_dm", name="c")
+        await manager.join("camp-cd", ply, role="player", name="p")
+        await manager.broadcast("camp-cd", {
+            "type": "character.hp.changed",
+            "payload": {"visibility": "dm", "amount": 7}})
+        manager.leave("camp-cd", co)
+        manager.leave("camp-cd", ply)
+
+    asyncio.run(run())
+    assert co.sent and co.sent[0]["payload"]["amount"] == 7
+    assert not ply.sent
+
+
+def test_currency_earn_undo_restores_exact_purse():
+    """earn invertido con spend: si ya se había gastado, el undo daba
+    'fondos insuficientes' — ahora es snapshot de la bolsa."""
+    c = Character(name="t", purse={"gp": 2, "sp": 5, "cp": 3})
+    inv, _ = apply_operation(c, "character.currency.earn", {"gp": 10})
+    assert c.purse["gp"] == 12
+    # gasta justo lo ganado: con la inversa vieja (spend 10gp) el undo
+    # daba 'fondos insuficientes' — solo quedan 253cp en la bolsa
+    apply_operation(c, "character.currency.spend", {"gp": 10})
+    assert c.purse["gp"] == 2
+    apply_operation(c, inv["operation_type"], inv["payload"])
+    assert c.purse == {"gp": 2, "sp": 5, "cp": 3}
+
+
+def test_shop_refund_removes_the_exact_item_bought():
+    """refund por nombre podía descontar un stack homónimo distinto al
+    objeto comprado — ahora la inversa viaja con el item_id real."""
+    c = Character(name="t", purse={"gp": 100})
+    apply_operation(c, "character.inventory.add",
+                    {"id": "vieja", "name": "Poción", "quantity": 5})
+    from app.db.connections import state_db
+    camp_id = client.post(
+        "/api/campaigns", json={"name": "tienda"}).json()["id"]
+    shop_id = client.post(f"/api/campaigns/{camp_id}/entities",
+                          json={"name": "Tienda", "kind": "shop",
+                                "data": {"stock": [
+                                    {"name": "Poción",
+                                     "price_cp": 5000,
+                                     "quantity": 3}]}}).json()["id"]
+
+    # OpContext con UNA conexión — como en producción: si state_db()
+    # abre una conexión por llamada, el UPDATE sin commit deja una txn
+    # de escritura abierta y bloquea al siguiente escritor
+    from app.api.operations import OpContext
+    ctx = OpContext(state_db())
+    inv, _ = apply_operation(c, "character.shop.buy",
+                             {"shop_id": shop_id, "item": "Poción"},
+                             ctx)
+    assert any(i.name == "Poción" and i.id != "vieja"
+               for i in c.inventory)
+    old = next(i for i in c.inventory if i.id == "vieja")
+    apply_operation(c, inv["operation_type"], inv["payload"], ctx)
+    assert old.quantity == 5            # el stack viejo intacto
+    assert all(i.name != "Poción" or i.id == "vieja"
+               for i in c.inventory)    # la comprada se devolvió
+    # sin este commit la txn de escritura de la tienda quedaba abierta
+    # y el GC la cerraba a mitad de OTRO test → 'database is locked'
+    ctx.state_db().commit()

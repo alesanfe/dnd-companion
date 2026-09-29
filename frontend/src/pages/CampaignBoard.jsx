@@ -96,11 +96,17 @@ export default function CampaignBoard() {
       onOpen: resync,
       onMessage: (msg) => {
         const ev = msg.event || msg
+        // los eventos del tracker son character.hp.changed /
+        // condition.applied (aggregate=combat id), no combat.* —
+        // sin ellos el tablero del jugador no veía daño ni saves
+        // hechos por el DM u otro dispositivo
         if (ev?.type === 'dice.roll.requested' ||
             (ev?.type?.startsWith('campaign.') &&
              ev?.type !== 'campaign.presence' &&
              ev?.type !== 'campaign.map.ping' &&
              ev?.type !== 'campaign.present') ||
+            ev?.type === 'character.hp.changed' ||
+            ev?.type === 'character.condition.applied' ||
             ev?.type?.startsWith('combat.')) load()
         // tiradas públicas (las secretas nunca llegan a este socket)
         if (ev?.type === 'dice.roll.created') {

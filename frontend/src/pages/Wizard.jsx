@@ -36,6 +36,7 @@ export default function Wizard() {
   const [abilities, setAbilities] = useState({})
   const [remaining, setRemaining] = useState([...STANDARD_ARRAY])
   const [err, setErr] = useState(null)
+  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     // all_sources: ofrece también homebrew/UA/terceros importados
@@ -70,6 +71,8 @@ export default function Wizard() {
   }
 
   const submit = async () => {
+    if (busy) return                        // doble clic = doble ficha
+    setBusy(true)
     try {
       const r = await api.createFromOptions({
         name, ruleset, class_id: classId,
@@ -78,7 +81,7 @@ export default function Wizard() {
         abilities,
       })
       nav(`/character/${r.id}`)
-    } catch (e) { setErr(e.message) }
+    } catch (e) { setErr(e.message); setBusy(false) }
   }
 
   const sel = (list, value, set) => (

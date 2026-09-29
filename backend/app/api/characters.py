@@ -37,6 +37,33 @@ def _char_camp_guard(conn, campaign_id: str | None,
         _require_role(conn, campaign_id, user)
 
 
+_PRIVATE_NARRATIVE = ("secrets",)   # campos "solo PJ + DM" del dominio
+
+
+def _can_see_private(conn, campaign_id: str | None,
+                     player_id: str | None,
+                     user: dict | None) -> bool:
+    """Los campos privados de la ficha los ve su dueño y el DM;
+    en campañas locales (sin owner) todo es visible."""
+    if not campaign_id or not _has_owner(conn, campaign_id):
+        return True
+    uid = (user or {}).get("user_id")
+    return player_id == uid or member_role(campaign_id, uid) in _DM_ROLES
+
+
+def redact_private(data: dict) -> dict:
+    """Copia de la ficha sin los campos marcados privados — para
+    lectores que son miembros pero ni dueño ni DM."""
+    nar = data.get("narrative") or {}
+    if any(nar.get(k) for k in _PRIVATE_NARRATIVE):
+        data = {**data, "narrative":
+                {**nar, **{k: "" if isinstance(nar.get(k), str)
+                           else ([] if isinstance(nar.get(k), list)
+                                 else None)
+                           for k in _PRIVATE_NARRATIVE}}}
+    return data
+
+
 def _char_write_guard(conn, campaign_id: str | None, player_id: str | None,
                       user: dict | None) -> None:
     """Mutación además de membresía: en campaña con dueño, un miembro
@@ -340,11 +367,15 @@ def export_character(character_id: str,
     if row is None:
         raise HTTPException(404, "character not found")
     _char_camp_guard(conn, row["campaign_id"], user)
+    data = json.loads(row["data"])
+    if not _can_see_private(conn, row["campaign_id"],
+                            row["player_id"], user):
+        data = redact_private(data)
     return {
         "format": "dnd-companion-character",
         "format_version": EXPORT_VERSION,
         "exported_at": datetime.now(timezone.utc).isoformat(),
-        "character": json.loads(row["data"]),
+        "character": data,
     }
 
 
@@ -647,5 +678,10 @@ def get_character(character_id: str,
         raise HTTPException(404, "character not found")
     _char_camp_guard(conn, row["campaign_id"], user)
     out = dict(row)
-    out["data"] = json.loads(out["data"])
+    data = json.loads(out["data"])
+    # 'secrets' es solo PJ+DM: cualquier miembro leía la ficha íntegra
+    if not _can_see_private(conn, row["campaign_id"],
+                            row["player_id"], user):
+        data = redact_private(data)
+    out["data"] = data
     return out

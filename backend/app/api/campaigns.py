@@ -1,6 +1,7 @@
 """Campaigns + invite codes. Skeleton — real-time sync lands via ws/rooms."""
 from __future__ import annotations
 
+import asyncio
 import secrets
 import uuid
 from datetime import datetime, timezone
@@ -371,8 +372,9 @@ def campaign_state(campaign_id: str,
     is_dm = not _has_owner(conn, campaign_id) or \
         member_role(campaign_id, uid) in _DM_ROLES
     chars = conn.execute(
-        "SELECT id, name, ruleset, version, data FROM characters "
-        "WHERE campaign_id = ?", (campaign_id,)).fetchall()
+        "SELECT id, name, ruleset, version, player_id, data "
+        "FROM characters WHERE campaign_id = ?",
+        (campaign_id,)).fetchall()
     combats = conn.execute(
         "SELECT id, name, version, data FROM combats WHERE campaign_id = ?",
         (campaign_id,)).fetchall()
@@ -391,15 +393,23 @@ def campaign_state(campaign_id: str,
                           "stat_block"):
                     data["combatants"][i][k] = None
         combats_out.append({**dict(cb), "data": data})
+    # 'secrets' de la ficha es solo PJ+DM — el resync servía la data
+    # completa a cualquier miembro igual que GET /characters/{id}
+    from .characters import redact_private
+    chars_out = []
+    for c in chars:
+        data = json.loads(c["data"])
+        if not is_dm and c["player_id"] != uid:
+            data = redact_private(data)
+        chars_out.append({**dict(c), "data": data})
     events = conn.execute(
         "SELECT * FROM events WHERE campaign_id = ? "
-        "ORDER BY occurred_at DESC LIMIT 50", (campaign_id,)).fetchall()
+        "ORDER BY occurred_at DESC LIMIT 200", (campaign_id,)).fetchall()
     return {
-        "characters": [{**dict(c), "data": json.loads(c["data"])}
-                       for c in chars],
+        "characters": chars_out,
         "combats": combats_out,
         "events": [dict(e) for e in events
-                   if _ev_visible(e, uid, is_dm)],
+                   if _ev_visible(e, uid, is_dm)][:50],
         # presencia actual en la sala WS (resync tras reconexión)
         "presence": manager.present(campaign_id),
     }
@@ -1011,14 +1021,17 @@ def campaign_events(campaign_id: str, limit: int = 100,
     # jugadores por el feed de auditoría
     is_dm = not _has_owner(conn, campaign_id) or \
         member_role(campaign_id, uid) in _DM_ROLES
+    # el filtrado de visibilidad es post-SQL: si los N últimos eventos
+    # son dm-only, el jugador recibía menos de `limit` — sobre-muestrea
+    # y recorta tras filtrar (mismo patrón que /operations/conflicts)
     rows = conn.execute(
         """SELECT event_id, type, aggregate_id, actor_id, occurred_at,
                   payload FROM events WHERE campaign_id = ?
            ORDER BY occurred_at DESC LIMIT ?""",
-        (campaign_id, limit)).fetchall()
+        (campaign_id, limit * 4)).fetchall()
     return {"events": [
         {**dict(r), "payload": json.loads(r["payload"])} for r in rows
-        if _ev_visible(r, uid, is_dm)]}
+        if _ev_visible(r, uid, is_dm)][:limit]}
 
 
 @router.get("/{campaign_id}/export")
@@ -1195,10 +1208,11 @@ async def request_roll(campaign_id: str, body: RollRequestIn,
         (body.character_id,)).fetchone()
     if prow and prow["player_id"]:
         from .push import send_push
-        send_push(prow["player_id"],
-                  "Tirada solicitada",
-                  f"{body.reason or body.expression}",
-                  url=f"/campaign/{campaign_id}")
+        # webpush es I/O bloqueante — sacarlo del event loop o cada
+        # push congela la sala entera unos cientos de ms
+        await asyncio.to_thread(
+            send_push, prow["player_id"], "Tirada solicitada",
+            body.reason or body.expression, f"/campaign/{campaign_id}")
     return {"event_id": event.event_id}
 
 

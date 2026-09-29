@@ -168,7 +168,10 @@ export default function MapBoard({ campaign, size = CELL,
     || (myUid != null && tokOwner(tk) === myUid)
   const moveTokRemote = (tk, x, y) => {
     if (!readOnly) { patchTok({ x, y }, tk); return }
-    api.moveToken(campaign.id, map.id, tk.id, x, y).catch(() => {})
+    // el catch antes tragaba el rechazo en silencio: el token volvía
+    // a su sitio al siguiente resync sin que el jugador supiera por qué
+    api.moveToken(campaign.id, map.id, tk.id, x, y)
+      .catch((e) => setZoneLog(`⚠ ${tk.name}: ${e.message}`))
   }
 
   const renameTok = () => {

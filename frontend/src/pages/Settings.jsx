@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, flushQueue } from '../api.js'
-import { dropOp, pendingOps } from '../db.js'
+import { deadOps, dropOp, pendingOps } from '../db.js'
 import { clearAuth, currentUser, getPrefs, setAuth, setPref }
   from '../session.js'
 import { useT } from '../i18n.jsx'
@@ -286,13 +286,17 @@ function PackagesCard() {
 function SyncQueue({ onChanged }) {
   const { t } = useT()
   const [ops, setOps] = useState(null)
-  const load = () => pendingOps().then(setOps).catch(() => setOps([]))
+  const [dead, setDead] = useState(null)
+  const load = () => {
+    pendingOps().then(setOps).catch(() => setOps([]))
+    deadOps().then(setDead).catch(() => setDead([]))
+  }
   useEffect(() => { load() }, [])
-  if (!ops?.length) return null
+  if (!ops?.length && !dead?.length) return null
   return (<div>
     <strong>{t('sync.queueTitle')}</strong>
     <ul style={{ margin: '.3rem 0', paddingLeft: '1rem' }}>
-      {ops.map((o) => (
+      {(ops || []).map((o) => (
         <li key={o.id} className="row">
           {o.payload.entity_kind === 'character' ? (
             <Link to={`/character/${o.payload.entity_id}/actividad`}>
@@ -307,10 +311,26 @@ function SyncQueue({ onChanged }) {
                     await dropOp(o.id); load(); onChanged?.()
                   }}>✕</button>
         </li>))}
+      {/* rechazadas por el servidor — se perdieron y el usuario lo
+          ve aquí en vez de jamás enterarse */}
+      {(dead || []).map((o) => (
+        <li key={o.id} className="row" style={{ opacity: .7 }}>
+          <s>{o.payload.operation_type}</s>
+          <span className="muted">
+            {' '}· {t('sync.rejected')}
+            {' '}· {new Date(o.created_at).toLocaleTimeString()}</span>
+          <button className="ghost" style={{ minHeight: 24 }}
+                  title={t('sync.discard')}
+                  aria-label={t('sync.discard')}
+                  onClick={async () => {
+                    await dropOp(o.id); load(); onChanged?.()
+                  }}>✕</button>
+        </li>))}
     </ul>
-    <button className="ghost" onClick={async () => {
-      await flushQueue(); load(); onChanged?.()
-    }}>{t('sync.flushNow')}</button>
+    {ops?.length > 0 && (
+      <button className="ghost" onClick={async () => {
+        await flushQueue(); load(); onChanged?.()
+      }}>{t('sync.flushNow')}</button>)}
   </div>)
 }
 

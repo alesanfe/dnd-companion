@@ -77,8 +77,18 @@ def subscribe(body: SubIn, user: dict | None = Depends(optional_user)):
 
 
 @router.post("/unsubscribe")
-def unsubscribe(body: SubIn):
+def unsubscribe(body: SubIn,
+                user: dict | None = Depends(optional_user)):
     conn = state_db()
+    row = conn.execute(
+        "SELECT user_id FROM push_subscriptions WHERE endpoint = ?",
+        (body.endpoint,)).fetchone()
+    # sin dueño registrado (modo local) la baja es libre; con user_id,
+    # solo su dueño puede silenciarla — antes cualquiera con el
+    # endpoint borraba las notificaciones de otro
+    if row and row["user_id"] \
+            and row["user_id"] != (user or {}).get("user_id"):
+        raise HTTPException(403, "suscripción de otro usuario")
     conn.execute("DELETE FROM push_subscriptions WHERE endpoint = ?",
                  (body.endpoint,))
     conn.commit()

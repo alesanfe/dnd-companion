@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import datetime, timezone
 from typing import Callable
 
 from ..domain import statblock
@@ -67,8 +68,8 @@ def _sync_character(c: Combatant, ctx) -> None:
     if conn is None:
         return
     from ..domain.character import Character
-    row = conn.execute("SELECT data FROM characters WHERE id = ?",
-                       (c.ref_id,)).fetchone()
+    row = conn.execute("SELECT data, version FROM characters"
+                       " WHERE id = ?", (c.ref_id,)).fetchone()
     if row is None:
         return
     ch = Character(**json.loads(row["data"]))
@@ -78,8 +79,19 @@ def _sync_character(c: Combatant, ctx) -> None:
     # PJ muerto/estable en combate, la hoja no puede quedar desfasada
     ch.conditions = list(c.conditions)
     ch.death_saves = dict(c.death_saves)
-    conn.execute("UPDATE characters SET data = ? WHERE id = ?",
-                 (ch.model_dump_json(), c.ref_id))
+    # el bump es imprescindible: sin él una op posterior de la ficha
+    # (con la versión que tenía abierta) pisaba el HP del combate sin
+    # conflicto — lost update silencioso entre tablero y hoja.
+    # La guardia de versión evita pisar una escritura concurrente.
+    cur = conn.execute(
+        "UPDATE characters SET data = ?, version = ?, updated_at = ?"
+        " WHERE id = ? AND version = ?",
+        (ch.model_dump_json(), row["version"] + 1,
+         datetime.now(timezone.utc).isoformat(),
+         c.ref_id, row["version"]))
+    if cur.rowcount == 0:
+        raise ValueError("la ficha vinculada cambió durante la op de"
+                         " combate — reintenta")
 
 
 @op("combat.next_turn")
@@ -118,7 +130,10 @@ def prev_turn(combat: Combat, p: dict, ctx):
     order = combat.ordered()
     if not order:
         raise ValueError("no hay combatientes")
-    inv = {"operation_type": "combat.next_turn", "payload": {}}
+    # snapshot como next_turn: deshacer un prev con next_turn volvería
+    # a decrementar duraciones de condiciones — doble expiración
+    inv = {"operation_type": "combat.state.restore",
+           "payload": {"data": combat.model_dump()}}
     combat.turn_index -= 1
     if combat.turn_index < 0:
         combat.turn_index = len(order) - 1
@@ -329,6 +344,7 @@ def combatant_death_save(combat: Combat, p: dict, ctx):
     elif c.death_saves["fail"] >= 3:
         c.conditions.append("muerto")
         outcome = "muerto"
+    _sync_character(c, ctx)   # la salvación manual desfasaba la ficha
     return inv, [{"type": "character.hp.changed",
                   "payload": {"combatant": c.name,
                               "death_save": key,

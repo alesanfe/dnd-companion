@@ -1328,3 +1328,277 @@ def test_package_capabilities_and_app_version_enforced():
            "content": {}}
     assert client.post("/api/packages/install", json=fut
                        ).status_code == 409
+
+# --- inversas exactas (auditoria de reversibilidad) --------------------
+
+def test_xp_add_inverse_restores_exact_value():
+    """xp.add con clamp a 0: la inversa -amount inflaba el XP
+    (5 - 10 -> 0, undo +10 -> 10 != 5). Ahora restaura el valor previo."""
+    c = Character(name="t", xp=5)
+    inv, _ = apply_operation(c, "character.xp.add", {"amount": -10})
+    assert c.xp == 0
+    apply_operation(c, inv["operation_type"], inv["payload"])
+    assert c.xp == 5
+    inv2, _ = apply_operation(c, "character.xp.add", {"amount": 300})
+    assert c.xp == 305
+    apply_operation(c, inv2["operation_type"], inv2["payload"])
+    assert c.xp == 5
+
+
+def test_inventory_add_merge_inverse_only_removes_added():
+    """add sobre stack existente: undo quitaba el total fusionado."""
+    c = Character(name="t")
+    apply_operation(c, "character.inventory.add",
+                    {"id": "i1", "name": "Flecha", "quantity": 5})
+    inv, _ = apply_operation(c, "character.inventory.add",
+                             {"id": "i1", "name": "Flecha",
+                              "quantity": 2})
+    assert c.inventory[0].quantity == 7
+    apply_operation(c, inv["operation_type"], inv["payload"])
+    assert c.inventory[0].quantity == 5
+
+
+def test_attune_redo_noop_inverse_keeps_attunement():
+    """attune sobre objeto ya sintonizado: su inversa unattune
+    borraba la sintonia legitima."""
+    c = Character(name="t")
+    apply_operation(c, "character.inventory.add",
+                    {"id": "i1", "name": "Anillo"})
+    apply_operation(c, "character.item.attune", {"item_id": "i1"})
+    inv, _ = apply_operation(c, "character.item.attune",
+                             {"item_id": "i1"})
+    assert inv["operation_type"] == "character.item.noop"
+    apply_operation(c, inv["operation_type"], inv["payload"])
+    assert c.inventory[0].attuned is True
+
+
+def test_equip_redo_noop_inverse_keeps_state():
+    """equip sobre objeto ya equipado: su inversa unequip lo
+    desequipaba Y borraba la sintonia."""
+    c = Character(name="t")
+    apply_operation(c, "character.inventory.add",
+                    {"id": "i1", "name": "Espada"})
+    apply_operation(c, "character.item.equip", {"item_id": "i1"})
+    apply_operation(c, "character.item.attune", {"item_id": "i1"})
+    inv, _ = apply_operation(c, "character.item.equip",
+                             {"item_id": "i1"})
+    assert inv["operation_type"] == "character.item.noop"
+    apply_operation(c, inv["operation_type"], inv["payload"])
+    assert c.inventory[0].equipped is True
+    assert c.inventory[0].attuned is True
+
+
+def test_journal_add_inverse_removes_exact_entry():
+    """El undo no es LIFO: con otra entrada intermedia, journal.pop
+    borraba la ultima en vez de la anadida."""
+    c = Character(name="t")
+    inv_a, _ = apply_operation(c, "character.journal.add",
+                               {"entry": "entrada A"})
+    apply_operation(c, "character.journal.add", {"entry": "entrada B"})
+    apply_operation(c, inv_a["operation_type"], inv_a["payload"])
+    assert c.narrative.journal == ["entrada B"]
+
+
+def test_spell_slot_use_rejects_missing_and_overdraw():
+    """setdefault creaba un nivel fantasma {total:0} y una inversa
+    count=0 que explotaba en restore."""
+    c = Character(name="t", spell_slots={"1": {"total": 2, "used": 0}})
+    with pytest.raises(ValueError):
+        apply_operation(c, "character.spell_slot.use", {"level": 3})
+    assert "3" not in c.spell_slots
+    apply_operation(c, "character.spell_slot.use",
+                    {"level": 1, "count": 2})
+    with pytest.raises(ValueError):
+        apply_operation(c, "character.spell_slot.use", {"level": 1})
+    assert c.spell_slots["1"] == {"total": 2, "used": 2}
+    # el undo del uso doble sigue restaurando los 2
+    hist_inv = {"operation_type": "character.spell_slot.restore",
+                "payload": {"level": 1, "pool": "regular", "count": 2}}
+    apply_operation(c, hist_inv["operation_type"], hist_inv["payload"])
+    assert c.spell_slots["1"]["used"] == 0
+
+
+def test_combat_prev_turn_inverse_restores_exact_state():
+    """prev_turn invertido con next_turn volvia a expirar duraciones.
+    Ambos usan snapshot ahora."""
+    from app.engine.combat_ops import apply_combat_operation
+    cb = Combat(name="t", combatants=[
+        Combatant(id="a", name="x", initiative=20,
+                  conditions=["prone"],
+                  condition_durations={"prone": 1}),
+        Combatant(id="b", name="y", initiative=10)],
+        turn_index=1, round=1)
+    before = cb.model_dump()
+    inv, _ = apply_combat_operation(cb, "combat.prev_turn", {}, _Ctx())
+    assert cb.turn_index == 0
+    apply_combat_operation(cb, inv["operation_type"], inv["payload"],
+                           _Ctx())
+    assert cb.model_dump() == before    # turno y duraciones intactas
+    inv2, _ = apply_combat_operation(cb, "combat.next_turn", {}, _Ctx())
+    assert cb.round == 2 and cb.turn_index == 0
+    assert cb.combatants[0].conditions == []      # prone expiró
+    apply_combat_operation(cb, inv2["operation_type"],
+                           inv2["payload"], _Ctx())
+    assert cb.model_dump() == before    # snapshot exacto
+
+
+def test_death_save_manual_syncs_character_sheet():
+    """combatant.death_save (manual) no llamaba _sync_character —
+    la ficha quedaba desfasada. Y el bump de version/updated_at."""
+    cid = _mkchar()
+    comb = client.post("/api/combat", json={"name": "X"}).json()
+    v = client.get(f"/api/combat/{comb['id']}").json()["version"]
+    _op(comb["id"], v, "combatant.add",
+        {"kind": "character", "name": "P", "ref_id": cid},
+        kind="combat")
+    cj = client.get(f"/api/combat/{comb['id']}").json()
+    cbid = cj["combat"]["combatants"][0]["id"]
+    v = cj["version"]
+    _op(comb["id"], v, "combatant.hp.set",
+        {"combatant_id": cbid, "current": 0}, kind="combat")
+    cv = client.get(f"/api/characters/{cid}").json()["version"]
+    v = client.get(f"/api/combat/{comb['id']}").json()["version"]
+    r = _op(comb["id"], v, "combatant.death_save",
+            {"combatant_id": cbid, "success": True}, kind="combat")
+    assert r.status_code == 200
+    ch = client.get(f"/api/characters/{cid}").json()
+    assert ch["data"]["death_saves"]["success"] == 1
+    assert ch["version"] > cv           # bump: la hoja nota el cambio
+
+
+def test_operation_id_reuse_with_different_payload_conflicts():
+    """Mismo operation_id + distinto payload devolvia el resultado
+    anterior en silencio — ahora 409."""
+    cid = _mkchar()
+    oid = uuid.uuid4().hex
+    body = {"operation_id": oid, "entity_id": cid,
+            "entity_version": 1, "client_id": "c", "user_id": "u",
+            "entity_kind": "character",
+            "operation_type": "character.hp.damage",
+            "payload": {"amount": 2}}
+    assert client.post("/api/operations", json=body).status_code == 200
+    # mismo id, otro contenido -> conflicto, no eco del viejo
+    body2 = {**body, "payload": {"amount": 99}}
+    assert client.post(
+        "/api/operations", json=body2).status_code == 409
+    # mismo id, mismo contenido -> duplicado idempotente
+    r = client.post("/api/operations", json=body)
+    assert r.status_code == 200 and r.json()["duplicate"] is True
+
+
+def test_death_save_undo_rejects_crafted_other_combatant():
+    """Un _undoes de la propia death_save_roll solo autoriza la
+    inversa EXACTA guardada: ni otro combatiente ni valores a medida."""
+    owner = _auth_headers(f"ds{uuid.uuid4().hex[:8]}")
+    pa = _auth_headers(f"pa{uuid.uuid4().hex[:8]}")
+    pb = _auth_headers(f"pb{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    code = client.get(f"/api/campaigns/{camp['id']}",
+                      headers=owner).json()["invite_code"]
+    client.post("/api/campaigns/join",
+                json={"invite_code": code}, headers=pa)
+    client.post("/api/campaigns/join",
+                json={"invite_code": code}, headers=pb)
+    cha = client.post("/api/characters",
+                      json={"name": "A", "campaign_id": camp["id"]},
+                      headers=pa).json()
+    chb = client.post("/api/characters",
+                      json={"name": "B", "campaign_id": camp["id"]},
+                      headers=pb).json()
+    comb = client.post("/api/combat", json={
+        "name": "X", "campaign_id": camp["id"]}, headers=owner).json()
+    client.post(f"/api/combat/{comb['id']}/add-party", headers=owner)
+    cj = client.get(f"/api/combat/{comb['id']}", headers=owner).json()
+    cba = next(c for c in cj["combat"]["combatants"]
+               if c.get("ref_id") == cha["id"])
+    cbb = next(c for c in cj["combat"]["combatants"]
+               if c.get("ref_id") == chb["id"])
+
+    def _cop(otype, payload, h):
+        cur = client.get(f"/api/combat/{comb['id']}",
+                         headers=owner).json()["version"]
+        return client.post("/api/operations", json={
+            "operation_id": uuid.uuid4().hex, "entity_id": comb["id"],
+            "entity_version": cur, "client_id": "c", "user_id": "u",
+            "entity_kind": "combat", "operation_type": otype,
+            "payload": payload}, headers=h)
+
+    # ambos a 0 PG, A tira su salvacion legitima
+    _cop("combatant.hp.set", {"combatant_id": cba["id"], "current": 0},
+         owner)
+    _cop("combatant.hp.set", {"combatant_id": cbb["id"], "current": 0},
+         owner)
+    r = _cop("combatant.death_save_roll",
+             {"combatant_id": cba["id"]}, pa)
+    assert r.status_code == 200
+    roll_op = r.json()["operation_id"]
+
+    # 1) _undoes propio + combatiente AJENO -> 403
+    crafted = {"_undoes": roll_op, "combatant_id": cbb["id"],
+               "death_saves": {"success": 0, "fail": 0},
+               "hp": 100, "conditions": []}
+    assert _cop("combatant.death_save.set", crafted,
+                pa).status_code == 403
+    # 2) _undoes propio + combatiente propio pero valores a medida
+    #    (curarse a 100 PG) -> 403: no es la inversa guardada
+    crafted2 = {"_undoes": roll_op, "combatant_id": cba["id"],
+                "death_saves": {"success": 0, "fail": 0},
+                "hp": 100, "conditions": []}
+    assert _cop("combatant.death_save.set", crafted2,
+                pa).status_code == 403
+    # el combatiente B sigue a 0 PG, intocado
+    cj2 = client.get(f"/api/combat/{comb['id']}",
+                     headers=owner).json()["combat"]
+    bb = next(c for c in cj2["combatants"] if c["id"] == cbb["id"])
+    assert bb["hp_current"] == 0
+    # 3) el undo legitimo (endpoint /undo) sigue funcionando
+    assert client.post(f"/api/operations/undo/{roll_op}",
+                       headers=pa).status_code == 200
+
+# --- privacidad: secrets solo PJ + DM -----------------------------------
+
+def test_character_secrets_redacted_for_other_members():
+    """narrative.secrets es 'solo PJ + DM': cualquier miembro leía la
+    ficha íntegra (GET /characters/{id}, /export y /campaigns/state)."""
+    owner = _auth_headers(f"sc{uuid.uuid4().hex[:8]}")
+    pa = _auth_headers(f"sa{uuid.uuid4().hex[:8]}")
+    pb = _auth_headers(f"sb{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    code = client.get(f"/api/campaigns/{camp['id']}",
+                      headers=owner).json()["invite_code"]
+    client.post("/api/campaigns/join",
+                json={"invite_code": code}, headers=pa)
+    client.post("/api/campaigns/join",
+                json={"invite_code": code}, headers=pb)
+    ch = client.post("/api/characters",
+                     json={"name": "A", "campaign_id": camp["id"]},
+                     headers=pa).json()
+    # el jugador A escribe su secreto via op narrativa
+    ver = client.get(f"/api/characters/{ch['id']}",
+                     headers=pa).json()["version"]
+    client.post("/api/operations", json={
+        "operation_id": uuid.uuid4().hex, "entity_id": ch["id"],
+        "entity_version": ver, "client_id": "c", "user_id": "x",
+        "entity_kind": "character",
+        "operation_type": "character.narrative.set",
+        "payload": {"field": "secrets",
+                    "value": "soy un doble agente"}}, headers=pa)
+
+    # otro jugador: ni la ficha, ni el export, ni el resync lo revelan
+    d = client.get(f"/api/characters/{ch['id']}",
+                   headers=pb).json()["data"]
+    assert d["narrative"]["secrets"] == ""
+    ex = client.get(f"/api/characters/{ch['id']}/export",
+                    headers=pb).json()["character"]
+    assert ex["narrative"]["secrets"] == ""
+    st = client.get(f"/api/campaigns/{camp['id']}/state",
+                    headers=pb).json()
+    sc = next(c for c in st["characters"] if c["id"] == ch["id"])
+    assert sc["data"]["narrative"]["secrets"] == ""
+    # el dueño y el DM sí lo leen
+    assert client.get(f"/api/characters/{ch['id']}",
+                      headers=pa).json()["data"]["narrative"]["secrets"]
+    assert client.get(f"/api/characters/{ch['id']}",
+                      headers=owner).json()["data"]["narrative"]["secrets"]

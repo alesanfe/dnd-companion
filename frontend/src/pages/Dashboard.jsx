@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
-import { currentUser } from '../session.js'
+import { currentUser, loadJSON } from '../session.js'
 import { useT } from '../i18n.jsx'
 
 /** Inicio: responde "¿qué quieres hacer ahora?" — continuar donde
@@ -15,11 +15,9 @@ export default function Dashboard() {
   const [expr, setExpr] = useState('1d20')
   const [rollResult, setRollResult] = useState(null)
 
-  const lastChar = JSON.parse(
-    localStorage.getItem('dnd-last-char') || 'null')
-  const lastCamp = JSON.parse(
-    localStorage.getItem('dnd-last-campaign') || 'null')
-  const favs = JSON.parse(localStorage.getItem('dnd-favs') || '[]')
+  const lastChar = loadJSON('dnd-last-char')
+  const lastCamp = loadJSON('dnd-last-campaign')
+  const favs = loadJSON('dnd-favs', [])
 
   useEffect(() => {
     api.listCharacters()

@@ -1,4 +1,4 @@
-import { enqueueOp, pendingOps, markOp } from './db.js'
+import { enqueueOp, pendingOps, markOp, pruneOps } from './db.js'
 import { getToken, currentUser } from './session.js'
 
 const CLIENT_ID = crypto.randomUUID()
@@ -67,6 +67,11 @@ async function req(path, opts = {}) {
     e.status = res.status
     throw e
   }
+  if (res.status === 204) return null
+  // un proxy puede devolver HTML/texto con 200 — res.json() lanzaba
+  // SyntaxError y, p.ej., el borrado de relaciones nunca refrescaba
+  const ct = res.headers.get('content-type') || ''
+  if (!ct.includes('json')) return null
   return res.json()
 }
 
@@ -89,11 +94,16 @@ export async function flushQueue() {
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(op.payload),
       })
-      await markOp(op.id, r.ok ? 'synced' : 'rejected')
+      // 409 = conflicto de versión (visible en SyncConflicts vía el
+      // registro del servidor); 4xx real = rechazo definitivo
+      await markOp(op.id, r.ok ? 'synced'
+                              : r.status === 409 ? 'conflict'
+                                                 : 'rejected')
     } catch {
       return // sigue offline; reintentar luego
     }
   }
+  pruneOps()          // limpieza oportunista tras cada flush
 }
 
 if (typeof window !== 'undefined') {

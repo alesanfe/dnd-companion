@@ -350,7 +350,7 @@ export default function CampaignBoard() {
                         {' '}{t('sheet.lvlShort')}{c.level}</span>
                     </Link>
                     {me && c.player_id === me.user_id && (
-                      <span className="chip">{t('camp.yours')}</span>)}
+                      <span className="chip">{t('camp.yourSheet')}</span>)}
                     {me && !c.player_id && (
                       <button className="ghost" style={{ minHeight: 26 }}
                               onClick={() =>

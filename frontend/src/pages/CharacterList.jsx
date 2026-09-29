@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
+import { loadJSON } from '../session.js'
 import { useT } from '../i18n.jsx'
 
 const FAVS_KEY = 'dnd-fav-chars'
 const ARCH_KEY = 'dnd-archived-chars'
-const loadSet = (k) => new Set(JSON.parse(localStorage.getItem(k) || '[]'))
+const loadSet = (k) => new Set(loadJSON(k, []))
 const saveSet = (k, s) => localStorage.setItem(k, JSON.stringify([...s]))
 
 const avatarHue = (name = '') => {
@@ -23,6 +24,7 @@ export default function CharacterList() {
   const [filter, setFilter] = useState('')
   const [sort, setSort] = useState('recent')
   const [view, setView] = useState('activos')  // activos|favoritos|archivados
+  const [busy, setBusy] = useState(false)      // crear = una sola vez
   const [favs, setFavs] = useState(() => loadSet(FAVS_KEY))
   const [archived, setArchived] = useState(() => loadSet(ARCH_KEY))
 
@@ -48,10 +50,11 @@ export default function CharacterList() {
 
   const create = async (e) => {
     e.preventDefault()
-    if (!name.trim()) return
-    await api.createCharacter(name.trim())
-    setName('')
-    load()
+    if (!name.trim() || busy) return
+    setBusy(true)
+    try { await api.createCharacter(name.trim()); setName(''); load() }
+    catch (ex) { setErr(ex.message) }
+    finally { setBusy(false) }
   }
 
   const act = async (c, action) => {
@@ -80,8 +83,7 @@ export default function CharacterList() {
     } catch (ex) { setErr(ex.message); load() }
   }
 
-  const lastCharId = JSON.parse(
-    localStorage.getItem('dnd-last-char') || 'null')?.id
+  const lastCharId = loadJSON('dnd-last-char')?.id
 
   const byView = chars.filter((c) => {
     if (view === 'favoritos') return favs.has(c.id)
@@ -176,7 +178,7 @@ export default function CharacterList() {
       <form onSubmit={create} className="row">
         <input value={name} onChange={(e) => setName(e.target.value)}
                placeholder={t('charlist.new') + '…'} />
-        <button type="submit">{t('nav.create')}</button>
+        <button type="submit" disabled={busy}>{t('nav.create')}</button>
         <Link to="/new"><button type="button">Wizard →</button></Link>
         <label className="ghost" style={{ cursor: 'pointer',
              display: 'inline-flex', alignItems: 'center',

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api } from '../api.js'
+import { loadJSON } from '../session.js'
 import { useT } from '../i18n.jsx'
 
 /** Vista legible de una entidad del corpus — stat block normalizado
@@ -27,25 +28,23 @@ export default function Entity() {
 
   // favoritos + recientes: compendio local, no del backend
   const [fav, setFav] = useState(() =>
-    (JSON.parse(localStorage.getItem('dnd-favs') || '[]'))
-      .some((f) => (f.id || f) === id))
+    loadJSON('dnd-favs', []).some((f) => (f.id || f) === id))
   const [colPick, setColPick] = useState(false)
   const addToCollection = (col) => {
-    const cols = JSON.parse(
-      localStorage.getItem('dnd-collections') || '{}')
+    const cols = loadJSON('dnd-collections', {})
     cols[col] = [...new Set([...(cols[col] || []), ent.id])]
     localStorage.setItem('dnd-collections', JSON.stringify(cols))
     setColPick(false)
   }
   useEffect(() => {
     if (!ent) return
-    const rec = JSON.parse(localStorage.getItem('dnd-recents') || '[]')
+    const rec = loadJSON('dnd-recents', [])
     const nx = [{ id: ent.id, name: ent.name, type: ent.entity_type },
       ...rec.filter((r) => r.id !== ent.id)].slice(0, 12)
     localStorage.setItem('dnd-recents', JSON.stringify(nx))
   }, [ent?.id])
   const toggleFav = () => {
-    const favs = JSON.parse(localStorage.getItem('dnd-favs') || '[]')
+    const favs = loadJSON('dnd-favs', [])
     const nx = fav
       ? favs.filter((f) => f.id !== id && f !== id)
       : [...favs, { id: ent.id, name: ent.name, type: ent.entity_type }]
@@ -78,8 +77,7 @@ export default function Entity() {
       </div>
       {colPick && (
         <div className="card" role="dialog" aria-label={t('ent.colAria')}>
-          {Object.keys(JSON.parse(
-              localStorage.getItem('dnd-collections') || '{}'))
+          {Object.keys(loadJSON('dnd-collections', {}))
             .map((c) => (
               <button key={c} className="ghost"
                       onClick={() => addToCollection(c)}>{c}</button>))}

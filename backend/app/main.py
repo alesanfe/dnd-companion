@@ -156,6 +156,9 @@ async def _dispatch_ws(websocket: WebSocket, campaign_id: str,
     # señalización WebRTC (voz de mesa): {to: uid, data: sdp/ice} —
     # relay dirigido; el servidor no toca el SDP
     if msg.get("type") == "rtc.signal":
+        # el espectador es solo lectura — tampoco negocia audio
+        if role == "spectator":
+            return
         target = str(msg.get("to") or "")[:80]
         if target and resolved:
             await manager.send_to(campaign_id, target, {
@@ -217,7 +220,10 @@ async def _dispatch_ws(websocket: WebSocket, campaign_id: str,
         await websocket.send_text(json.dumps(
             {"type": "ack", "operation_id": result["operation_id"],
              "version": result["version"],
-             "duplicate": result["duplicate"]}))
+             "duplicate": result["duplicate"],
+             # paridad con REST: el cliente necesita la inversa para
+             # poder deshacer; los eventos ya llegan por broadcast
+             "inverse": result.get("inverse")}))
         for event in result.pop("_event_objs", []):
             await manager.broadcast(campaign_id, event)
         return

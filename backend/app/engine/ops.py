@@ -348,7 +348,12 @@ def slot_use(char: Character, p: dict, ctx):
     lvl = str(p["level"])
     count = int(p.get("count", 1))
     pool = _slots_for(char, lvl, p.get("pool"))
-    slot = pool.setdefault(lvl, {"total": 0, "used": 0})
+    slot = pool.get(lvl)
+    # sin setdefault: usar un nivel inexistente creaba un slot
+    # fantasma {total:0} y una inversa con count=0 que luego
+    # explotaba en restore ("nada que recuperar")
+    if not slot or slot["total"] - slot["used"] <= 0:
+        raise ValueError("no quedan espacios de conjuro de ese nivel")
     # la inversa guarda el pool RESUELTO — si pact_slots cambia entre
     # la op y su undo, re-resolver 'None' podría caer en otro pool
     resolved_pool = "pact" if pool is char.pact_slots else "regular"
@@ -762,15 +767,20 @@ def inventory_add(char: Character, p: dict, ctx):
         weight=float(weight or 0),
     )
     # si el id ya existe (p.ej. undo de un remove parcial) se fusiona
-    # la cantidad — duplicar el id rompería las búsquedas por item_id
+    # la cantidad — duplicar el id rompería las búsquedas por item_id.
+    # La inversa quita SOLO lo añadido: con el total fusionado un
+    # "add 2" sobre un stack de 5 revertía 7. Y si el payload no
+    # traía quantity, el fallback a item.quantity leía el total
+    # fusionado — mismo bug.
+    added = item.quantity
     existing = next((i for i in char.inventory if i.id == item.id), None)
     if existing is not None:
-        existing.quantity += item.quantity
+        existing.quantity += added
         item = existing
     else:
         char.inventory.append(item)
     return {"operation_type": "character.inventory.remove",
-            "payload": {"item_id": item.id, "quantity": item.quantity}}, [
+            "payload": {"item_id": item.id, "quantity": added}}, [
         {"type": "inventory.item.transferred",
          "payload": {"added": item.name, "quantity": item.quantity}}]
 
@@ -1076,11 +1086,22 @@ def concentration_break(char: Character, p: dict, ctx):
 @op("character.xp.add")
 def xp_add(char: Character, p: dict, ctx):
     amount = int(p["amount"])
-    inv = {"operation_type": "character.xp.add",
-           "payload": {"amount": -amount}}
+    # la inversa guarda el valor previo exacto: con -amount el clamp a
+    # 0 inflaba el XP (xp=5, add(-10) → 0, undo +10 → 10 ≠ 5)
+    inv = {"operation_type": "character.xp.set",
+           "payload": {"xp": char.xp}}
     char.xp = max(0, char.xp + amount)
     return inv, [{"type": "resource.usage.changed",
                   "payload": {"xp": char.xp, "delta": amount}}]
+
+
+@op("character.xp.set")
+def xp_set(char: Character, p: dict, ctx):
+    inv = {"operation_type": "character.xp.set",
+           "payload": {"xp": char.xp}}
+    char.xp = max(0, int(p["xp"]))
+    return inv, [{"type": "resource.usage.changed",
+                  "payload": {"xp": char.xp}}]
 
 
 @op("character.shop.refund")
@@ -1121,11 +1142,43 @@ def journal_add(char: Character, p: dict, ctx):
     entry = p.get("entry") or p.get("text")
     if not entry or not isinstance(entry, str):
         raise ValueError("entrada de diario vacía")
+    idx = len(char.narrative.journal)
     char.narrative.journal.append(entry)
-    return {"operation_type": "character.journal.pop",
-            "payload": {}}, [
+    # la inversa señala LA entrada añadida — journal.pop quitaría la
+    # última, que con entradas intermedias (el undo no es LIFO:
+    # se puede deshacer cualquier op del historial) sería otra
+    return {"operation_type": "character.journal.remove",
+            "payload": {"index": idx, "entry": entry}}, [
         {"type": "inventory.item.transferred",
          "payload": {"journal_entry": entry}}]
+
+
+@op("character.journal.remove")
+def journal_remove(char: Character, p: dict, ctx):
+    """Quita una entrada concreta por índice+contenido. Si el índice
+    ya no coincide (entradas borradas antes), cae al texto."""
+    j = char.narrative.journal
+    idx = int(p.get("index", -1))
+    entry = p.get("entry")
+    if 0 <= idx < len(j) and j[idx] == entry:
+        j.pop(idx)
+    elif entry in j:
+        j.remove(entry)
+    else:
+        raise ValueError("la entrada ya no está en el diario")
+    return {"operation_type": "character.journal.insert",
+            "payload": {"index": idx, "entry": entry}}, []
+
+
+@op("character.journal.insert")
+def journal_insert(char: Character, p: dict, ctx):
+    """Re-inserta una entrada en su posición — inversa de remove."""
+    j = char.narrative.journal
+    idx = min(max(0, int(p.get("index", len(j)))), len(j))
+    entry = p["entry"]
+    j.insert(idx, entry)
+    return {"operation_type": "character.journal.remove",
+            "payload": {"index": idx, "entry": entry}}, []
 
 
 @op("character.journal.pop")
@@ -1133,8 +1186,9 @@ def journal_pop(char: Character, p: dict, ctx):
     if not char.narrative.journal:
         raise ValueError("diario vacío — nada que quitar")
     entry = char.narrative.journal.pop()
-    return {"operation_type": "character.journal.add",
-            "payload": {"entry": entry}}, []
+    return {"operation_type": "character.journal.insert",
+            "payload": {"index": len(char.narrative.journal),
+                        "entry": entry}}, []
 
 
 @op("character.ability.set")
@@ -1245,7 +1299,10 @@ def item_attune(char: Character, p: dict, ctx):
     item = next((i for i in char.inventory if i.id == p["item_id"]), None)
     if item is None:
         raise ValueError("objeto no encontrado")
-    inv = {"operation_type": "character.item.unattune",
+    # no-op en item ya sintonizado → inversa neutra: antes el undo
+    # de un attune redundante DESsintonizaba un objeto legítimo
+    inv = {"operation_type": "character.item.unattune"
+           if not item.attuned else "character.item.noop",
            "payload": {"item_id": item.id}}
     if not item.attuned:
         limit = rules()["combat"]["attunement_max"]
@@ -1278,6 +1335,14 @@ def inspiration_set(char: Character, p: dict, ctx):
                   "payload": {"inspiration": char.inspiration}}]
 
 
+@op("character.item.noop")
+def item_noop(char: Character, p: dict, ctx):
+    """Inversa neutra: el handler padre no mutó nada (p.ej. equipar
+    algo ya equipado) — sin ella el undo rompería estado legítimo."""
+    return {"operation_type": "character.item.noop",
+            "payload": p}, []
+
+
 @op("character.item.equip")
 def item_equip(char: Character, p: dict, ctx):
     """Equipa un objeto (armadura/escudo/arma) — la CA derivada lo
@@ -1285,10 +1350,14 @@ def item_equip(char: Character, p: dict, ctx):
     item = next((i for i in char.inventory if i.id == p["item_id"]), None)
     if item is None:
         raise ValueError("objeto no encontrado")
+    # equipar algo ya equipado no muta — la inversa no puede ser
+    # unequip (desequiparía y, peor, borraría la sintonía)
+    already = item.equipped and not p.get("restore_attuned")
     item.equipped = True
     if p.get("restore_attuned"):            # deshacer un unequip
         item.attuned = True
-    return {"operation_type": "character.item.unequip",
+    return {"operation_type": "character.item.noop" if already
+            else "character.item.unequip",
             "payload": {"item_id": item.id}}, [
         {"type": "inventory.item.transferred",
          "payload": {"equipped": item.name}}]
@@ -1521,9 +1590,21 @@ def feat_forget(char: Character, p: dict, ctx):
     fid = p["feat_id"]
     if fid not in char.feats_known:
         raise ValueError("dote no conocida")
+    # snapshot: si la dote subía características hay que REVERTIR esos
+    # bonos — antes forget los dejaba y su inversa (feat.learn) los
+    # volvía a aplicar: ASI duplicado tras undo
+    inv = _restore_inverse(char.model_dump())
     char.feats_known.remove(fid)
-    return {"operation_type": "character.feat.learn",
-            "payload": {"feat_id": fid}}, []
+    feat = _content(ctx, fid) or {}
+    from ..domain.classinfo import _SHORT_2_LONG
+    for grp in feat.get("ability") or []:
+        if isinstance(grp, dict):
+            for k, v in grp.items():
+                if k in _SHORT_2_LONG and isinstance(v, int):
+                    attr = _SHORT_2_LONG[k]
+                    setattr(char.abilities, attr,
+                            getattr(char.abilities, attr) - v)
+    return inv, []
 
 
 def _list_add_remove(lst: list, value: str, add: bool):

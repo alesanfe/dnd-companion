@@ -15,6 +15,7 @@ export default function DmSesion({ c }) {
   // peticiones de tirada que los jugadores aún no han respondido —
   // se recalcula al llegar tiradas nuevas (una respuesta la cierra)
   const [pendingReqs, setPendingReqs] = useState([])
+  const [busy, setBusy] = useState(false)
   const [loot, setLoot] = useState({ coin: 'gp', amount: '' })
   const [lootMsg, setLootMsg] = useState(null)
   useEffect(() => {
@@ -46,14 +47,19 @@ export default function DmSesion({ c }) {
       {!campaign ? (<>
         <form className="row" onSubmit={async (e) => {
           e.preventDefault()
-          const r = await api.createCampaign(campName || t('camp.name'))
-          // createCampaign devuelve {id, invite_code} — el nombre se
-          // conserva del input o el sidebar queda en blanco
-          setCampaign({ ...r, name: campName || t('camp.name') })
+          if (busy) return                // doble submit = 2 campañas
+          setBusy(true)
+          try {
+            const r = await api.createCampaign(
+              campName || t('camp.name'))
+            // createCampaign devuelve {id, invite_code} — el nombre se
+            // conserva del input o el sidebar queda en blanco
+            setCampaign({ ...r, name: campName || t('camp.name') })
+          } finally { setBusy(false) }
         }}>
           <input value={campName} onChange={(e) => setCampName(e.target.value)}
                  placeholder={t('ses.campNamePh')} />
-          <button type="submit">{t('ses.create')}</button>
+          <button type="submit" disabled={busy}>{t('ses.create')}</button>
         </form>
         {camps?.length > 0 && (
           <form className="row" onSubmit={async (e) => {

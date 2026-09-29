@@ -333,9 +333,19 @@ def apply_to_store(op: OperationIn) -> dict:
     conn = state_db()
 
     seen = conn.execute(
-        "SELECT entity_version, status FROM operations WHERE operation_id = ?",
+        """SELECT entity_id, entity_version, status, operation_type,
+                  payload FROM operations WHERE operation_id = ?""",
         (op.operation_id,)).fetchone()
     if seen:
+        # idempotencia = MISMA op reintentada, no mismo id con otro
+        # contenido: reutilizar un operation_id con payload distinto
+        # devolvía el resultado viejo en silencio
+        if seen["entity_id"] != op.entity_id \
+                or seen["operation_type"] != op.operation_type \
+                or json.loads(seen["payload"]) != op.payload:
+            raise HTTPException(
+                409, {"error": "operation_id reutilizado con otro"
+                               " contenido"})
         return {"operation_id": op.operation_id, "duplicate": True,
                 "version": seen["entity_version"], "status": seen["status"]}
 
@@ -481,13 +491,29 @@ def _player_combat_op(conn, op: OperationIn,
     if op.operation_type == "combatant.death_save.set" \
             and (op.payload or {}).get("_undoes"):
         # deshacer la propia salvación: la inversa solo vale si la op
-        # original era una death_save_roll de ESTE jugador (el
-        # combatiente ya se validó entonces)
+        # original era una death_save_roll de ESTE jugador sobre EL
+        # MISMO combatiente — sin la 2ª condición un _undoes propio
+        # legitimaba un death_save.set sobre cualquier combatiente
+        # (hp/conditions arbitrarios). Y el undo es una sola vez.
         orig = conn.execute(
-            "SELECT operation_type, user_id FROM operations "
+            "SELECT operation_type, user_id, inverse FROM operations "
             "WHERE operation_id = ?", (op.payload["_undoes"],)).fetchone()
+        # el payload debe ser EXACTAMENTE la inversa que el servidor
+        # guardó — un _undoes propio con combatant_id/hp/conditions a
+        # medida seguía siendo un bypass (curarse a voluntad)
+        inv = (json.loads(orig["inverse"])
+               if orig and orig["inverse"] else {})
+        sent = {k: v for k, v in (op.payload or {}).items()
+                if k != "_undoes"}
+        matches_inv = inv.get("operation_type") == op.operation_type \
+            and inv.get("payload") == sent
+        once = not conn.execute(
+            """SELECT 1 FROM operations WHERE entity_id = ?
+               AND json_extract(payload, '$._undoes') = ?""",
+            (op.entity_id, op.payload["_undoes"])).fetchone()
         if orig and orig["operation_type"] == "combatant.death_save_roll" \
-                and orig["user_id"] == (user or {}).get("user_id"):
+                and orig["user_id"] == (user or {}).get("user_id") \
+                and matches_inv and once:
             return
     if op.operation_type != "combatant.death_save_roll":
         raise HTTPException(403, "solo el DM dirige el combate")

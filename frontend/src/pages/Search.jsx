@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
+import { loadJSON } from '../session.js'
 import { useT } from '../i18n.jsx'
 import EntityPreview from '../components/EntityPreview.jsx'
 
@@ -15,7 +16,7 @@ const markExcerpt = (s) =>
 export default function Search() {
   const { t, tf } = useT()
   // los filtros sobreviven al ir y volver del detalle (sessionStorage)
-  const saved = JSON.parse(sessionStorage.getItem('dnd-search') || '{}')
+  const saved = loadJSON('dnd-search', {}, sessionStorage)
   const [q, setQ] = useState(saved.q || '')
   const [type, setType] = useState(saved.type || '')
   const [edition, setEdition] = useState(saved.edition || '')
@@ -237,13 +238,13 @@ function Compare({ ids }) {
 
 /** Favoritos (guardados con ☆ en detalle) + recientes (visitas). */
 function QuickAccess({ onSearch, t }) {
-  const favs = JSON.parse(localStorage.getItem('dnd-favs') || '[]')
-  const recs = JSON.parse(localStorage.getItem('dnd-recents') || '[]')
+  const favs = loadJSON('dnd-favs', [])
+  const recs = loadJSON('dnd-recents', [])
   const norm = (x) => typeof x === 'string'
     ? { id: x, name: x.split(':').pop(), type: '' } : x
   // colecciones nombradas: {nombre: [ids]} — el nombre se resuelve
   // a la entidad en render
-  const cols = JSON.parse(localStorage.getItem('dnd-collections') || '{}')
+  const cols = loadJSON('dnd-collections', {})
   const [col, setCol] = useState(null)
   if (!favs.length && !recs.length &&
       !Object.keys(cols).length) return null
@@ -279,8 +280,7 @@ function QuickAccess({ onSearch, t }) {
 
 /** Últimas consultas escritas — recuperables con un toque. */
 function RecentSearches({ onSearch }) {
-  const items = JSON.parse(
-    sessionStorage.getItem('dnd-recent-searches') || '[]')
+  const items = loadJSON('dnd-recent-searches', [], sessionStorage)
   if (!items.length) return null
   return (
     <section className="card">

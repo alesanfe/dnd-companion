@@ -16,6 +16,7 @@ export default function DmCombate({ c }) {
           setAreaType, areaResults, setAreaResults,
           setRollReq, setDmTab, entities } = c
   const [xpMsg, setXpMsg] = useState(null)
+  const [creating, setCreating] = useState(false)
   if (!campaign) return null
 
   /* 📍 combatiente → token en el primer mapa público. El token queda
@@ -113,12 +114,17 @@ export default function DmCombate({ c }) {
         <h2>{t('dm.newcombat')}</h2>
         <form className="row" onSubmit={async (e) => {
           e.preventDefault()
-          const r = await api.createCombat(combatName || t('com.defaultName'), campaign.id)
-          refresh(r.id)
+          if (creating) return              // doble submit = 2 combates
+          setCreating(true)
+          try {
+            const r = await api.createCombat(
+              combatName || t('com.defaultName'), campaign.id)
+            refresh(r.id)
+          } finally { setCreating(false) }
         }}>
           <input value={combatName} onChange={(e) => setCombatName(e.target.value)}
                  placeholder={t('com.namePh')} />
-          <button type="submit">{t('com.start')}</button>
+          <button type="submit" disabled={creating}>{t('com.start')}</button>
         </form>
       </section>
     )}
@@ -505,7 +511,7 @@ export default function DmCombate({ c }) {
             <div className="row">
               {sel.ref_id && (
                 <Link to={`/character/${sel.ref_id}`}>
-                  <button className="ghost">{t('com.sheetLink')}</button></Link>)}
+                  <button className="ghost">{t('com.sheetFull')}</button></Link>)}
               {sel.ref_id && (
                 <button className="ghost" onClick={() => {
                   setRollReq({ character_id: sel.ref_id,

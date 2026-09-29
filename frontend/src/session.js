@@ -4,9 +4,15 @@ const K = { token: 'dc.token', user: 'dc.user', theme: 'dc.theme',
             dyslexia: 'dc.dyslexia' }
 
 export function getToken() { return localStorage.getItem(K.token) }
+/** JSON.parse tolerante: un valor corrupto en localStorage devuelve
+    el fallback en vez de tumbar el render de toda la página. */
+export function loadJSON(key, fallback = null, storage = localStorage) {
+  const raw = storage.getItem(key)
+  if (raw == null) return fallback
+  try { return JSON.parse(raw) } catch { return fallback }
+}
 export function currentUser() {
-  const u = localStorage.getItem(K.user)
-  return u ? JSON.parse(u) : null
+  return loadJSON(K.user)
 }
 export function setAuth(token, user) {
   localStorage.setItem(K.token, token)

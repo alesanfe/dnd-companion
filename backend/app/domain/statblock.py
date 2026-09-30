@@ -63,7 +63,8 @@ def _abilities(d: dict) -> dict[str, int]:
     for a in ABILITIES:
         v = (d.get(_LONG[a])            # 5e-bits / open5e v1
              or d.get(a)                # 5etools / codexmundi
-             or scores.get(_LONG[a])    # open5e v2
+             or scores.get(_LONG[a])    # open5e v2 (nombres largos)
+             or scores.get(a)           # open5e v2 (claves cortas)
              or (mods.get(_LONG[a], 0) + 10 if _LONG[a] in mods else None))
         out[a] = _int(v, 10)
     return out
@@ -107,8 +108,14 @@ def _ac(d: dict) -> int:
 def _speed(d: dict) -> str:
     sp = d.get("speed")
     if isinstance(sp, dict):
-        parts = [f"{k} {v} ft." for k, v in sp.items()
-                 if isinstance(v, (int, float, str)) and k != "unit"]
+        # el valor puede traer la unidad ("30 ft." open5e) — añadir
+        # " ft." a ciegas producía "30 ft. ft."
+        parts = []
+        for k, v in sp.items():
+            if not isinstance(v, (int, float, str)) or k == "unit":
+                continue
+            vv = re.sub(r"\s*ft\.?\s*$", "", str(v)).strip()
+            parts.append(f"{k} {vv} ft.")
         return ", ".join(parts)
     return str(sp or "")
 
@@ -203,7 +210,12 @@ def _skills(d: dict) -> dict[str, int]:
         out.update({k.lower(): int(v) for k, v in src.items()
                     if isinstance(v, (int, float))})
     raw = d.get("skill")
-    if isinstance(raw, str):
+    if isinstance(raw, dict):           # 5etools: {perception:"+4"}
+        for k, v in raw.items():
+            n = _int(v, None)
+            if n is not None:
+                out[k.lower()] = n
+    elif isinstance(raw, str):
         # 'Perception +12, Animal Handling +4' — nombres multi-palabra
         for m in re.finditer(r"([A-Za-zñ][A-Za-zñ ]*?)\s*([+-]?\d+)",
                              raw):

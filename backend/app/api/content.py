@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ..db.connections import content_db
@@ -416,7 +416,9 @@ def get_entity(entity_id: str):
         "SELECT * FROM content_entities WHERE id = ?", (entity_id,)
     ).fetchone()
     if row is None:
-        return {"error": "not found"}
+        # 200 + {"error"} rompe el manejo estándar del cliente
+        # (res.ok → intenta leer .data del objeto error)
+        raise HTTPException(404, "entity not found")
     out = dict(row)
     out["data"] = json.loads(out["data"])
     return out

@@ -307,8 +307,11 @@ def character_tick(char: Character, p: dict, ctx):
     condiciones y expira las que lleguen a 0."""
     inv = _set_inverse(char)
     expired = []
+    # rounds negativo INCREMENTABA las duraciones — el tiempo no
+    # fluye hacia atrás
+    rounds = max(0, int(p.get("rounds", 1)))
     for cond in list(char.condition_durations):
-        char.condition_durations[cond] -= int(p.get("rounds", 1))
+        char.condition_durations[cond] -= rounds
         if char.condition_durations[cond] <= 0:
             del char.condition_durations[cond]
             if cond in char.conditions:
@@ -362,13 +365,18 @@ def slot_use(char: Character, p: dict, ctx):
     # explotaba en restore ("nada que recuperar")
     if not slot or slot["total"] - slot["used"] <= 0:
         raise ValueError("no quedan espacios de conjuro de ese nivel")
+    # pedir más de lo disponible era un clamp silencioso: el usuario
+    # veía "gasté 3 de 2" — rechazar como toda validación del motor
+    if count > slot["total"] - slot["used"]:
+        raise ValueError(
+            f"quedan {slot['total'] - slot['used']} espacios de ese nivel")
     # la inversa guarda el pool RESUELTO — si pact_slots cambia entre
     # la op y su undo, re-resolver 'None' podría caer en otro pool
     resolved_pool = "pact" if pool is char.pact_slots else "regular"
     inv = {"operation_type": "character.spell_slot.restore",
            "payload": {"level": int(lvl), "pool": resolved_pool,
-                       "count": min(count, slot["total"] - slot["used"])}}
-    slot["used"] = min(slot["total"], slot["used"] + count)
+                       "count": count}}
+    slot["used"] += count
     return inv, [{"type": "resource.usage.changed",
                   "payload": {"spell_slot": lvl, "used": slot["used"],
                               "pool": "pact" if pool is char.pact_slots
@@ -586,10 +594,13 @@ def _apply_level_row(char: Character, class_id: str,
     char.proficiency_bonus = int(lvl.get("prof_bonus",
                                          char.proficiency_bonus))
     sc = lvl.get("spellcasting") or {}
-    target = (char.pact_slots
-              if class_id.split(":")[-1].replace("-", " ").lower()
-              == "warlock"
-              else char.spell_slots)
+    # el id de clase viene en formatos distintos por fuente —
+    # 'class:warlock' (5e-bits), 'warlock|phb' (5etools), 'warlock'
+    # solo: 'warlock' como PALABRA en cualquier segmento cubre todos
+    # sin depender de cuál separador usa la fuente
+    is_warlock = "warlock" in class_id.lower() \
+        .replace("|", " ").replace(":", " ").replace("-", " ").split()
+    target = char.pact_slots if is_warlock else char.spell_slots
     for n in range(1, 10):
         slots = sc.get(f"spell_slots_level_{n}", 0)
         if slots:
@@ -834,7 +845,9 @@ def inventory_remove(char: Character, p: dict, ctx):
                   "payload": {"removed": item.name, "quantity": qty}}]
 
 
-_CP = {"pp": 1000, "gp": 100, "ep": 50, "sp": 10, "cp": 1}
+# _COIN_CP (l.~189) es la misma tabla — una sola fuente o las dos
+# divergían en una futura corrección
+_CP = _COIN_CP
 
 
 def _purse_cp(char: Character) -> int:

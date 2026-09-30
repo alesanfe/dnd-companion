@@ -178,18 +178,28 @@ def create_from_options(body: WizardCreate,
     hit_die = _hit_die(cls)
     hp_max = max(1, hit_die + abilities.modifier("con"))
 
-    # spell slots y prof bonus nivel 1: entidad 'level' '{clase}-1'
+    # spell slots y prof bonus nivel 1: entidad 'level' '{clase}-1'.
+    # El separador del id varía por fuente (':' 5e-bits, '|' 5etools)
+    # — probar ambas formas; y un split(":") sobre 'warlock|phb'
+    # buscaba 'warlock|phb-1' literalmente y no encontraba nada
     spell_slots: dict[str, dict[str, int]] = {}
+    pact_slots: dict[str, dict[str, int]] = {}
     prof_bonus = 2
-    source, class_index = body.class_id.split(":", 1)
-    lvl = _content_row(f"{source}:{class_index}-1")
+    lvl = _content_row(f"{body.class_id}-1") or _content_row(
+        body.class_id.replace("|", ":", 1) + "-1")
     if lvl:
         prof_bonus = int(lvl.get("prof_bonus", 2))
         sc = lvl.get("spellcasting") or {}
+        # brujo → pool de pacto (recarga en descanso corto) —
+        # misma detección por palabra que _apply_level_row
+        is_warlock = "warlock" in body.class_id.lower() \
+            .replace("|", " ").replace(":", " ") \
+            .replace("-", " ").split()
+        pool = pact_slots if is_warlock else spell_slots
         for n in range(1, 10):
             slots = sc.get(f"spell_slots_level_{n}", 0)
             if slots:
-                spell_slots[str(n)] = {"total": slots, "used": 0}
+                pool[str(n)] = {"total": slots, "used": 0}
 
     char = Character(
         name=body.name,
@@ -201,6 +211,7 @@ def create_from_options(body: WizardCreate,
         hp=HitPoints(current=hp_max, max=hp_max),
         hit_dice=[HitDicePool(die=f"d{hit_die}", total=1, remaining=1)],
         spell_slots=spell_slots,
+        pact_slots=pact_slots,
         proficiency_bonus=prof_bonus,
         save_proficiencies=_save_profs(cls),
         skill_proficiencies=_background_skills(

@@ -2051,3 +2051,137 @@ def test_register_trims_username_and_blocks_short():
     r = client.post("/api/auth/login", json={
         "username": " valido", "password": "pw123456"})
     assert r.status_code == 200
+
+
+# --- Fase A de la auditoría -------------------------------------------
+
+def test_statblock_5etools_skill_dict_and_v2_scores():
+    """skill:{perception:"+4"} (5etools), ability_scores con claves
+    cortas (open5e v2) y '30 ft.' en speed ya se normalizan bien."""
+    from app.domain.statblock import normalize
+    b = normalize({"name": "x", "hp": {"average": 20},
+                   "skill": {"perception": "+4", "stealth": "+2"},
+                   "ability_scores": {"str": 18},
+                   "speed": {"walk": "30 ft."}})
+    assert b["skills"]["perception"] == 4
+    assert b["skills"]["stealth"] == 2
+    assert b["abilities"]["str"] == 18
+    assert b["speed"] == "walk 30 ft."      # no "30 ft. ft."
+
+
+def test_remove_before_active_keeps_turn():
+    """Quitar un combatiente anterior al activo reajusta turn_index —
+    el que actuaba no pierde el turno."""
+    c = Combat(combatants=[
+        Combatant(id="ta", name="A", initiative=30),
+        Combatant(id="tb", name="B", initiative=20),
+        Combatant(id="tc", name="C", initiative=10)])
+    c.turn_index = 1                                  # activo = B
+    removed_id = c.combatants[0].id
+    apply_combat_operation(c, "combatant.remove",
+                           {"combatant_id": removed_id}, _Ctx())
+    assert c.active.name == "B"                       # sigue siendo B
+    # retirar al propio activo: pasa el turno al siguiente
+    apply_combat_operation(c, "combatant.remove",
+                           {"combatant_id": c.active.id}, _Ctx())
+    assert c.active.name == "C"
+
+
+def test_slot_use_rejects_overdraw():
+    """count > disponibles es 400, no un clamp silencioso."""
+    c = Character(name="t", spell_slots={"1": {"total": 2, "used": 0}})
+    with pytest.raises(Exception):
+        apply_operation(c, "character.spell_slot.use",
+                        {"level": 1, "count": 3}, _Ctx())
+    assert c.spell_slots["1"]["used"] == 0
+
+
+def test_tick_negative_rounds_does_not_extend():
+    """rounds=-5 INCREMENTABA las duraciones — el tiempo no va atrás."""
+    c = Character(name="t", conditions=["x"],
+                  condition_durations={"x": 2})
+    apply_operation(c, "character.tick", {"rounds": -5}, _Ctx())
+    assert c.condition_durations["x"] == 2
+
+
+def test_warlock_level_row_targets_pact_slots():
+    """'warlock|phb' (5etools) y similares llenan pact_slots, no
+    spell_slots — la recarga en descanso corto depende de ello."""
+    from app.engine.ops import _apply_level_row
+    for cid in ("warlock|phb", "class:warlock", "warlock"):
+        c = Character(name="w",
+                      classes=[ClassLevel(class_id=cid, level=1)])
+        _apply_level_row(c, cid,
+                         {"spellcasting": {"spell_slots_level_2": 2}})
+        assert c.pact_slots["2"]["total"] == 2, cid
+        assert "2" not in c.spell_slots, cid
+
+
+def test_combatant_add_character_uses_dex_and_live_hp(monkeypatch):
+    """Un PJ entra al tracker con 1d20+DEX (su iniciativa real) y su
+    hp.current vivo — antes 1d20+0 y un hp_max de payload ganaba."""
+    import app.engine.combat_ops as co
+    from app.db.connections import state_db
+    from app.api.operations import OpContext
+    from app.domain.character import AbilityScores
+
+    class _R:
+        total = 10
+        rolls = [10]
+    monkeypatch.setattr(co, "roll", lambda _e: _R())
+    conn = state_db()
+    ctx = OpContext(conn)
+    ch = Character(name="Dex",
+                   abilities=AbilityScores(dexterity=16))   # +3
+    ch.hp.current = 7
+    ch.hp.max = 20
+    conn.execute(
+        "INSERT INTO characters (id, name, version, data, updated_at)"
+        " VALUES (?,?,0,?,?)",
+        ("dex-pj", "Dex", ch.model_dump_json(), "x"))
+    conn.commit()
+    cm = Combat()
+    apply_combat_operation(
+        cm, "combatant.add",
+        {"kind": "character", "ref_id": "dex-pj", "hp_max": 20}, ctx)
+    c = cm.combatants[0]
+    assert c.initiative == 13          # 10 + mod DEX 3, no +0
+    assert c.hp_current == 7           # vivo de la ficha, no 20
+
+
+def test_content_get_entity_404():
+    """200 + {"error"} rompía el manejo estándar (res.ok -> .data)."""
+    assert client.get("/api/content/no-existe").status_code == 404
+
+
+def test_unsubscribe_needs_only_endpoint():
+    """La baja push no exige 'keys' (no se usan en unsubscribe)."""
+    r = client.post("/api/push/unsubscribe",
+                    json={"endpoint": "https://x/" + uuid.uuid4().hex})
+    assert r.status_code == 200
+
+
+def test_conflict_retry_rejects_second_retry():
+    """El retry de un conflicto es CAS atómico: el segundo intento
+    sobre la misma op es 404, no un doble-apply."""
+    cid = _mkchar()
+    v = _version(cid)
+    client.post("/api/operations", json={
+        "operation_id": "c-flush", "entity_id": cid,
+        "entity_version": v, "client_id": "x", "user_id": "x",
+        "entity_kind": "character",
+        "operation_type": "character.hp.set",
+        "payload": {"current": 5}})
+    client.post("/api/operations", json={
+        "operation_id": "c-stale", "entity_id": cid,
+        "entity_version": v, "client_id": "y", "user_id": "y",
+        "entity_kind": "character",
+        "operation_type": "character.hp.set",
+        "payload": {"current": 8}})          # -> conflict
+    r = client.post("/api/operations/conflicts/c-stale/retry")
+    assert r.status_code == 200
+    # la op ya está 'resolved': un segundo retry no vuelve a aplicar
+    r2 = client.post("/api/operations/conflicts/c-stale/retry")
+    assert r2.status_code == 404
+    assert client.get(f"/api/characters/{cid}").json(
+        )["data"]["hp"]["current"] == 8      # una sola aplicación

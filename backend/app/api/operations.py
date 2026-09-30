@@ -198,10 +198,11 @@ def _augment_expr(char, expr: str, roll_type: str,
 
 
 def _insert_keep(expr: str, keep: str) -> str:
-    """'1d20+5'+adv → '1d20adv+5': inserta kh/kl/adv/dis antes del
-    modificador final."""
-    m = re.search(r"[+-]\d+$", expr)
-    return expr[:m.start()] + keep + m.group(0) if m else expr + keep
+    """'1d20+5'+adv → '1d20adv+5': adv/dis va pegado AL d20, no antes
+    del último modificador — '1d20+3adv+2' no parseaba (400 falso en
+    ataques con bono compuesto)."""
+    m = re.search(r"\d*d20", expr)
+    return expr[:m.end()] + keep + expr[m.end():] if m else expr + keep
 
 
 async def _broadcast_roll(conn, campaign_id: str, character_id: str,
@@ -434,6 +435,17 @@ def apply_to_store(op: OperationIn) -> dict:
                        SELECT event_id FROM events WHERE campaign_id = ?
                        ORDER BY occurred_at DESC LIMIT 500)""",
                 (campaign_id, campaign_id))
+        else:
+            # entidades sin campaña (fichas personales) comparten
+            # campaign_id="" — podar por aggregate o su historial de
+            # eventos crecía sin límite alguno
+            conn.execute(
+                """DELETE FROM events WHERE aggregate_id = ?
+                   AND event_id NOT IN (
+                       SELECT event_id FROM events
+                       WHERE aggregate_id = ?
+                       ORDER BY occurred_at DESC LIMIT 500)""",
+                (op.entity_id, op.entity_id))
         conn.commit()
     except _ConcurrentUpdate:
         conn.rollback()
@@ -774,11 +786,20 @@ async def retry_conflict(operation_id: str,
     El nuevo operation_id evita que la idempotencia rebote el
     reintento; el viejo queda marcado 'resolved'."""
     conn = state_db()
+    # CAS atómico: el check y la reserva en UN solo UPDATE — dos
+    # retries paralelos pasaban ambos el "status=conflict" antes de
+    # que ninguno aplicase → doble-apply (xp x2, curación x2)
+    cur = conn.execute(
+        "UPDATE operations SET status = ? WHERE operation_id = ? "
+        "AND status = ?",
+        (OperationStatus.RESOLVING.value, operation_id,
+         OperationStatus.CONFLICT.value))
+    conn.commit()
+    if cur.rowcount == 0:
+        raise HTTPException(404, "conflict not found or already resolving")
     row = conn.execute(
         "SELECT * FROM operations WHERE operation_id = ?",
         (operation_id,)).fetchone()
-    if row is None or row["status"] != "conflict":
-        raise HTTPException(404, "conflict not found")
     entity_kind = "combat" if conn.execute(
         "SELECT 1 FROM combats WHERE id = ?",
         (row["entity_id"],)).fetchone() else "character"
@@ -793,7 +814,16 @@ async def retry_conflict(operation_id: str,
         entity_kind=entity_kind,
         payload=json.loads(row["payload"]),
     )
-    result = await apply(retry_op, user)   # membresía revalidada dentro
+    try:
+        result = await apply(retry_op, user)   # membresía revalidada
+    except Exception:
+        # el reintento falló (auth, payload…) → devolver a conflicto,
+        # no dejarla clavada en 'resolving' para siempre
+        conn.execute(
+            "UPDATE operations SET status = ? WHERE operation_id = ?",
+            (OperationStatus.CONFLICT.value, operation_id))
+        conn.commit()
+        raise
     conn.execute(
         "UPDATE operations SET status = ? WHERE operation_id = ?",
         (OperationStatus.RESOLVED.value, operation_id))
@@ -835,18 +865,28 @@ async def undo(operation_id: str,
                user: dict | None = Depends(optional_user)):
     """Revierte una operación aplicando su inversa registrada."""
     conn = state_db()
+    # CAS atómico: reservar el undo en UN UPDATE antes del await —
+    # dos undos paralelos pasaban ambos el check '_undoes' antes de
+    # que el primero lo insertase → inversa aplicada dos veces
+    cur = conn.execute(
+        "UPDATE operations SET status = ? WHERE operation_id = ? "
+        "AND status = ? AND inverse IS NOT NULL",
+        (OperationStatus.UNDOING.value, operation_id,
+         OperationStatus.SYNCED.value))
+    conn.commit()
+    if cur.rowcount == 0:
+        st = conn.execute(
+            "SELECT status, inverse FROM operations "
+            "WHERE operation_id = ?", (operation_id,)).fetchone()
+        # ya deshecha o en pleno undo → 409 (el contrato previo);
+        # inexistente o sin inversa → 404
+        if st and st["status"] in (OperationStatus.UNDONE.value,
+                                  OperationStatus.UNDOING.value):
+            raise HTTPException(409, "operation already undone")
+        raise HTTPException(404, "operation not found or not reversible")
     op_row = conn.execute(
         "SELECT * FROM operations WHERE operation_id = ?",
         (operation_id,)).fetchone()
-    if op_row is None or not op_row["inverse"]:
-        raise HTTPException(404, "operation not found or not reversible")
-    # doble-undo: si ya existe una op que revirtió esta, aplicar la
-    # inversa otra vez curaría/dañaría dos veces
-    if conn.execute(
-            """SELECT 1 FROM operations WHERE entity_id = ?
-               AND json_extract(payload, '$._undoes') = ?""",
-            (op_row["entity_id"], operation_id)).fetchone():
-        raise HTTPException(409, "operation already undone")
     inv = json.loads(op_row["inverse"])
     entity_kind = "combat" if conn.execute(
         "SELECT 1 FROM combats WHERE id = ?",
@@ -866,7 +906,20 @@ async def undo(operation_id: str,
     )
     # apply() vuelve a comprobar la membresía con ESTE usuario —
     # llamarla sin el user le pasaría el objeto Depends como user
-    return await apply(inverse_op, user)
+    try:
+        result = await apply(inverse_op, user)
+    except Exception:
+        # liberar la reserva: un undo que falla deja la op deshacible
+        conn.execute(
+            "UPDATE operations SET status = ? WHERE operation_id = ?",
+            (OperationStatus.SYNCED.value, operation_id))
+        conn.commit()
+        raise
+    conn.execute(
+        "UPDATE operations SET status = ? WHERE operation_id = ?",
+        (OperationStatus.UNDONE.value, operation_id))
+    conn.commit()
+    return result
 
 
 def _current_version(conn, entity_id: str, kind: str = "character") -> int:

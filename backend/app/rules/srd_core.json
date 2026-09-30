@@ -107,6 +107,7 @@
     "death_save_crit_success": 20,
     "death_save_succeeds": 3,
     "death_save_fails": 3,
+    "attack_crit_on": 20,
     "attunement_max": 3,
     "concentration_dc_floor": 10,
     "spell_dc_base": 8,

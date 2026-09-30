@@ -17,6 +17,11 @@ class OperationStatus(str, Enum):
     # resolución manual desde la UI de conflictos
     RESOLVED = "resolved"
     DISMISSED = "dismissed"
+    # CAS transitorio: retry/undo lo fijan antes de re-aplicar para
+    # que una segunda llamada concurrente no doble-aplique
+    RESOLVING = "resolving"
+    UNDOING = "undoing"
+    UNDONE = "undone"
 
 
 class Operation(BaseModel):

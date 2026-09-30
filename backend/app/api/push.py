@@ -76,8 +76,14 @@ def subscribe(body: SubIn, user: dict | None = Depends(optional_user)):
     return {"ok": True}
 
 
+class UnsubIn(BaseModel):
+    # keys no se usan en la baja — exigirlas en SubIn obligaba al
+    # cliente a mandar basura para darse de baja
+    endpoint: str
+
+
 @router.post("/unsubscribe")
-def unsubscribe(body: SubIn,
+def unsubscribe(body: UnsubIn,
                 user: dict | None = Depends(optional_user)):
     conn = state_db()
     row = conn.execute(

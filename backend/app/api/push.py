@@ -65,11 +65,20 @@ def subscribe(body: SubIn, user: dict | None = Depends(optional_user)):
     if not body.keys.get("p256dh") or not body.keys.get("auth"):
         raise HTTPException(400, "faltan claves p256dh/auth")
     conn = state_db()
+    uid = (user or {}).get("user_id")
+    # ownership: INSERT OR REPLACE pisaba el user_id existente —
+    # quien conociera el endpoint (está en el navegador) reasignaba
+    # o desvinculaba la suscripción de otro usuario
+    row = conn.execute(
+        "SELECT user_id FROM push_subscriptions WHERE endpoint = ?",
+        (body.endpoint[:2000],)).fetchone()
+    if row and row["user_id"] and row["user_id"] != uid:
+        raise HTTPException(403, "suscripción de otro usuario")
     conn.execute(
         """INSERT OR REPLACE INTO push_subscriptions
            (endpoint, user_id, p256dh, auth, created_at)
            VALUES (?,?,?,?,?)""",
-        (body.endpoint[:2000], (user or {}).get("user_id"),
+        (body.endpoint[:2000], uid,
          body.keys["p256dh"], body.keys["auth"],
          datetime.now(timezone.utc).isoformat()))
     conn.commit()

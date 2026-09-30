@@ -50,6 +50,19 @@ def upsert_source(
     )
 
 
+# entity_type canónicos — --type de import-file los valida para que un
+# typo no cree tipos basura que el buscador/la UI no reconocen
+ENTITY_TYPES = {
+    "monster", "spell", "equipment", "magic-item", "weapon", "item",
+    "background", "feat", "species", "race", "class", "subclass",
+    "level", "condition", "rule", "language", "ability-score",
+    "skill", "alignment", "damage-type", "environment", "size",
+    "creature-type", "magic-school", "equipment-category",
+    "item-rarity", "trap", "hazard", "vehicle", "deity",
+    "class-feature", "optionalfeature", "reward", "psionic",
+}
+
+
 def insert_entity(
     conn: sqlite3.Connection,
     *,
@@ -65,7 +78,17 @@ def insert_entity(
     source_page: str | None = None,
     is_redistributable: bool = False,
 ) -> str:
+    # id = fuente:índice; si una ENTIDAD DE OTRO TIPO ya ocupa ese id
+    # (monster 'goblin' vs spell 'goblin' en la misma fuente) el
+    # INSERT OR REPLACE la sobrescribía en silencio — se desambigua
+    # con el tipo solo en el caso de colisión real, preservando los
+    # ids históricos de la forma corta
     entity_id = f"{source_id}:{index}"
+    prev = conn.execute(
+        "SELECT entity_type FROM content_entities WHERE id = ?",
+        (entity_id,)).fetchone()
+    if prev and prev["entity_type"] != entity_type:
+        entity_id = f"{source_id}:{entity_type}:{index}"
     conn.execute(
         """INSERT OR REPLACE INTO content_entities
            (id, entity_type, name, ruleset, source_id, source_document,

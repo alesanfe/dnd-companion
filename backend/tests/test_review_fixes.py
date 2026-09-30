@@ -2185,3 +2185,49 @@ def test_conflict_retry_rejects_second_retry():
     assert r2.status_code == 404
     assert client.get(f"/api/characters/{cid}").json(
         )["data"]["hp"]["current"] == 8      # una sola aplicación
+
+
+# --- Fase B de la auditoría -------------------------------------------
+
+def test_push_subscribe_cannot_hijack_endpoint():
+    """Re-suscribir un endpoint registrado por otro usuario no le
+    quita el user_id (antes INSERT OR REPLACE lo pisaba)."""
+    owner = _auth_headers(f"po{uuid.uuid4().hex[:8]}")
+    stranger = _auth_headers(f"ps{uuid.uuid4().hex[:8]}")
+    ep = "https://push.example/" + uuid.uuid4().hex
+    keys = {"p256dh": "k", "auth": "a"}
+    r = client.post("/api/push/subscribe", headers=owner,
+                    json={"endpoint": ep, "keys": keys})
+    assert r.status_code == 201
+    # extraño: ni se adueña ni la desvincula
+    r = client.post("/api/push/subscribe", headers=stranger,
+                    json={"endpoint": ep, "keys": keys})
+    assert r.status_code == 403
+    # el dueño sí actualiza sus claves
+    r = client.post("/api/push/subscribe", headers=owner,
+                    json={"endpoint": ep, "keys": keys})
+    assert r.status_code == 201
+
+
+def test_insert_entity_cross_type_collision_disambiguates():
+    """monster 'goblin' y spell 'goblin' de la misma fuente ya no se
+    sobrescriben — el tipo desambigua el id solo en colisión real."""
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]
+                           / "data-pipeline"))
+    from pipeline import db as pdb  # noqa: E402
+    conn = pdb.connect(":memory:")
+    pdb.upsert_source(conn, source_id="s", name="S", version=None,
+                      license="OGL")
+    common = dict(source_id="s", index="goblin", name="Goblin",
+                  ruleset="dnd5e-2014", license="OGL", data={})
+    a = pdb.insert_entity(conn, entity_type="monster", **common)
+    b = pdb.insert_entity(conn, entity_type="spell", **common)
+    assert a == "s:goblin"                    # el primero, id corto
+    assert b == "s:spell:goblin"              # el segundo, ambiguo
+    assert conn.execute(
+        "SELECT COUNT(*) n FROM content_entities").fetchone()[0] == 2
+    # mismo tipo+mismo índice sigue siendo upsert (semántica deseada)
+    pdb.insert_entity(conn, entity_type="monster", **common)
+    assert conn.execute(
+        "SELECT COUNT(*) n FROM content_entities").fetchone()[0] == 2

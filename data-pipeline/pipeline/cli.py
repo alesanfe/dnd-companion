@@ -34,7 +34,10 @@ def main() -> None:
     f.add_argument("--source-id", required=True)
     f.add_argument("--source-name", default=None)
     f.add_argument("--license", required=True)
-    f.add_argument("--type", dest="entity_type", required=True)
+    f.add_argument("--type", dest="entity_type", required=True,
+                   choices=sorted(db.ENTITY_TYPES),
+                   help="tipo canónico — un typo crearía entidades que "
+                        "el buscador y la UI no reconocen")
     f.add_argument("--ruleset", default="dnd5e-2014",
                    choices=["dnd5e-2014", "dnd5e-2024", "mixed"])
     f.add_argument("--redistributable", action="store_true",

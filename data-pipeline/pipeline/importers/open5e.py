@@ -92,7 +92,12 @@ def import_open5e(
                 if not name or not slug:
                     continue
                 doc = docs.get(doc_slug, {})
-                lic = doc.get("license") or "OGL-1.0a"
+                # conservador: un documento ausente de /documents/ NO
+                # es OGL por defecto — sin licencia conocida no es
+                # redistribuible (regla del repo: nunca marcar lo
+                # dudoso como libre)
+                lic = doc.get("license") or "unknown"
+                redist = lic != "unknown"
                 src_id = f"open5e-{doc_slug}"
                 if src_id not in seen_sources:
                     db.upsert_source(
@@ -105,7 +110,7 @@ def import_open5e(
                             f"{doc.get('organization') or ''} "
                             f"({lic})").strip(),
                         original_url="https://open5e.com",
-                        distribution_allowed=True)
+                        distribution_allowed=redist)
                     seen_sources.add(src_id)
                 rs = ruleset or _DOC_RULESET.get(doc_slug, "mixed")
                 db.insert_entity(
@@ -117,7 +122,7 @@ def import_open5e(
                     source_version=hashlib.sha256(
                         json.dumps(row, sort_keys=True).encode()
                     ).hexdigest()[:16],
-                    is_redistributable=True)
+                    is_redistributable=redist)
                 count += 1
                 ep_count += 1
             url = page.get("next")
@@ -210,6 +215,8 @@ def import_open5e_v2(
                 doc = docs.get(doc_key, {})
                 licenses = doc.get("licenses") or []
                 lic = (licenses[0]["name"] if licenses else "unknown")
+                # igual que v1: licencia desconocida → no redistribuible
+                redist = lic != "unknown"
                 src_id = f"open5e2-{doc_key}"
                 if src_id not in seen_sources:
                     pub = (doc.get("publisher") or {}).get("name", "")
@@ -223,7 +230,7 @@ def import_open5e_v2(
                             f"{doc.get('author') or pub} ({lic})"),
                         original_url=doc.get("permalink")
                         or "https://open5e.com",
-                        distribution_allowed=True)
+                        distribution_allowed=redist)
                     seen_sources.add(src_id)
                 gs = (doc.get("gamesystem") or {}).get("key", "")
                 rs = ruleset or _V2_RULESET.get(gs, "mixed")
@@ -233,7 +240,7 @@ def import_open5e_v2(
                     ruleset=rs, license=lic, data=row,
                     source_document=doc.get("name") or doc_key,
                     source_version=doc.get("publication_date"),
-                    is_redistributable=True)
+                    is_redistributable=redist)
                 count += 1
                 ep_count += 1
             url = page.get("next")

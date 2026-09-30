@@ -302,17 +302,15 @@ def character_attack(character_id: str, item_name: str,
 def _weapon_stats(char, item):
     """(mod de característica, bonificador de impacto, dados de daño)
     del arma — finesse/ranged → DES, el resto → FUE."""
-    from ..engine.ops import _item_damage
+    from ..engine.ops import _is_finesse, _item_damage
     w = {}
     if item.source_id:
         r = content_db().execute(
             "SELECT data FROM content_entities WHERE id = ?",
             (item.source_id,)).fetchone()
         w = json.loads(r["data"]) if r else {}
-    props = [p.get("index") for p in w.get("properties", [])]
     mod = char.abilities.modifier(
-        "dex" if "finesse" in props or "ranged" in
-        str(w.get("weapon_range", "")).lower() else "str")
+        "dex" if _is_finesse(w) else "str")
     # multi-schema: dmg1 (5etools), damage como str (codexMUNDI)…
     return (mod, char.proficiency_bonus + mod,
             _item_damage(w) or "1d4")
@@ -377,9 +375,13 @@ def apply_to_store(op: OperationIn) -> dict:
             inverse, events = apply_operation(
                 entity, op.operation_type, op.payload,
                 OpContext(conn, op.entity_id))
-    except (KeyError, ValueError, IndexError) as exc:
-        # los handlers escriben sobre esta misma conexión (tiendas);
-        # rollback descarta escrituras parciales antes de registrar
+    except (KeyError, ValueError, IndexError, TypeError,
+            AttributeError) as exc:
+        # un payload con tipos malos (null donde va un int, dict donde
+        # va str) petaba con TypeError/AttributeError y salía como 500
+        # sin registrar — un 400 con la op rechazada es la respuesta
+        # correcta. los handlers escriben sobre esta misma conexión
+        # (tiendas); rollback descarta escrituras parciales
         conn.rollback()
         _store_op(conn, op, row["version"], OperationStatus.REJECTED, None)
         conn.commit()
@@ -521,6 +523,44 @@ def _personal_ownership(conn, op: OperationIn,
     raise HTTPException(403, "la ficha es de otro usuario")
 
 
+def _campaignless_combat_guard(conn, op: OperationIn,
+                               user: dict | None) -> None:
+    """Combate SIN campaña: las fichas que entran o que ya están solo
+    pueden ser libres o del usuario que opera. Sin este guard
+    cualquiera hacía `combatant.add {ref_id: <ficha ajena>}` y luego
+    `combatant.damage` → _sync_character escribía hp=0+"muerto"
+    directamente en la hoja de otro jugador. Sin usuarios registrados
+    (local puro) sigue abierto."""
+    if op.entity_kind != "combat":
+        return
+    if not conn.execute("SELECT 1 FROM users LIMIT 1").fetchone():
+        return
+    uid = (user or {}).get("user_id")
+    ref = (op.payload or {}).get("ref_id")
+    if op.operation_type == "combatant.add" and ref:
+        ch = conn.execute(
+            "SELECT player_id FROM characters WHERE id = ?",
+            (ref,)).fetchone()
+        if ch and ch["player_id"] and ch["player_id"] != uid:
+            raise HTTPException(403, "la ficha es de otro usuario")
+        return
+    row = conn.execute("SELECT data FROM combats WHERE id = ?",
+                       (op.entity_id,)).fetchone()
+    if not row:
+        return
+    # combate "contaminado": si ya apunta a una ficha ajena, ninguna
+    # op posterior de un tercero debe dejar que _sync_character la
+    # toque
+    for c in Combat(**json.loads(row["data"])).combatants:
+        if c.kind != "character" or not c.ref_id:
+            continue
+        ch = conn.execute(
+            "SELECT player_id FROM characters WHERE id = ?",
+            (c.ref_id,)).fetchone()
+        if ch and ch["player_id"] and ch["player_id"] != uid:
+            raise HTTPException(403, "el combate toca una ficha ajena")
+
+
 def _is_own_char_combatant(conn, combat_id: str, cbt_id: str,
                            uid: str | None) -> bool:
     """El combatiente es un PJ cuya ficha tiene player_id = uid — o
@@ -554,8 +594,22 @@ def _player_combat_op(conn, op: OperationIn,
         if _is_own_char_combatant(
                 conn, op.entity_id,
                 (op.payload or {}).get("attacker_combatant_id"), uid):
+            # el jugador no elige reglas del servidor: damage_type y
+            # mode vienen del arma/condiciones — declararlos en el
+            # payload era vulnerabilidad/resistencia y ventaja a
+            # voluntad
+            (op.payload or {}).pop("damage_type", None)
+            (op.payload or {}).pop("mode", None)
             return
         raise HTTPException(403, "solo atacas con tu personaje")
+    if op.operation_type == "combatant.action.roll":
+        # NPC delegado: el jugador tira las acciones de su stat block
+        # (ataca con él) — mismas restricciones que con su PJ
+        if _is_own_char_combatant(
+                conn, op.entity_id,
+                (op.payload or {}).get("combatant_id"), uid):
+            return
+        raise HTTPException(403, "solo diriges tu combatiente")
     if op.operation_type == "combatant.death_save.set" \
             and (op.payload or {}).get("_undoes"):
         # deshacer la propia salvación: la inversa solo vale si la op
@@ -612,10 +666,13 @@ async def apply(op: OperationIn,
         if user:
             # con token, el autor es el autenticado — no el del body
             op.user_id = user["user_id"]
-    elif camp_id is None:
-        # entidad sin campaña: una ficha con player_id solo la muta
-        # su dueño (modo local puro = sin usuarios → sigue abierto)
+    elif not camp_id:
+        # entidad sin campaña (None o "" heredado — un campaign_id
+        # vacío caía por la rendija entre ambos branches y quedaba
+        # sin guard): una ficha con player_id solo la muta su dueño
         _personal_ownership(conn, op, user)
+        # y un combate sin campaña no puede tocar fichas ajenas
+        _campaignless_combat_guard(conn, op, user)
     result = apply_to_store(op)
     events = result.pop("_event_objs", [])
     if result.get("campaign_id") and not result.get("duplicate"):
@@ -624,11 +681,28 @@ async def apply(op: OperationIn,
     return result
 
 
+def _personal_entity_readable(conn, entity_id: str,
+                              user: dict | None) -> bool:
+    """Ficha SIN campaña con player_id: su historial/conflictos solo
+    los ve su dueño (en local puro — sin usuarios — sigue abierto).
+    Sin este check, /operations?entity_id=, /conflicts y /dismiss
+    exponían payloads (diario, stats) de fichas personales ajenas."""
+    row = conn.execute(
+        "SELECT player_id FROM characters WHERE id = ?",
+        (entity_id,)).fetchone()
+    if not row or not row["player_id"]:
+        return True
+    if not conn.execute("SELECT 1 FROM users LIMIT 1").fetchone():
+        return True
+    return row["player_id"] == (user or {}).get("user_id")
+
+
 @router.get("")
 def history(entity_id: str, limit: int = 50,
             user: dict | None = Depends(optional_user)):
     """Historial de operaciones de una entidad (auditoría + deshacer)."""
     conn = state_db()
+    limit = min(limit, 200)     # cap: un miembro no vuelca el log
     # la entidad puede vivir en characters o combats — el historial
     # es solo para miembros de su campaña (si tiene dueño)
     for table in _TABLES.values():
@@ -639,6 +713,8 @@ def history(entity_id: str, limit: int = 50,
                 conn, row["campaign_id"]):
             _require_role(conn, row["campaign_id"], user)
             break
+    if not _personal_entity_readable(conn, entity_id, user):
+        raise HTTPException(403, "la ficha es de otro usuario")
     rows = conn.execute(
         """SELECT operation_id, entity_version, user_id, timestamp,
                   operation_type, payload, status,
@@ -678,6 +754,10 @@ def conflicts(limit: int = 20,
         if (camp and _has_owner(conn, camp)
                 and member_role(camp, uid)
                 not in _DM_ROLES + ("player", "guest")):
+            continue
+        # ficha personal sin campaña: su conflicto solo lo ve el dueño
+        if not camp and not _personal_entity_readable(
+                conn, r["entity_id"], user):
             continue
         out.append({**dict(r), "entity_kind": kind,
                     "payload": json.loads(r["payload"])})
@@ -740,6 +820,9 @@ def dismiss_conflict(operation_id: str,
                 conn, er["campaign_id"]):
             _require_role(conn, er["campaign_id"], user)
             break
+    # y nadie descarta el conflicto de una ficha personal ajena
+    if not _personal_entity_readable(conn, row["entity_id"], user):
+        raise HTTPException(403, "la ficha es de otro usuario")
     conn.execute(
         "UPDATE operations SET status = ? WHERE operation_id = ?",
         (OperationStatus.DISMISSED.value, operation_id))

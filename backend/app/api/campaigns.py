@@ -110,10 +110,14 @@ def list_campaigns(user: dict | None = Depends(optional_user)):
                WHERE m.user_id = ? ORDER BY c.created_at DESC""",
             (uid,)).fetchall()
     else:
+        # sin token: solo campañas locales (sin owner). Antes se
+        # devolvían TODAS como role='dm' — cualquier anónimo enumeraba
+        # ids/nombres de mesas privadas
         rows = conn.execute(
             """SELECT c.id, c.name, c.ruleset,
                       'dm' AS role, c.created_at
-               FROM campaigns c ORDER BY c.created_at DESC""").fetchall()
+               FROM campaigns c WHERE c.owner_id IS NULL
+               ORDER BY c.created_at DESC""").fetchall()
     return {"campaigns": [dict(r) for r in rows]}
 
 

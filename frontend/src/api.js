@@ -328,7 +328,13 @@ export const api = {
         method: 'POST', body: JSON.stringify(op),
       })
     } catch (e) {
-      if (e.name === 'TypeError' || !navigator.onLine) {
+      // encolar no es solo "sin red": un backend colgado dispara el
+      // timeout de 15s (DOMException TimeoutError) y la op se
+      // evaporaba — offline-first = mutación jamás perdida
+      const transient = e.name === 'TypeError'
+        || e.name === 'TimeoutError' || e.name === 'AbortError'
+        || !navigator.onLine
+      if (transient) {
         await enqueueOp({ entity_id: entity.id, payload: op })
         return { queued: true, version: entity.version }
       }

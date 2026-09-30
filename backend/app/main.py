@@ -238,14 +238,15 @@ async def _dispatch_ws(websocket: WebSocket, campaign_id: str,
                     _player_combat_op(conn, op,
                                       {"user_id": resolved}
                                       if resolved else None)
-        elif entity_camp is None:
-            # ficha sin campaña con player_id: solo la muta su dueño
-            # (mismo guard que REST — y solo vale la identidad por
-            # token: un ?user_id suelto es spoofable)
-            from .api.operations import _personal_ownership
-            _personal_ownership(conn, op,
-                                {"user_id": resolved}
-                                if authed else None)
+        elif not entity_camp:
+            # ficha sin campaña (None o "") con player_id: solo la
+            # muta su dueño (mismo guard que REST — y solo vale la
+            # identidad por token: un ?user_id suelto es spoofable)
+            from .api.operations import (
+                _campaignless_combat_guard, _personal_ownership)
+            as_user = ({"user_id": resolved} if authed else None)
+            _personal_ownership(conn, op, as_user)
+            _campaignless_combat_guard(conn, op, as_user)
         if resolved:
             # el actor es la identidad de la conexión — el user_id del
             # payload es spoofable y envenenaría la auditoría

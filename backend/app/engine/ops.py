@@ -158,8 +158,12 @@ def hp_heal(char: Character, p: dict, ctx):
     char.hp.current = min(char.hp.max, char.hp.current + amount)
     if char.hp.current > 0:   # curarse estabiliza: reinicia muerte
         char.death_saves = {"success": 0, "fail": 0}
+        # los cuatro estados vitales en ambos idiomas — quedarse
+        # "estable" tras curar dejaba al PJ fuera del orden de
+        # iniciativa (Combat.ordered lo sigue saltando)
         char.conditions = [c for c in char.conditions
-                           if c.lower() not in ("muerto", "dead")]
+                           if c.lower() not in
+                           ("muerto", "dead", "estable", "stable")]
     return inv, [{"type": "character.hp.changed",
                   "payload": {"healed": amount, "current": char.hp.current}}]
 
@@ -707,6 +711,29 @@ def _item_damage(item_data: dict) -> str | None:
         else None
 
 
+def _weapon_props(w: dict) -> set:
+    """Propiedades del arma normalizadas a minúsculas. Los esquemas
+    divergen: 'properties' como lista de dicts {index|name} (5e-bits,
+    Open5e), 'property' como strings o lista (5etools: 'F'=finesse),
+    o un dict suelto. Un `.get` sobre strings petaba con
+    AttributeError y 'property' no se leía (finesse → FUE siempre)."""
+    props = w.get("properties") or w.get("property") or []
+    if isinstance(props, dict):
+        props = list(props)
+    elif not isinstance(props, list):
+        props = [props]
+    return {
+        (str(x.get("index") or x.get("name") or "").lower()
+         if isinstance(x, dict) else str(x).lower())
+        for x in props}
+
+
+def _is_finesse(w: dict) -> bool:
+    props = _weapon_props(w)
+    return bool(props & {"finesse", "f"}) or "ranged" in \
+        str(w.get("weapon_range", "")).lower()
+
+
 @op("character.attack")
 def character_attack(char: Character, p: dict, ctx):
     """Ataque con un arma del inventario: 1d20 + prof + mod (fue por
@@ -720,11 +747,7 @@ def character_attack(char: Character, p: dict, ctx):
     if item.source_id:
         w = _content(ctx, item.source_id) or {}
         dmg_expr = _item_damage(w) or dmg_expr
-        props = w.get("properties") or w.get("property") or []
-        finesse = any(
-            (x.get("index") or x.get("name") or "").lower() == "finesse"
-            if isinstance(x, dict) else str(x).lower() in ("finesse", "f")
-            for x in (props if isinstance(props, list) else [props]))
+        finesse = bool(_weapon_props(w) & {"finesse", "f"})
     # finesse: mejor de FUE/DES; si no, FUE (aproximación marcial)
     mod = max(char.abilities.modifier("str"),
               char.abilities.modifier("dex")) if finesse \

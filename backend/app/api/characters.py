@@ -312,9 +312,11 @@ async def patch_character(character_id: str, body: CharPatch,
         changed.append("name")
     # fields_set distingue "no enviado" de null explícito — un
     # campaign_id=null saca al PJ de la campaña (antes era imposible)
-    new_campaign = (body.campaign_id
+    new_campaign = (body.campaign_id or None       # "" ≡ NULL —
                     if "campaign_id" in body.model_fields_set
-                    else row["campaign_id"])
+                    else row["campaign_id"])        # un "" saltaba
+    # _entity_campaign ("" no es None ni truthy) y dejaba la ficha
+    # sin ningún guard de ownership en ops posteriores
     if "campaign_id" in body.model_fields_set:
         changed.append("campaign_id")
     new_player = (body.player_id

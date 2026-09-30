@@ -38,6 +38,13 @@ async def transfer(body: TransferIn,
         conn.commit()
         return {"duplicate": True, "transfer_id": body.transfer_id}
 
+    if body.from_character == body.to_character:
+        conn.rollback()
+        raise HTTPException(400, "origen y destino son la misma ficha")
+    if body.quantity <= 0:
+        conn.rollback()
+        raise HTTPException(400, "quantity debe ser positiva")
+
     rows = {
         r["id"]: r for r in conn.execute(
             "SELECT * FROM characters WHERE id IN (?,?)",
@@ -70,29 +77,30 @@ async def transfer(body: TransferIn,
         conn.rollback()
         raise HTTPException(
             403, "solo puedes mover objetos de tu propia ficha")
+    # ficha PERSONAL (sin campaña) con dueño: el check de campaña no
+    # la cubre — cualquiera podía vaciar su inventario
+    if not src_camp and src_row["player_id"] and src_row[
+            "player_id"] != uid \
+            and conn.execute("SELECT 1 FROM users LIMIT 1").fetchone():
+        conn.rollback()
+        raise HTTPException(
+            403, "solo puedes mover objetos de tu propia ficha")
 
     try:
         src = Character(**json.loads(src_row["data"]))
         dst = Character(**json.loads(dst_row["data"]))
 
         item = next((i for i in src.inventory if i.id == body.item_id), None)
-        qty = min(body.quantity, item.quantity) if item else 0
-        if qty <= 0:
-            raise HTTPException(400, "item not found or quantity is 0")
+        if item is None or item.quantity < body.quantity:
+            raise HTTPException(400, "item not found or not enough")
+        qty = body.quantity
 
         now = datetime.now(timezone.utc).isoformat()
-        # snapshot del item ORIGEN antes de mover: la inversa de
-        # 'out' lo re-incorpora (inventory.add fusiona por id)
-        src_item = item.model_dump()
         moved, dst_item_id = _move_item(src, dst, item, qty)
-        inverses = {
-            src_row["id"]: json.dumps({
-                "operation_type": "character.inventory.add",
-                "payload": {**src_item, "quantity": qty}}),
-            dst_row["id"]: json.dumps({
-                "operation_type": "character.inventory.remove",
-                "payload": {"item_id": dst_item_id, "quantity": qty}}),
-        }
+        # SIN inversa: undo opera una sola entidad y revertir solo una
+        # mitad del transfer DUPLICABA los objetos (origen recuperaba
+        # y destino conservaba). No-reversible hasta un undo compuesto
+        inverses = {src_row["id"]: None, dst_row["id"]: None}
 
         out_events = []
         for row, char in ((src_row, src), (dst_row, dst)):

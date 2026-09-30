@@ -1907,3 +1907,147 @@ def test_shop_refund_removes_the_exact_item_bought():
     # sin este commit la txn de escritura de la tienda quedaba abierta
     # y el GC la cerraba a mitad de OTRO test → 'database is locked'
     ctx.state_db().commit()
+
+
+# --- auditoría 2ª ronda: bordes de autorización -------------------------
+
+def test_anonymous_listing_only_local_campaigns():
+    """GET /api/campaigns sin token: solo campañas sin owner. Antes
+    listaba TODAS (role=dm) — enumeración de mesas privadas."""
+    owner = _auth_headers(f"lo{uuid.uuid4().hex[:8]}")
+    own = client.post("/api/campaigns", json={"name": "Privada"},
+                      headers=owner).json()["id"]
+    local = client.post("/api/campaigns",
+                        json={"name": "Local"}).json()["id"]
+    ids = [c["id"] for c in client.get("/api/campaigns")
+           .json()["campaigns"]]
+    assert local in ids
+    assert own not in ids
+    # el owner la sigue viendo en SU lista
+    ids2 = [c["id"] for c in client.get(
+        "/api/campaigns", headers=owner).json()["campaigns"]]
+    assert own in ids2
+
+
+def test_campaign_id_empty_string_does_not_disarm_guards():
+    """PATCH campaign_id=\"\" quedaba guardado tal cual: ni truthy ni
+    None → saltaban AMBOS guards de ops y la ficha quedaba libre."""
+    owner = _auth_headers(f"em{uuid.uuid4().hex[:8]}")
+    stranger = _auth_headers(f"es{uuid.uuid4().hex[:8]}")
+    uid = client.get("/api/auth/me", headers=owner).json()["user_id"]
+    cid = client.post("/api/characters",
+                      json={"name": "P", "player_id": uid},
+                      headers=owner).json()["id"]
+    r = client.patch(f"/api/characters/{cid}",
+                     json={"campaign_id": ""}, headers=owner)
+    assert r.status_code == 200
+    row = client.get(f"/api/characters/{cid}", headers=owner).json()
+    assert row["campaign_id"] is None          # normalizado a NULL
+    # y las ops siguen pidiendo ser el dueño
+    assert _op(cid, row["version"], "character.hp.damage",
+               {"amount": 1}, ).status_code in (403, 409)
+    v = client.get(f"/api/characters/{cid}").json()["version"]
+    r = client.post("/api/operations", json={
+        "operation_id": uuid.uuid4().hex, "entity_id": cid,
+        "entity_version": v, "client_id": "c", "user_id": "x",
+        "entity_kind": "character",
+        "operation_type": "character.hp.damage",
+        "payload": {"amount": 1}}, headers=stranger)
+    assert r.status_code == 403
+
+
+def test_campaignless_combat_cannot_touch_foreign_char():
+    """Combate sin campaña + combatant.add con ref_id de una ficha
+    personal ajena → 403. Antes _sync_character escribía hp/muerto
+    en la hoja de otro usuario."""
+    owner = _auth_headers(f"cc{uuid.uuid4().hex[:8]}")
+    stranger = _auth_headers(f"cs{uuid.uuid4().hex[:8]}")
+    uid = client.get("/api/auth/me", headers=owner).json()["user_id"]
+    victim = client.post("/api/characters",
+                         json={"name": "V", "player_id": uid},
+                         headers=owner).json()["id"]
+    comb = client.post("/api/combat", json={"name": "X"},
+                       headers=stranger).json()
+
+    def _cop(otype, payload, h):
+        v = client.get(f"/api/combat/{comb['id']}",
+                       headers=h).json()["version"]
+        return client.post("/api/operations", json={
+            "operation_id": uuid.uuid4().hex, "entity_id": comb["id"],
+            "entity_version": v, "client_id": "t", "user_id": "x",
+            "entity_kind": "combat", "operation_type": otype,
+            "payload": payload}, headers=h)
+
+    assert _cop("combatant.add", {"kind": "character",
+                                  "ref_id": victim,
+                                  "name": "V", "hp_max": 5,
+                                  "initiative": 1},
+                stranger).status_code == 403
+    # ni por award-xp con el PJ metido por el propio dueño... el
+    # dueño sí puede usar el combate sobre SU ficha
+    assert _cop("combatant.add", {"kind": "character",
+                                  "ref_id": victim, "name": "V",
+                                  "hp_max": 5, "initiative": 1},
+                owner).status_code == 200
+    # pero award-xp del extraño NO toca la ficha del dueño
+    assert client.post(f"/api/combat/{comb['id']}/award-xp",
+                       headers=stranger).status_code == 403
+
+
+def test_transfer_undo_disabled_and_personal_char_guard():
+    """Las dos mitades del transfer son no-reversibles (el undo de
+    una duplicaba objetos) y una ficha personal ajena no se vacía."""
+    owner = _auth_headers(f"to{uuid.uuid4().hex[:8]}")
+    stranger = _auth_headers(f"ts{uuid.uuid4().hex[:8]}")
+    uid = client.get("/api/auth/me", headers=owner).json()["user_id"]
+    a = client.post("/api/characters", json={
+        "name": "A", "player_id": uid}, headers=owner).json()["id"]
+    b = client.post("/api/characters", json={
+        "name": "B", "player_id": uid}, headers=owner).json()["id"]
+    # el extraño no saca objetos de la ficha personal de A
+    assert client.post("/api/inventory/transfer", json={
+        "transfer_id": uuid.uuid4().hex, "from_character": a,
+        "to_character": b, "item_id": "x", "quantity": 1},
+        headers=stranger).status_code == 403
+    # self-transfer y quantity 0 son 400 limpios
+    assert client.post("/api/inventory/transfer", json={
+        "transfer_id": uuid.uuid4().hex, "from_character": a,
+        "to_character": a, "item_id": "x", "quantity": 1},
+        headers=owner).status_code == 400
+    # transfer real entre sus fichas → las ops existen pero no se
+    # pueden deshacer (no-reversible)
+    r = client.post("/api/operations", json={
+        "operation_id": uuid.uuid4().hex, "entity_id": a,
+        "entity_version": client.get(f"/api/characters/{a}",
+                                     headers=owner).json()["version"],
+        "client_id": "c", "user_id": "x", "entity_kind": "character",
+        "operation_type": "character.inventory.add",
+        "payload": {"id": "poc", "name": "Poción",
+                    "quantity": 2}}, headers=owner)
+    assert r.status_code == 200
+    r = client.post("/api/inventory/transfer", json={
+        "transfer_id": "tx-audit", "from_character": a,
+        "to_character": b, "item_id": "poc", "quantity": 1},
+        headers=owner)
+    assert r.status_code == 200
+    assert client.post("/api/operations/undo/tx-audit:out",
+                       headers=owner).status_code == 404
+
+
+def test_register_trims_username_and_blocks_short():
+    """\"  a\" pasaba min_length en bruto y quedaba un username de 1
+    char; ahora el trim ocurre antes de validar."""
+    r = client.post("/api/auth/register", json={
+        "username": "  a", "password": "pw123456"})
+    assert r.status_code == 422
+    r = client.post("/api/auth/register", json={
+        "username": "  valido  ", "password": "pw123456"})
+    assert r.status_code == 201
+    # y se guarda recortado
+    me = client.get("/api/auth/me", headers={
+        "Authorization": f"Bearer {r.json()['token']}"}).json()
+    assert me["username"] == "valido"
+    # login con espacios funciona (mismo normalizado)
+    r = client.post("/api/auth/login", json={
+        "username": " valido", "password": "pw123456"})
+    assert r.status_code == 200

@@ -8,23 +8,30 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import secrets
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ..db.connections import state_db
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 _TOKEN_TTL_DAYS = 30
+# OWASP ~600k para PBKDF2-HMAC-SHA256 (era 100k) — los hashes viejos
+# se migran perezosamente al primer login correcto
+_HASH_ITER = 600_000
+_HASH_ITER_LEGACY = 100_000
 
 
-def _hash(password: str, salt: str) -> str:
+def _hash(password: str, salt: str,
+          iterations: int = _HASH_ITER) -> str:
     return hashlib.pbkdf2_hmac(
-        "sha256", password.encode(), bytes.fromhex(salt), 100_000
+        "sha256", password.encode(), bytes.fromhex(salt), iterations
     ).hex()
 
 
@@ -36,11 +43,26 @@ class Credentials(BaseModel):
     username: str = Field(min_length=3, max_length=32)
     password: str = Field(min_length=8, max_length=128)
 
+    @field_validator("username")
+    @classmethod
+    def _trimmed(cls, v: str) -> str:
+        # el min_length valida el valor EN BRUTO — "  a" (4 chars)
+        # pasaba y quedaba almacenado un username de 1 char
+        v = v.strip()
+        if len(v) < 3:
+            raise ValueError("username demasiado corto")
+        return v
+
 
 @router.post("/register", status_code=201)
 def register(body: Credentials, request: Request):
+    # DND_ALLOW_REGISTRATION=0 cierra el alta (servidor expuesto) —
+    # sin el flag cualquiera creaba cuentas en una instancia privada
+    if os.environ.get("DND_ALLOW_REGISTRATION", "1").lower() \
+            not in ("1", "true", "yes"):
+        raise HTTPException(403, "registro desactivado")
     _throttle(f"reg:{request.client.host if request.client else '?'}")
-    username = body.username.strip()
+    username = body.username
     conn = state_db()
     if conn.execute("SELECT 1 FROM users WHERE username = ?",
                     (username,)).fetchone():
@@ -58,8 +80,6 @@ def register(body: Credentials, request: Request):
 # (usuario en login, IP en register). En memoria se reseteaba al
 # reiniciar y era por-proceso → N workers = 5×N intentos reales.
 def _throttle(key: str) -> None:
-    import os
-    import time
     # TestClient comparte una única IP: sin el bypass la suite de
     # tests tropezaría con su propio rate-limit
     if os.environ.get("PYTEST_CURRENT_TEST"):
@@ -85,14 +105,30 @@ def _throttle(key: str) -> None:
 
 
 @router.post("/login")
-def login(body: Credentials):
-    _throttle(body.username)
+def login(body: Credentials, request: Request):
+    # dos cubos: por usuario (normalizado — " admin" no evade el de
+    # "admin") y por IP (rotar usernames tampoco evade)
+    _throttle(f"login:{body.username.lower()}")
+    _throttle(
+        f"login-ip:{request.client.host if request.client else '?'}")
     conn = state_db()
     row = conn.execute(
-        "SELECT * FROM users WHERE username = ?", (body.username.strip(),)
+        "SELECT * FROM users WHERE username = ?", (body.username,)
     ).fetchone()
-    if row is None or row["password_hash"] != _hash(body.password,
-                                                  row["salt"]):
+    ok = row is not None and secrets.compare_digest(
+        row["password_hash"], _hash(body.password, row["salt"]))
+    if not ok and row is not None:
+        # hashes anteriores al bump de iteraciones: verifica con el
+        # factor viejo y migra perezosamente al nuevo
+        if secrets.compare_digest(
+                row["password_hash"],
+                _hash(body.password, row["salt"], _HASH_ITER_LEGACY)):
+            conn.execute(
+                "UPDATE users SET password_hash = ? WHERE id = ?",
+                (_hash(body.password, row["salt"]), row["id"]))
+            conn.commit()
+            ok = True
+    if not ok:
         raise HTTPException(401, "invalid credentials")
     return {"user_id": row["id"], "token": _issue(conn, row["id"])}
 

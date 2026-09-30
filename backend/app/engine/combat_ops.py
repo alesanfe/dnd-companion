@@ -345,7 +345,7 @@ def combatant_heal(combat: Combat, p: dict, ctx):
     c.hp_current = min(c.hp_max, c.hp_current + amount)
     if c.hp_current > 0:                      # levantado: reset saves
         c.death_saves = {"success": 0, "fail": 0}
-        for dead in ("muerto", "estable"):
+        for dead in ("muerto", "dead", "estable", "stable"):
             if dead in c.conditions:
                 c.conditions.remove(dead)
     _sync_character(c, ctx)
@@ -672,7 +672,7 @@ def _weapon_attack(char, item_name: str, ctx):
     """(item, mod, hit_bonus, dmg_dice, damage_type) del arma de la
     ficha — misma lógica que character.attack: finesse/ranged → DES,
     resto → FUE; prof siempre suma al impacto."""
-    from .ops import _item_damage
+    from .ops import _is_finesse, _item_damage
     item = next((i for i in char.inventory
                  if i.name.lower() == item_name.lower()), None)
     if item is None:
@@ -683,10 +683,8 @@ def _weapon_attack(char, item_name: str, ctx):
             "SELECT data FROM content_entities WHERE id = ?",
             (item.source_id,)).fetchone()
         w = json.loads(r["data"]) if r else {}
-    props = [p.get("index") for p in w.get("properties", [])]
     mod = char.abilities.modifier(
-        "dex" if "finesse" in props or "ranged" in
-        str(w.get("weapon_range", "")).lower() else "str")
+        "dex" if _is_finesse(w) else "str")
     dtype = (((w.get("damage") or {}).get("damage_type") or {})
              .get("index") or w.get("dmgType") or None)
     return (item, mod, char.proficiency_bonus + mod,

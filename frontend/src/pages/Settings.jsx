@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, flushQueue } from '../api.js'
-import { deadOps, dropOp, pendingOps } from '../db.js'
+import { conflictedOps, deadOps, dropOp, markOp,
+         pendingOps } from '../db.js'
 import { clearAuth, currentUser, getPrefs, setAuth, setPref }
   from '../session.js'
 import { useT } from '../i18n.jsx'
@@ -287,12 +288,14 @@ function SyncQueue({ onChanged }) {
   const { t } = useT()
   const [ops, setOps] = useState(null)
   const [dead, setDead] = useState(null)
+  const [confl, setConfl] = useState(null)
   const load = () => {
     pendingOps().then(setOps).catch(() => setOps([]))
     deadOps().then(setDead).catch(() => setDead([]))
+    conflictedOps().then(setConfl).catch(() => setConfl([]))
   }
   useEffect(() => { load() }, [])
-  if (!ops?.length && !dead?.length) return null
+  if (!ops?.length && !dead?.length && !confl?.length) return null
   return (<div>
     <strong>{t('sync.queueTitle')}</strong>
     <ul style={{ margin: '.3rem 0', paddingLeft: '1rem' }}>
@@ -319,6 +322,27 @@ function SyncQueue({ onChanged }) {
           <span className="muted">
             {' '}· {t('sync.rejected')}
             {' '}· {new Date(o.created_at).toLocaleTimeString()}</span>
+          <button className="ghost" style={{ minHeight: 24 }}
+                  title={t('sync.discard')}
+                  aria-label={t('sync.discard')}
+                  onClick={async () => {
+                    await dropOp(o.id); load(); onChanged?.()
+                  }}>✕</button>
+        </li>))}
+      {/* 409 al reenviar: el servidor ganó — reintentar vuelve a
+          'pending' (con versión refrescada) o se descarta */}
+      {(confl || []).map((o) => (
+        <li key={o.id} className="row" style={{ opacity: .85 }}>
+          {o.payload.operation_type}
+          <span className="muted">
+            {' '}· {t('sync.conflictLocal')}
+            {' '}· {new Date(o.created_at).toLocaleTimeString()}</span>
+          <button className="ghost" style={{ minHeight: 24 }}
+                  title={t('sync.retry')} aria-label={t('sync.retry')}
+                  onClick={async () => {
+                    await markOp(o.id, 'pending')
+                    await flushQueue(); load(); onChanged?.()
+                  }}>↻</button>
           <button className="ghost" style={{ minHeight: 24 }}
                   title={t('sync.discard')}
                   aria-label={t('sync.discard')}

@@ -25,6 +25,12 @@ export async function deadOps() {
   return db.pending_ops.where('status').equals('rejected').toArray()
 }
 
+/** Ops que chocaron con un 409 al reenviarse — sin esta vista
+    quedaban invisibles en IndexedDB hasta la poda de 30d. */
+export async function conflictedOps() {
+  return db.pending_ops.where('status').equals('conflict').toArray()
+}
+
 export async function markOp(id, status) {
   await db.pending_ops.update(id, { status })
   // nada lee las filas 'synced'/'discarded' — borrarlas o IndexedDB

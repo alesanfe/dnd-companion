@@ -154,7 +154,13 @@ export default function DmBoard() {
   // campaña abierta y recuérdala para la próxima visita
   useEffect(() => {
     if (campaign) return
-    const last = localStorage.getItem('dnd-last-campaign')
+    // formato unificado {id,name,at} (CampaignBoard/Dashboard lo
+    // escriben/leen así) — el id en crudo rompía la tarjeta de
+    // "continuar" del Dashboard y viceversa
+    const raw = localStorage.getItem('dnd-last-campaign')
+    if (!raw) return
+    let last = null
+    try { last = JSON.parse(raw)?.id } catch { last = raw }
     if (!last) return
     api.getCampaign(last)
       .then(setCampaign)
@@ -164,7 +170,8 @@ export default function DmBoard() {
 
   useEffect(() => {
     if (campaign?.id)
-      localStorage.setItem('dnd-last-campaign', campaign.id)
+      localStorage.setItem('dnd-last-campaign', JSON.stringify(
+        { id: campaign.id, name: campaign.name, at: Date.now() }))
   }, [campaign?.id])
 
   // el "está escribiendo" caduca solo a los 3s

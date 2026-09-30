@@ -177,6 +177,21 @@ async def award_xp(combat_id: str,
     if row["campaign_id"]:
         _require_role(conn, row["campaign_id"], user, _DM_ROLES)
     combat = Combat(**json.loads(row["data"]))
+    if not row["campaign_id"] \
+            and conn.execute("SELECT 1 FROM users LIMIT 1").fetchone():
+        # combate sin campaña: el reparto escribe en las fichas — el
+        # llamante debe ser dueño de CADA PJ del tracker (o fichas
+        # libres); si no, cualquiera inyectaba XP a fichas ajenas
+        uid = (user or {}).get("user_id")
+        for c in combat.combatants:
+            if c.kind != "character" or not c.ref_id:
+                continue
+            ch = conn.execute(
+                "SELECT player_id FROM characters WHERE id = ?",
+                (c.ref_id,)).fetchone()
+            if ch and ch["player_id"] and ch["player_id"] != uid:
+                raise HTTPException(
+                    403, "el combate toca una ficha ajena")
     total = 0
     for c in combat.combatants:
         if c.kind == "character" or not c.stat_block:

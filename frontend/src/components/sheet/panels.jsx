@@ -137,9 +137,13 @@ export function AttackPanel({ charId, item, onResult, onClose }) {
       setLast(r)
     const miss = r.hit.hits === false ? ` — ${t('pan.miss')}`
                : r.hit.hits === true ? ` — ${t('pan.hitBang')}` : ''
+      // auto_fail no trae damage — leer r.damage.* crasheaba y el
+      // catch mostraba '⚠ undefined' tapando el resultado real
+      const dmg = r.damage
+        ? ` · ${t('pan.dmg')} ${r.damage.expression} = ${r.damage.total}`
+        : ''
       onResult(`${item.name}: ${t('pan.hit')} ${r.hit.total}${miss}` +
-               ` · ${t('pan.dmg')} ${r.damage.expression} = ${
-                 r.damage.total}` +
+               dmg +
                (r.notes?.length ? ` [${r.notes.join(', ')}]` : ''))
     } catch (e) { onResult(`⚠ ${e.message}`) }
   }

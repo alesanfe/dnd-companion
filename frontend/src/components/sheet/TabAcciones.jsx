@@ -49,8 +49,9 @@ export default function TabAcciones({ c }) {
                   try {
                     const r = await api.characterAttack(id, label)
                     setRollLog((l) => [
-                      `${label}: ${t('acc.hit')} ${r.hit.total} · ${
-                        t('acc.dmg')} ${r.damage.total}`,
+                      `${label}: ${t('acc.hit')} ${r.hit.total}` +
+                      (r.damage ? ` · ${t('acc.dmg')} ${
+                        r.damage.total}` : ''),
                       ...l].slice(0, 10))
                   } catch (e) { setNotice(e.message) }
                 }}>⚔</button>)}

@@ -69,9 +69,13 @@ export default function MapBoard({ campaign, size = CELL,
                                   combatants = [],
                                   combat = null }) {
   // entities externas → la lista la gestiona el padre (vista de
-  // jugador: mantiene la escena elegida al refrescar por WS)
+  // jugador: mantiene la escena elegida al refrescar por WS).
+  // El padre pasa TODAS las entidades (npc, quest, scene…) — sin el
+  // filtro el picker las listaba y elegir una no-mapa mostraba un
+  // grid vacío de DEFAULTS
   const [ownMaps, setMaps] = useState(null)
-  const maps = entities ?? ownMaps
+  const maps = (entities ?? ownMaps)
+    ?.filter((e) => e.kind === 'map' || e.kind == null) ?? null
   const [curId, setCurId] = useState(null)
   const [mode, setMode] = useState('move')  // move|fog|mark
   const [markColor, setMarkColor] = useState(MARK_COLORS[0])
@@ -246,7 +250,10 @@ export default function MapBoard({ campaign, size = CELL,
   const linkedChar = (tk) => tk.ref_id
     ? chars.find((c) => c.id === tk.ref_id) : null
   const tokOwner = (tk) => tk.player_id
-    || linkedChar(tk)?.player_id || null
+    || linkedChar(tk)?.player_id
+    // token vinculado a un NPC que el DM le delegó al jugador
+    || (combatants.some((c) => c.id === tk.combatant_id
+          && c.delegated_to === myUid) ? myUid : null)
   const canMoveTok = (tk) => !readOnly
     || (myUid != null && tokOwner(tk) === myUid)
   const moveTokRemote = (tk, x, y) => {
@@ -661,6 +668,9 @@ export default function MapBoard({ campaign, size = CELL,
     setDrag({ a: [x, y], b: [x, y], kind: mode })
   }
 
+  // soltar fuera del SVG también pasa por aquí (onMouseLeave): sin
+  // eso un drag de token quedaba fantasma — dragTok no commiteaba y
+  // panRef seguía paneando al reentrar el puntero
   const onSvgUp = () => {
     panRef.current = null
     // soltar tras arrastrar un token → commit de la posición
@@ -1192,7 +1202,7 @@ export default function MapBoard({ campaign, size = CELL,
              if (px < 0 || py < 0 || px >= d.cols || py >= d.rows) return
              api.ping(campaign.id, map.id, px, py).catch(() => {})
            }}
-           onMouseLeave={() => setDrag(null)}
+           onMouseLeave={onSvgUp}
            style={{ background: '#223', borderRadius: 6,
                     maxWidth: '100%', touchAction: 'manipulation' }}>
         {/* imagen de fondo opcional (mapa dibujado, estilo VTT) */}

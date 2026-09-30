@@ -1,7 +1,11 @@
-FROM node:24-alpine AS build
+# misma versión que CI (node 20) — divergir hace que el build de
+# producción no reproduzca lo que CI valida
+FROM node:20-alpine AS build
 WORKDIR /app
-COPY package.json ./
-RUN npm install
+# lockfile + npm ci: builds reproducibles — 'npm install' sin lock
+# resolvía dependencias distintas a las del desarrollo
+COPY package.json package-lock.json ./
+RUN npm ci
 COPY . .
 RUN npm run build
 

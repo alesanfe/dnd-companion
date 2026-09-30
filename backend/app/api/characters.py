@@ -23,8 +23,10 @@ from ..domain.classinfo import (
     save_profs as _save_profs,
     species_asi as _species_asi,
     species_traits as _species_traits)
+from ..domain.events import Event, EventType
 from ..domain.ruleset import Ruleset
 from ..engine.engine import resolve_stat
+from ..ws.rooms import manager
 
 router = APIRouter(prefix="/api/characters", tags=["characters"])
 
@@ -251,10 +253,18 @@ def list_characters(campaign_id: str | None = None,
     # (locales o sin campaña) sigue visible en modo local
     owned = {r["id"] for r in conn.execute(
         "SELECT id FROM campaigns WHERE owner_id IS NOT NULL")}
-    mine = _member_camps(conn, (user or {}).get("user_id"))
+    uid = (user or {}).get("user_id")
+    mine = _member_camps(conn, uid)
+    # hay usuarios registrados → player_id es un reclamo real: una
+    # ficha personal ajena (sin campaña) no se enumera — antes el
+    # listado entregaba los ids y /api/operations las mutaba
+    has_users = conn.execute("SELECT 1 FROM users LIMIT 1").fetchone()
     out = []
     for r in rows:
         if r["campaign_id"] in owned and r["campaign_id"] not in mine:
+            continue
+        if has_users and not r["campaign_id"] \
+                and r["player_id"] and r["player_id"] != uid:
             continue
         d = dict(r)
         data = json.loads(d.pop("data"))
@@ -280,8 +290,8 @@ class CharPatch(BaseModel):
 
 
 @router.patch("/{character_id}")
-def patch_character(character_id: str, body: CharPatch,
-                    user: dict | None = Depends(optional_user)):
+async def patch_character(character_id: str, body: CharPatch,
+                          user: dict | None = Depends(optional_user)):
     """Renombrar / reasignar campaña (los cambios de estado de juego van
     por /api/operations; esto es solo metadata)."""
     conn = state_db()
@@ -324,32 +334,80 @@ def patch_character(character_id: str, body: CharPatch,
                 raise HTTPException(
                     403, "solo puedes reclamar fichas libres "
                          "o soltar la tuya")
+    now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         """UPDATE characters SET name = ?, campaign_id = ?, player_id = ?,
            data = ?, version = version + 1, updated_at = ? WHERE id = ?""",
         (data["name"], new_campaign, new_player,
-         json.dumps(data), datetime.now(timezone.utc).isoformat(),
-         character_id))
+         json.dumps(data), now, character_id))
+    # evento por campaña tocada (origen y destino): la ficha abierta
+    # en otro dispositivo y la lista del DM se refrescan solas
+    new_version = row["version"] + 1
+    uid = (user or {}).get("user_id") or "local"
+    out_events = []
+    for camp in {row["campaign_id"], new_campaign} - {None}:
+        ev = Event(
+            event_id=uuid.uuid4().hex,
+            type=EventType.CHARACTER_UPDATED,
+            campaign_id=camp, aggregate_id=character_id,
+            aggregate_version=new_version, actor_id=uid,
+            occurred_at=datetime.now(timezone.utc),
+            payload={"changed": changed, "name": data["name"]})
+        conn.execute(
+            """INSERT INTO events
+               (event_id, campaign_id, aggregate_id, aggregate_version,
+                actor_id, occurred_at, type, payload)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (ev.event_id, ev.campaign_id, ev.aggregate_id,
+             ev.aggregate_version, ev.actor_id,
+             ev.occurred_at.isoformat(), ev.type.value,
+             json.dumps(ev.payload)))
+        out_events.append(ev)
     conn.commit()
+    for ev in out_events:
+        await manager.broadcast(ev.campaign_id, ev)
     return {"id": character_id, "changed": changed}
 
 
 @router.delete("/{character_id}")
-def delete_character(character_id: str,
-                     user: dict | None = Depends(optional_user)):
+async def delete_character(character_id: str,
+                           user: dict | None = Depends(optional_user)):
     """Borra la ficha (sus operaciones quedan en el historial)."""
     conn = state_db()
     row = conn.execute(
-        "SELECT campaign_id, player_id FROM characters WHERE id = ?",
-        (character_id,)).fetchone()
+        "SELECT campaign_id, player_id, version FROM characters"
+        " WHERE id = ?", (character_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "character not found")
     _char_write_guard(conn, row["campaign_id"], row["player_id"], user)
     cur = conn.execute("DELETE FROM characters WHERE id = ?",
                        (character_id,))
+    ev = None
+    if row["campaign_id"]:
+        # el tablero del DM y otras sesiones con la ficha abierta se
+        # enteran del borrado sin recargar
+        ev = Event(
+            event_id=uuid.uuid4().hex,
+            type=EventType.CHARACTER_UPDATED,
+            campaign_id=row["campaign_id"], aggregate_id=character_id,
+            aggregate_version=row["version"],
+            actor_id=(user or {}).get("user_id") or "local",
+            occurred_at=datetime.now(timezone.utc),
+            payload={"changed": ["deleted"]})
+        conn.execute(
+            """INSERT INTO events
+               (event_id, campaign_id, aggregate_id, aggregate_version,
+                actor_id, occurred_at, type, payload)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (ev.event_id, ev.campaign_id, ev.aggregate_id,
+             ev.aggregate_version, ev.actor_id,
+             ev.occurred_at.isoformat(), ev.type.value,
+             json.dumps(ev.payload)))
     conn.commit()
     if cur.rowcount == 0:
         raise HTTPException(404, "character not found")
+    if ev:
+        await manager.broadcast(ev.campaign_id, ev)
     return {"deleted": character_id}
 
 

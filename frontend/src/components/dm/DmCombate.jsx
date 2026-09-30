@@ -19,48 +19,50 @@ export default function DmCombate({ c }) {
   const [creating, setCreating] = useState(false)
   if (!campaign) return null
 
-  /* 📍 combatiente → token en el primer mapa público. El token queda
-     vinculado a la ficha (ref_id) — PG en vivo y el jugador puede
-     moverlo. Primera casilla libre, esquina sup. izquierda hacia abajo. */
-  const toMap = async (cb) => {
-    const map = (entities || []).find(
-      (e) => e.kind === 'map' && e.visibility !== 'dm')
-    if (!map) { setDmTab('mapa'); return }   // sin mapa → pestaña Mapa
-    const data = map.data || {}
+  /* Primera casilla libre para un token, calculada sobre el data
+     FRESCO del mapa (puede ser la copia ganadora tras un 409). */
+  const placeToken = (data, partial) => {
     const toks = data.tokens || []
     const used = new Set(toks.map((t2) => `${t2.x},${t2.y}`))
     let x = 0, y = 0
     while (used.has(`${x},${y}`)) { x++; if (x >= (data.cols || 16)) {
       x = 0; y++ } }
+    return { ...partial, id: `t${crypto.randomUUID()}`, x, y }
+  }
+
+  /* Añade un token al primer mapa público con optimistic lock —
+     si un jugador movió su token entre la carga y el drop, el
+     append se rehace sobre la copia fresca (nunca lo pisa). */
+  const addToken = async (partial) => {
+    const map = (entities || []).find(
+      (e) => e.kind === 'map' && e.visibility !== 'dm')
+    if (!map) { setDmTab('mapa'); return }   // sin mapa → pestaña Mapa
+    await api.patchEntityRebase(campaign.id, map, (d) => ({
+      ...d, tokens: [...(d.tokens || []), placeToken(d, partial)],
+    })).catch(() => {})   // mapa borrado o dos carreras perdidas
+  }
+
+  /* 📍 combatiente → token en el primer mapa público. El token queda
+     vinculado a la ficha (ref_id) — PG en vivo y el jugador puede
+     moverlo. */
+  const toMap = async (cb) => {
     // tamaño del stat block → casillas del token (large 2×2, huge 3×3)
     const sz = String(cb.stat_block?.size || '').toLowerCase()
     const sq = sz.includes('gargan') ? 4
       : (sz.includes('huge') || sz.includes('enorme')) ? 3
       : (sz.includes('large') || sz.includes('grande')) ? 2 : 1
-    const token = {
-      id: `t${Date.now()}`, name: cb.name, x, y, size: sq,
+    await addToken({
+      name: cb.name, size: sq,
       color: cb.kind === 'character'
         ? 'hsl(210 70% 45%)' : 'hsl(0 70% 45%)',
       ref_id: cb.ref_id || null,
       hp: cb.hp_current ?? null, max_hp: cb.hp_max ?? null,
-    }
-    await api.patchEntity(campaign.id, map.id, {
-      data: { ...data, tokens: [...toks, token] },
-    }).catch(() => {})
+    })
   }
 
   /* 📍 directo al mapa desde el buscador de monstruos — preparación
      de encuentros sin pasar por el tracker de combate */
   const dropMonster = async (m) => {
-    const map = (entities || []).find(
-      (e) => e.kind === 'map' && e.visibility !== 'dm')
-    if (!map) { setDmTab('mapa'); return }
-    const data = map.data || {}
-    const toks = data.tokens || []
-    const used = new Set(toks.map((t2) => `${t2.x},${t2.y}`))
-    let x = 0, y = 0
-    while (used.has(`${x},${y}`)) { x++; if (x >= (data.cols || 16)) {
-      x = 0; y++ } }
     let hp = null, sq = 1
     try {
       const dat = typeof m.data === 'string'
@@ -71,18 +73,15 @@ export default function DmCombate({ c }) {
         : (sz.includes('huge') || sz.includes('enorme')) ? 3
         : (sz.includes('large') || sz.includes('grande')) ? 2 : 1
     } catch { /* resultado sin data — nombre suelto */ }
-    const token = {
-      id: `t${Date.now()}`, name: m.name, x, y, size: sq,
+    await addToken({
+      name: m.name, size: sq,
       color: 'hsl(0 70% 45%)',
       // ref al contenido: si ese monstruo entra en combate, el
       // combatiente lleva el mismo ref_id → el anillo de turno le
       // cae encima en el mapa
       ref_id: m.id || null,
       ...(hp ? { hp, max_hp: hp } : {}),
-    }
-    await api.patchEntity(campaign.id, map.id, {
-      data: { ...data, tokens: [...toks, token] },
-    }).catch(() => {})
+    })
   }
   const show = dmTab === 'combate'
   return (<>

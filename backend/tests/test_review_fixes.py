@@ -276,6 +276,70 @@ def test_add_party_emits_operations_and_rolls_init():
     assert 1 + dex_mod <= init <= 20 + dex_mod  # d20 tirado, no el mod
 
 
+def test_character_op_syncs_active_combat():
+    """Espejo de _sync_character: una op vital sobre la FICHA (daño/
+    cura del jugador desde su hoja, salvación de muerte) actualiza al
+    combatiente vinculado en el combate activo de la campaña — antes
+    el tracker del DM quedaba desfasado hasta tocar el combate."""
+    camp = client.post("/api/campaigns", json={"name": "C"}).json()
+    cid = _mkchar()
+    client.patch(f"/api/characters/{cid}",
+                 json={"campaign_id": camp["id"]})
+    combat = client.post("/api/combat", json={
+        "name": "X", "campaign_id": camp["id"]}).json()
+    client.post(f"/api/combat/{combat['id']}/add-party")
+    d = client.get(f"/api/combat/{combat['id']}").json()
+    cbt = d["combat"]["combatants"][0]
+    assert cbt["kind"] == "character" and cbt["ref_id"] == cid
+    hp_max, cv = cbt["hp_max"], d["version"]
+    # daño desde la hoja → el combatiente refleja el HP y el combate
+    # bumpea versión (optimistic locking sigue funcionando)
+    r = _op(cid, _version(cid), "character.hp.damage", {"amount": 3})
+    assert r.status_code == 200
+    d2 = client.get(f"/api/combat/{combat['id']}").json()
+    cbt2 = d2["combat"]["combatants"][0]
+    assert cbt2["hp_current"] == hp_max - 3
+    assert d2["version"] == cv + 1
+    # cura desde la hoja → también sincroniza
+    r = _op(cid, _version(cid), "character.hp.heal", {"amount": 10})
+    assert r.status_code == 200
+    cbt3 = client.get(
+        f"/api/combat/{combat['id']}").json()["combat"]["combatants"][0]
+    assert cbt3["hp_current"] == hp_max
+    # una op no vital NO toca el combate (sin bump de versión)
+    cv2 = client.get(f"/api/combat/{combat['id']}").json()["version"]
+    r = _op(cid, _version(cid), "character.inspiration.set",
+            {"value": True})
+    assert r.status_code == 200
+    assert client.get(
+        f"/api/combat/{combat['id']}").json()["version"] == cv2
+
+
+def test_character_death_save_syncs_combat_death_state():
+    """La salvación tirada en la hoja (3 fallos) marca al combatiente
+    muerto en el tracker — el DM ve el desenlace sin recargar."""
+    camp = client.post("/api/campaigns", json={"name": "C"}).json()
+    cid = _mkchar()
+    client.patch(f"/api/characters/{cid}",
+                 json={"campaign_id": camp["id"]})
+    combat = client.post("/api/combat", json={
+        "name": "X", "campaign_id": camp["id"]}).json()
+    client.post(f"/api/combat/{combat['id']}/add-party")
+    # a 0 PG vía hoja
+    mx = client.get(
+        f"/api/combat/{combat['id']}").json()[
+            "combat"]["combatants"][0]["hp_max"]
+    _op(cid, _version(cid), "character.hp.set", {"current": 0})
+    for _ in range(3):
+        r = _op(cid, _version(cid), "character.death_save", {"roll": 1})
+        assert r.status_code == 200
+    d = client.get(f"/api/combat/{combat['id']}").json()["combat"]
+    cbt = d["combatants"][0]
+    assert "muerto" in cbt["conditions"]
+    assert cbt["death_saves"]["fail"] >= 3
+    assert cbt["hp_max"] == mx
+
+
 # --- campañas con dueño: control de acceso por membresía --------------
 
 def _auth_headers(username):
@@ -411,6 +475,87 @@ def test_char_ownership_in_owned_campaign():
                         json={"name": "A2"}, headers=pa).status_code == 200
     assert client.delete(f"/api/characters/{cid}",
                          headers=owner).status_code == 200
+
+
+def test_personal_char_ops_guard():
+    """Ficha SIN campaña con player_id: solo la muta su dueño. Antes
+    el guard de campaña saltaba entero (camp_id=None) y cualquier
+    autenticado — o anónimo — la editaba por /api/operations."""
+    owner = _auth_headers(f"po{uuid.uuid4().hex[:8]}")
+    stranger = _auth_headers(f"ps{uuid.uuid4().hex[:8]}")
+    uid = client.get("/api/auth/me", headers=owner).json()["user_id"]
+    cid = client.post("/api/characters",
+                      json={"name": "personal", "player_id": uid},
+                      headers=owner).json()["id"]
+    body = {"operation_id": uuid.uuid4().hex, "entity_id": cid,
+            "entity_version": 1, "client_id": "t", "user_id": "x",
+            "entity_kind": "character",
+            "operation_type": "character.hp.set",
+            "payload": {"current": 5}}
+    assert client.post("/api/operations", json=body,
+                       headers=stranger).status_code == 403
+    # anónimo tampoco — hay usuarios registrados, el player_id vale
+    assert client.post("/api/operations", json=body).status_code == 403
+    # el dueño sí
+    body["operation_id"] = uuid.uuid4().hex
+    assert client.post("/api/operations", json=body,
+                       headers=owner).status_code == 200
+    # ficha libre (player_id NULL) sigue abierta en modo local
+    free = _mkchar("free")
+    assert client.post("/api/operations", json={
+        **body, "operation_id": uuid.uuid4().hex,
+        "entity_id": free}).status_code == 200
+
+
+def test_personal_char_hidden_from_stranger_listing():
+    """GET /api/characters no enumera fichas personales ajenas —
+    ese listado era la fuente de ids para el bypass anterior."""
+    owner = _auth_headers(f"pl{uuid.uuid4().hex[:8]}")
+    stranger = _auth_headers(f"pm{uuid.uuid4().hex[:8]}")
+    uid = client.get("/api/auth/me", headers=owner).json()["user_id"]
+    cid = client.post("/api/characters",
+                      json={"name": "privada", "player_id": uid},
+                      headers=owner).json()["id"]
+    ids = [c["id"] for c in client.get(
+        "/api/characters", headers=stranger).json()["characters"]]
+    assert cid not in ids
+    # el dueño sí la ve en su listado
+    ids = [c["id"] for c in client.get(
+        "/api/characters", headers=owner).json()["characters"]]
+    assert cid in ids
+    # fichas libres siguen visibles para todos (modo local)
+    free = _mkchar("libre")
+    ids = [c["id"] for c in client.get(
+        "/api/characters", headers=stranger).json()["characters"]]
+    assert free in ids
+
+
+def test_personal_char_ws_op_guard():
+    """El mismo guard por WS: un socket de campaña no puede mutar
+    fichas personales ajenas vía op con entity_camp=None."""
+    owner = _auth_headers(f"wo{uuid.uuid4().hex[:8]}")
+    stranger = _auth_headers(f"ws{uuid.uuid4().hex[:8]}")
+    uid = client.get("/api/auth/me", headers=owner).json()["user_id"]
+    cid = client.post("/api/characters",
+                      json={"name": "persws", "player_id": uid},
+                      headers=owner).json()["id"]
+    camp = client.post("/api/campaigns", json={"name": "W"},
+                       headers=stranger).json()
+    tok = stranger["Authorization"].split(" ", 1)[1]
+    with client.websocket_connect(
+            f"/ws/campaign/{camp['id']}?token={tok}") as ws:
+        ws.send_json({"type": "operation", "operation": {
+            "operation_id": uuid.uuid4().hex, "entity_id": cid,
+            "entity_version": 1, "client_id": "t",
+            "user_id": "x", "entity_kind": "character",
+            "operation_type": "character.hp.set",
+            "payload": {"current": 1}}})
+        d = {}
+        for _ in range(6):               # salta presence broadcast
+            d = ws.receive_json()
+            if d.get("type") in ("error", "ack"):
+                break
+        assert d.get("type") == "error"
 
 
 def test_char_claim_and_release():
@@ -1137,6 +1282,9 @@ def test_packages_install_deps_and_uninstall():
     assert not any(h["id"] == f"pkg:{child_id}:x" for h in hits)
     # solo packs — una fuente de pipeline no se borra por aquí
     assert client.delete("/api/packages/srd:2014").status_code == 404
+    # limpieza: el test escribe en la content DB REAL del usuario —
+    # sin esto cada pytest dejaba un 'pkg:base-*' huérfano
+    assert client.delete(f"/api/packages/{base_id}").status_code == 200
 
 
 def test_export_vtt_includes_scenes():

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,13 +18,32 @@ from .ws.rooms import manager
 
 app = FastAPI(title="D&D Companion", version="0.1.0")
 
+# Orígenes CORS por env (despliegues LAN/dominio propio); dev por
+# defecto solo el servidor de Vite.
+_CORS_ORIGINS = [o.strip() for o in
+                 os.environ.get(
+                     "DND_CORS_ORIGINS",
+                     "http://localhost:5173").split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def _security_headers(request, call_next):
+    """Higiene básica si la app se expone fuera de localhost:
+    sin esto un XSS en cualquier origen servido podía inyectar
+    contenido sniffeado o embeber la app en un iframe ajeno."""
+    resp = await call_next(request)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "same-origin")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    return resp
 
 app.include_router(content.router)
 app.include_router(characters.router)
@@ -57,7 +77,8 @@ async def campaign_ws(websocket: WebSocket, campaign_id: str,
     Con `?token=` el rol se resuelve por el usuario autenticado — el
     parámetro user_id suelto solo vale en modo local (sin cuenta),
     porque es spoofable y daría rol 'dm' a cualquiera."""
-    role, resolved, name = _ws_identity(campaign_id, token, user_id)
+    role, resolved, name, authed = _ws_identity(
+        campaign_id, token, user_id)
     await manager.join(campaign_id, websocket, role=role, name=name,
                        uid=resolved)
     # presencia en vivo — estilo Discord: la sala se entera de
@@ -73,25 +94,31 @@ async def campaign_ws(websocket: WebSocket, campaign_id: str,
                     json.dumps({"type": "error", "detail": "invalid json"}))
                 continue
             await _dispatch_ws(websocket, campaign_id, msg, resolved,
-                               name, role)
+                               name, role, authed)
     except WebSocketDisconnect:
         manager.leave(campaign_id, websocket)
         await _broadcast_presence(campaign_id)
 
 
 def _ws_identity(campaign_id: str, token: str | None,
-                 user_id: str | None) -> tuple[str, str | None, str | None]:
-    """Resuelve (rol, user_id, nombre visible) de la conexión.
+                 user_id: str | None
+                 ) -> tuple[str, str | None, str | None, bool]:
+    """Resuelve (rol, user_id, nombre visible, autenticado) de la
+    conexión.
 
     Con `?token=` el rol se resuelve por el usuario autenticado — el
     parámetro user_id suelto solo vale en modo local (sin cuenta),
-    porque es spoofable y daría rol 'dm' a cualquiera."""
+    porque es spoofable y daría rol 'dm' a cualquiera. `authed`
+    distingue la identidad verificada por token de la spoofable —
+    los guards de propiedad solo pueden confiar en la primera."""
     resolved = name = None
+    authed = False
     if token:
         from .api.auth import user_from_token
         info = user_from_token(token)
         resolved = (info or {}).get("user_id")
         name = (info or {}).get("username")
+        authed = resolved is not None
     elif user_id:
         resolved = name = user_id   # el id local ya es el nombre
     role = "local"
@@ -109,7 +136,7 @@ def _ws_identity(campaign_id: str, token: str | None,
             (campaign_id,)).fetchone()
         if row and row["owner_id"]:
             role = "spectator"
-    return role, resolved, name
+    return role, resolved, name, authed
 
 
 async def _broadcast_presence(campaign_id: str) -> None:
@@ -121,7 +148,7 @@ async def _broadcast_presence(campaign_id: str) -> None:
 async def _dispatch_ws(websocket: WebSocket, campaign_id: str,
                        msg: dict, resolved: str | None = None,
                        name: str | None = None,
-                       role: str = "local") -> None:
+                       role: str = "local", authed: bool = False) -> None:
     """Un mensaje del protocolo de sala: ping / chat / operation."""
     if msg.get("type") == "ping":
         await websocket.send_text(json.dumps({"type": "pong"}))
@@ -204,6 +231,14 @@ async def _dispatch_ws(websocket: WebSocket, campaign_id: str,
                     _player_combat_op(conn, op,
                                       {"user_id": resolved}
                                       if resolved else None)
+        elif entity_camp is None:
+            # ficha sin campaña con player_id: solo la muta su dueño
+            # (mismo guard que REST — y solo vale la identidad por
+            # token: un ?user_id suelto es spoofable)
+            from .api.operations import _personal_ownership
+            _personal_ownership(conn, op,
+                                {"user_id": resolved}
+                                if authed else None)
         if resolved:
             # el actor es la identidad de la conexión — el user_id del
             # payload es spoofable y envenenaría la auditoría

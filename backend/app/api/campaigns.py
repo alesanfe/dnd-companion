@@ -347,8 +347,9 @@ def delete_campaign(campaign_id: str,
                 combat_ids)
         conn.execute(
             "UPDATE characters SET campaign_id = NULL, "
-            "version = version + 1 WHERE campaign_id = ?",
-            (campaign_id,))
+            "version = version + 1, updated_at = ?"
+            " WHERE campaign_id = ?",
+            (datetime.now(timezone.utc).isoformat(), campaign_id))
         conn.execute("DELETE FROM campaigns WHERE id = ?",
                      (campaign_id,))
         conn.commit()
@@ -696,27 +697,34 @@ async def token_move(campaign_id: str, entity_id: str,
     uid = (user or {}).get("user_id")
     is_dm = not _has_owner(conn, campaign_id) or \
         member_role(campaign_id, uid) in _DM_ROLES
-    if not is_dm:
+
+    def _player_check(tk_cur: dict, data_cur: dict) -> None:
+        """Ownership + muros sobre UNA copia del mapa — se re-ejecuta
+        sobre la copia fresca si el UPDATE pierde la carrera (el DM
+        pudo desvincular el token o murar el borde entretanto)."""
         # solo el token cuya ficha pertenece al jugador
-        owner_uid = tk.get("player_id")
-        if owner_uid is None and tk.get("ref_id"):
+        owner_uid = tk_cur.get("player_id")
+        if owner_uid is None and tk_cur.get("ref_id"):
             prow = conn.execute(
                 "SELECT player_id FROM characters WHERE id = ?",
-                (tk["ref_id"],)).fetchone()
+                (tk_cur["ref_id"],)).fetchone()
             owner_uid = prow["player_id"] if prow else None
         if uid is None or owner_uid != uid:
             raise HTTPException(403, "ese token no es tuyo")
         # muros: una casilla adyacente ortogonal no se cruza si el
         # borde está murado (saltos largos/diagonales = rodear, libre)
-        walls = set(data.get("walls") or [])
-        dx, dy = int(body.x) - tk["x"], int(body.y) - tk["y"]
+        walls = set(data_cur.get("walls") or [])
+        dx, dy = int(body.x) - tk_cur["x"], int(body.y) - tk_cur["y"]
         if abs(dx) + abs(dy) == 1:
-            edge = (f"{tk['x']},{tk['y']},S" if dy == 1 else
-                    f"{tk['x']},{tk['y'] - 1},S" if dy == -1 else
-                    f"{tk['x']},{tk['y']},E" if dx == 1 else
-                    f"{tk['x'] - 1},{tk['y']},E")
+            edge = (f"{tk_cur['x']},{tk_cur['y']},S" if dy == 1 else
+                    f"{tk_cur['x']},{tk_cur['y'] - 1},S" if dy == -1
+                    else f"{tk_cur['x']},{tk_cur['y']},E" if dx == 1
+                    else f"{tk_cur['x'] - 1},{tk_cur['y']},E")
             if edge in walls:
                 raise HTTPException(400, "hay un muro en medio")
+
+    if not is_dm:
+        _player_check(tk, data)
     cols = int(data.get("cols") or 16)
     rows = int(data.get("rows") or 10)
     tk["x"] = max(0, min(cols - 1, int(body.x)))
@@ -725,10 +733,34 @@ async def token_move(campaign_id: str, entity_id: str,
     # no notaba la posición nueva y un PATCH concurrente del DM (fog,
     # muros) podía pisar el movimiento con su copia de data
     now = datetime.now(timezone.utc).isoformat()
-    conn.execute(
+    cur = conn.execute(
         "UPDATE campaign_entities SET data = ?, version = version+1, "
-        "updated_at = ? WHERE id = ?",
-        (json.dumps(data), now, entity_id))
+        "updated_at = ? WHERE id = ? AND version = ?",
+        (json.dumps(data), now, entity_id, row["version"]))
+    if cur.rowcount == 0:
+        # otro escritor ganó entre el SELECT y el UPDATE: el movimiento
+        # es un DELTA sobre un token — reaplicarlo sobre la copia
+        # fresca no pisa los cambios del otro (fog, muros, marcas…)
+        fresh = conn.execute(
+            "SELECT data, version FROM campaign_entities WHERE id = ?",
+            (entity_id,)).fetchone()
+        data = json.loads(fresh["data"])
+        tk2 = next((t for t in (data.get("tokens") or [])
+                    if t.get("id") == body.token_id), None)
+        if tk2 is None:
+            conn.rollback()
+            raise HTTPException(404, "token not found")
+        if not is_dm:
+            try:
+                _player_check(tk2, data)   # revalidar sobre lo fresco
+            except HTTPException:
+                conn.rollback()
+                raise
+        tk2["x"], tk2["y"] = tk["x"], tk["y"]
+        conn.execute(
+            "UPDATE campaign_entities SET data = ?, version = version+1, "
+            "updated_at = ? WHERE id = ? AND version = ?",
+            (json.dumps(data), now, entity_id, fresh["version"]))
     conn.commit()
     await _notify_entity(campaign_id, entity_id, ["data"],
                          row["visibility"], "map", row["name"])
@@ -741,6 +773,7 @@ class EntityPatch(BaseModel):
     visibility: str | None = None
     known_to: list[str] | None = None
     reveal_condition: str | None = None
+    expected_version: int | None = None   # optimistic lock → 409
 
 
 @router.patch("/{campaign_id}/entities/{entity_id}")
@@ -782,10 +815,24 @@ async def patch_entity(campaign_id: str, entity_id: str, body: EntityPatch,
     if not sets:
         return {"id": entity_id, "changed": []}
     sets += ["updated_at = ?", "version = version + 1"]
-    params += [datetime.now(timezone.utc).isoformat(), entity_id]
-    conn.execute(
-        f"UPDATE campaign_entities SET {', '.join(sets)} WHERE id = ?",
+    params.append(datetime.now(timezone.utc).isoformat())
+    where = "id = ?"
+    params.append(entity_id)
+    if body.expected_version is not None:
+        # optimistic lock: el cliente escribe sobre la versión que leyó —
+        # un 409 obliga a recargar en vez de pisar el cambio de otro
+        # (p. ej. un token-move del jugador mientras el DM pinta niebla)
+        where += " AND version = ?"
+        params.append(body.expected_version)
+    cur = conn.execute(
+        f"UPDATE campaign_entities SET {', '.join(sets)} WHERE {where}",
         params)
+    if cur.rowcount == 0:
+        # sin rollback el UPDATE fallido mantiene el candado de
+        # escritura WAL abierto y el siguiente writer traga un
+        # "database is locked"
+        conn.rollback()
+        raise HTTPException(409, "entity version conflict")
     conn.commit()
     changed = [s.split(" = ")[0] for s in sets[:-2]]
     await _notify_entity(campaign_id, entity_id, changed,
@@ -875,6 +922,8 @@ async def patch_session(campaign_id: str, session_id: str,
         params.append(body.title)
     if not sets:
         return {"id": session_id, "changed": []}
+    sets.append("updated_at = ?")          # como toda escritura de estado
+    params.append(datetime.now(timezone.utc).isoformat())
     cur = conn.execute(
         f"UPDATE sessions SET {', '.join(sets)} "
         "WHERE id = ? AND campaign_id = ?",
@@ -1167,7 +1216,10 @@ def export_vtt(campaign_id: str,
                 "hp": tk.get("hp"), "hp_max": tk.get("max_hp"),
                 "vision_ft": tk.get("vision_ft"),
                 "light_ft": tk.get("light_ft"),
+                "image_url": tk.get("image_url"),
                 "actor_ref": tk.get("ref_id"),
+                "combatant_id": tk.get("combatant_id"),
+                "player_id": tk.get("player_id"),
             } for tk in d.get("tokens", [])],
         })
 

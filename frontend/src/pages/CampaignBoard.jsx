@@ -107,6 +107,7 @@ export default function CampaignBoard() {
              ev?.type !== 'campaign.present') ||
             ev?.type === 'character.hp.changed' ||
             ev?.type === 'character.condition.applied' ||
+            ev?.type === 'character.updated' ||
             ev?.type?.startsWith('combat.')) load()
         // tiradas públicas (las secretas nunca llegan a este socket)
         if (ev?.type === 'dice.roll.created') {
@@ -175,12 +176,17 @@ export default function CampaignBoard() {
     !(cb.conditions || []).some((cn) => OUT_C.has(cn)) &&
     !(cb.hp_state === 'caído' && cb.kind !== 'character'))
   const sortedC = [...aliveC].sort((a, b) => b.initiative - a.initiative)
-  const activeRef = sortedC.length
-    ? sortedC[combatView.combat.turn_index % sortedC.length]?.ref_id
-    : null
+  const activeCb = sortedC.length
+    ? sortedC[combatView.combat.turn_index % sortedC.length] : null
+  const activeRef = activeCb?.ref_id
+  const activeName = activeCb?.name
   const turnOrder = {}
   sortedC.forEach((cb, i) => {
-    if (cb.ref_id) turnOrder[cb.ref_id] = i + 1 })
+    // ref_id (fichas) y nombre (monstruos — no tienen ficha) para
+    // que los badges de iniciativa cubran a todo el tracker
+    turnOrder[cb.ref_id || cb.name] = i + 1
+    if (cb.name) turnOrder[cb.name] = i + 1
+  })
 
   return (
     <main>
@@ -241,7 +247,10 @@ export default function CampaignBoard() {
                     worldEntities={entities || []}
                     chars={chars} myUid={me?.user_id}
                     ping={ping} activeRef={activeRef}
-                    turnOrder={turnOrder} />
+                    activeName={activeName}
+                    turnOrder={turnOrder}
+                    combatants={sortedC}
+                    combat={combatView} />
         </section>)}
 
       {campTab === 'resumen' && (<>

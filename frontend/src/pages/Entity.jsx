@@ -4,6 +4,22 @@ import { api } from '../api.js'
 import { loadJSON } from '../session.js'
 import { useT } from '../i18n.jsx'
 
+/** Copia con fallback: navigator.clipboard no existe en contextos
+    no seguros (http:// en LAN) — el botón "copiar" no hacía nada. */
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true }
+  catch {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'; ta.style.opacity = '0'
+    document.body.appendChild(ta); ta.select()
+    let ok = false
+    try { ok = document.execCommand('copy') } catch { /* sin permiso */ }
+    ta.remove()
+    return ok
+  }
+}
+
 /** Vista legible de una entidad del corpus — stat block normalizado
     para monstruos, campos clave para conjuros/objetos, y el JSON
     original como fallback. */
@@ -15,6 +31,7 @@ export default function Entity() {
   const [view, setView] = useState(null)
   const [err, setErr] = useState(null)
   const [editions, setEditions] = useState(null)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     api.getEntity(id).then(setEnt).catch((e) => setErr(e.message))
@@ -68,12 +85,15 @@ export default function Entity() {
                 onClick={() => setColPick(!colPick)}>
           {t('ent.collection')}</button>
         <AddToCharacter entity={ent} />
-        <button className="ghost" onClick={() => {
+        <button className="ghost" onClick={async () => {
           const text = block
             ? JSON.stringify(block, null, 2)
             : JSON.stringify(ent.data, null, 2)
-          navigator.clipboard?.writeText(text)
-        }}>{t('entity.copy')}</button>
+          if (await copyText(text)) {
+            setCopied(true)
+            setTimeout(() => setCopied(false), 1500)
+          }
+        }}>{copied ? `✓ ${t('ent.copied')}` : t('entity.copy')}</button>
       </div>
       {colPick && (
         <div className="card" role="dialog" aria-label={t('ent.colAria')}>
@@ -186,6 +206,7 @@ export default function Entity() {
 function TableView({ data }) {
   const { t } = useT()
   const [rolled, setRolled] = useState(null)
+  const [copied, setCopied] = useState(false)
   const rows = data.rows || data.table?.rows || []
   const cols = data.colLabels || data.table?.colLabels || []
   const entries = data.entries || []
@@ -206,11 +227,14 @@ function TableView({ data }) {
         <div className="row">
           <p className="chip">
             {Array.isArray(rolled) ? rolled.join(' — ') : String(rolled)}</p>
-          <button className="ghost" onClick={() => {
+          <button className="ghost" onClick={async () => {
             const txt = Array.isArray(rolled)
               ? rolled.join(' — ') : String(rolled)
-            navigator.clipboard?.writeText(txt)
-          }}>{t('entity.copy')}</button>
+            if (await copyText(txt)) {
+              setCopied(true)
+              setTimeout(() => setCopied(false), 1500)
+            }
+          }}>{copied ? `✓ ${t('ent.copied')}` : t('entity.copy')}</button>
         </div>)}
       {cols.length > 0 && rows.length > 0 && (
         <table>

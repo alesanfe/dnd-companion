@@ -300,6 +300,7 @@ export default function TabInventario({ c }) {
                            { shop_id: s.id, item: it.name })
                   api.listEntities(char.campaign_id, 'shop', 'player')
                     .then((r) => setShops(r.entities))
+                    .catch(() => {})  // stock se refresca al reentrar
                 }}>{t('inv.buy')}</button>
               </div>
             ))}

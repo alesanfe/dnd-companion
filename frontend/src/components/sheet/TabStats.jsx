@@ -8,7 +8,7 @@ import { abilityScore } from './data.js'
     característica y competencias. */
 export default function TabStats({ c }) {
   const { id, char, d, derived, stats, op, t, tf, focus, hud, tab,
-          load, setRollLog } = c
+          load, setRollLog, setNotice } = c
   const [asiAb, setAsiAb] = useState('str')
   const show = (g) => focus ? hud.has(g) : tab === g
   return (<div className="sheet-cols">
@@ -68,15 +68,17 @@ export default function TabStats({ c }) {
           /* tirada tipada: el backend suma mod + competencia y aplica
              condiciones (agotamiento, parálisis → autofallo en FUE/DES) */
           const rollIt = async (rollType, name, mode = '') => {
-            const r = await api.characterRoll(id, `1d20${mode}`, rollType)
-            setRollLog((l) => [
-              `${name}${mode === 'adv' ? ` [${t('stats.adv')}]`
-                           : mode === 'dis' ? ` [${t('stats.dis')}]` : ''}${
-                r.auto_fail ? ` — ${t('stats.autofail')}` : ''}: ${
-                (r.kept || []).join('+')} = ${r.total}${
-                (r.effects_applied || []).length
-                  ? ` [${r.effects_applied.join(', ')}]` : ''}`, ...l]
-              .slice(0, 10))
+            try {
+              const r = await api.characterRoll(id, `1d20${mode}`, rollType)
+              setRollLog((l) => [
+                `${name}${mode === 'adv' ? ` [${t('stats.adv')}]`
+                             : mode === 'dis' ? ` [${t('stats.dis')}]` : ''}${
+                  r.auto_fail ? ` — ${t('stats.autofail')}` : ''}: ${
+                  (r.kept || []).join('+')} = ${r.total}${
+                  (r.effects_applied || []).length
+                    ? ` [${r.effects_applied.join(', ')}]` : ''}`, ...l]
+                .slice(0, 10))
+            } catch (e) { setNotice(e.message) }
           }
           const rollCtx = (rollType, name) => (e) => {
             e.preventDefault()
@@ -142,9 +144,11 @@ export default function TabStats({ c }) {
                  onBlur={async (e) => {
                    if (e.target.value.trim() &&
                        e.target.value !== char.name) {
-                     await api.patchCharacter(
-                       id, { name: e.target.value.trim() })
-                     load()
+                     try {
+                       await api.patchCharacter(
+                         id, { name: e.target.value.trim() })
+                       load()
+                     } catch (ex) { setNotice(ex.message) }
                    }
                  }} />
         </div>

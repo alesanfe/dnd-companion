@@ -133,6 +133,9 @@ def test_package_install_registers_provenance():
     assert ent["ruleset"] == "dnd5e-2014"
     packs = client.get("/api/packages").json()["packages"]
     assert any(p["id"] == "pkg:mi-pack" for p in packs)
+    # no ensuciar la content DB real del usuario — el pack del test
+    # se desinstala al terminar
+    assert client.delete("/api/packages/mi-pack").status_code == 200
 
 
 # --- sesiones, escenas, timeline ---------------------------------------
@@ -165,6 +168,46 @@ def test_entity_patch_and_timeline():
     assert "name" in r.json()["changed"]
     tl = client.get(f"/api/campaigns/{camp}/timeline").json()["timeline"]
     assert tl[0]["name"] == "Fundación"     # orden cronológico
+
+
+def test_entity_patch_optimistic_lock():
+    """expected_version: una PATCH con versión stale devuelve 409 en vez
+    de pisar el cambio de otro escritor (mapa: tokens vs niebla)."""
+    camp = client.post("/api/campaigns", json={"name": "L"}).json()["id"]
+    eid = client.post(f"/api/campaigns/{camp}/entities", json={
+        "kind": "map", "name": "M", "visibility": "public",
+        "data": {"tokens": []}}).json()["id"]
+    ent = client.get(f"/api/campaigns/{camp}/entities"
+                     ).json()["entities"][0]
+    r = client.patch(f"/api/campaigns/{camp}/entities/{eid}", json={
+        "data": {"fog": ["1,1"]}, "expected_version": ent["version"]})
+    assert r.status_code == 200
+    r2 = client.patch(f"/api/campaigns/{camp}/entities/{eid}", json={
+        "data": {"fog": []}, "expected_version": ent["version"]})
+    assert r2.status_code == 409
+    # sin expected_version: compat abierta, se aplica igual
+    r3 = client.patch(f"/api/campaigns/{camp}/entities/{eid}",
+                      json={"data": {"marks": {}}})
+    assert r3.status_code == 200
+
+
+def test_token_move_bumps_version_and_moves():
+    """token-move mueve, bumpea la versión de la entidad y acota a la
+    casilla (clamp al grid) — el resync de otros clientes lo detecta."""
+    camp = client.post("/api/campaigns", json={"name": "M"}).json()["id"]
+    eid = client.post(f"/api/campaigns/{camp}/entities", json={
+        "kind": "map", "name": "M", "visibility": "public",
+        "data": {"cols": 8, "rows": 6,
+                 "tokens": [{"id": "t1", "name": "Goblin",
+                             "x": 0, "y": 0}]}}).json()["id"]
+    r = client.post(
+        f"/api/campaigns/{camp}/entities/{eid}/token-move",
+        json={"token_id": "t1", "x": 99, "y": 3})
+    assert r.status_code == 200 and r.json()["x"] == 7   # clamp a cols-1
+    ent = client.get(f"/api/campaigns/{camp}/entities"
+                     ).json()["entities"][0]
+    assert ent["version"] == 2     # 1 al crear + 1 al mover
+    assert ent["data"]["tokens"][0]["x"] == 7
 
 
 # --- acciones contextuales ----------------------------------------------

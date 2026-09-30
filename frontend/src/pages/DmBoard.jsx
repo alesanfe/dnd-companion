@@ -88,6 +88,13 @@ export default function DmBoard() {
         if (ev?.type === 'campaign.presence') {
           setPresence(ev.payload?.members || [])
         }
+        // alta/baja/reasignación de fichas de la campaña — la lista de
+        // PJs del DM se refresca sola (claims, fichas borradas)
+        if (ev?.type === 'character.updated') {
+          api.listCharacters(campaign.id)
+            .then((r) => setPartyChars(r.characters || []))
+            .catch(() => {})
+        }
         if (ev?.type === 'rtc.signal') {
           setRtcMsg({ ...ev, k: Date.now() })
         }
@@ -95,9 +102,28 @@ export default function DmBoard() {
         // dispositivo — la salvación del jugador, otro DM): los tipos
         // son character.hp.changed etc., no combat.* — sin esto el
         // tablero mostraba PG viejos hasta tocar algo
-        if (combatRef.current &&
-            ev?.aggregate_id === combatRef.current.id) {
-          refresh(combatRef.current.id)
+        // combate creado/borrado en OTRO dispositivo (o por escena):
+        // abrir si no hay ninguno; limpiar si borraron el abierto
+        if (ev?.type === 'combat.started' && !combatRef.current &&
+            ev.payload?.combat_id) refresh(ev.payload.combat_id)
+        if (ev?.type === 'combat.ended' && ev.payload?.deleted &&
+            combatRef.current?.id === ev.aggregate_id)
+          setCombat(null)
+        if (combatRef.current) {
+          const cb = combatRef.current
+          // los eventos character.* de OPS DE FICHA llevan
+          // aggregate_id = character_id (no el del combate): si ese PJ
+          // es combatiente del combate abierto, también refresca
+          const charIds = new Set(
+            (cb.combat.combatants || [])
+              .filter((x) => x.kind === 'character')
+              .map((x) => x.ref_id))
+          if (ev?.aggregate_id === cb.id ||
+              (String(ev?.type || '').startsWith('character.') &&
+               (charIds.has(ev.aggregate_id) ||
+                charIds.has(ev.payload?.character_id)))) {
+            refresh(cb.id)
+          }
         }
       },
     })
@@ -115,6 +141,13 @@ export default function DmBoard() {
       .then((r) => setEntities(r.entities)).catch(() => {})
     api.listCharacters(campaign.id)
       .then((r) => setPartyChars(r.characters || [])).catch(() => {})
+    // restaurar el combate activo — recargar /dm a mitad de
+    // encuentro dejaba el tracker vacío aunque el combate seguía vivo
+    api.listCombats(campaign.id, 'active')
+      .then((r) => {
+        const open = r.combats?.[0]
+        if (open && !combatRef.current) refresh(open.id)
+      }).catch(() => {})
   }, [campaign?.id])
 
   // recargar /dm no debe tirar el tablero entero: restaura la última

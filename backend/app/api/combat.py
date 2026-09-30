@@ -68,8 +68,8 @@ async def create_combat(body: CombatCreate,
 
 
 @router.delete("/{combat_id}")
-def delete_combat(combat_id: str,
-                  user: dict | None = Depends(optional_user)):
+async def delete_combat(combat_id: str,
+                        user: dict | None = Depends(optional_user)):
     conn = state_db()
     row = conn.execute("SELECT campaign_id FROM combats WHERE id = ?",
                        (combat_id,)).fetchone()
@@ -78,7 +78,31 @@ def delete_combat(combat_id: str,
     if row["campaign_id"]:
         _require_role(conn, row["campaign_id"], user, _DM_ROLES)
     conn.execute("DELETE FROM combats WHERE id = ?", (combat_id,))
+    ev = None
+    if row["campaign_id"]:
+        # combat.ended con deleted=true — para los clientes es lo
+        # mismo: la vista de combate (jugadores) y la lista (DM en
+        # otro dispositivo) se limpian sin recargar
+        from ..domain.events import Event, EventType
+        from ..ws.rooms import manager
+        ev = Event(event_id=uuid.uuid4().hex,
+                   type=EventType.COMBAT_ENDED,
+                   campaign_id=row["campaign_id"], aggregate_id=combat_id,
+                   aggregate_version=0,
+                   actor_id=(user or {}).get("user_id") or "dm",
+                   occurred_at=datetime.now(timezone.utc),
+                   payload={"combat_id": combat_id, "deleted": True})
+        conn.execute(
+            """INSERT INTO events
+               (event_id, campaign_id, aggregate_id, aggregate_version,
+                actor_id, occurred_at, type, payload)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (ev.event_id, ev.campaign_id, ev.aggregate_id, 0,
+             ev.actor_id, ev.occurred_at.isoformat(), ev.type.value,
+             json.dumps(ev.payload)))
     conn.commit()
+    if ev:
+        await manager.broadcast(ev.campaign_id, ev)
     return {"deleted": combat_id}
 
 

@@ -98,8 +98,8 @@ export default function Header() {
       {showNotifs && notifs.length > 0 && (
         <div className="popover" role="dialog" aria-label={t('hdr.notifs')}>
           <strong>{t('hdr.notifsTitle')}</strong>
-          {notifs.map((n) => (
-            <div key={n.character_id + n.at} className="notice">
+          {notifs.map((n, i) => (
+            <div key={n.character_id + (n.at ?? i)} className="notice">
               <span><strong>{n.name}</strong>: {t('cb.rollTag')} {n.expression}
                 {n.reason && ` — ${n.reason}`}
                 {n.secret &&

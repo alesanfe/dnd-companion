@@ -97,7 +97,7 @@ export default function CharacterSheet() {
       .then((r) => setShops(r.entities)).catch(() => {})
   }, [char?.campaign_id])
 
-  const load = () => api.getCharacter(id).then((c) => {
+  const applyChar = (c) => {
     setChar(c)
     // peticiones del DM que llegaron estando offline — la sala solo
     // emite el evento una vez; pendingRolls las reaparece al volver
@@ -111,7 +111,22 @@ export default function CharacterSheet() {
     // luego el local del navegador
     setPortrait(c.data?.narrative?.portrait_url ||
                 localStorage.getItem(`dnd-portrait-${id}`))
-  }).catch((e) => setErr(e.message))
+  }
+  const load = () => api.getCharacter(id).then((c) => {
+    applyChar(c)
+    // caché offline: la tabla char_cache existía pero nadie escribía
+    // — sin ella, recargar la ficha sin conexión moría en el GET
+    import('../db.js').then(({ db }) =>
+      db.char_cache.put({ id, updated_at: Date.now(), char: c }))
+      .catch(() => {})
+  }).catch(async (e) => {
+    // sin red → última versión cacheada; las ops que haga el jugador
+    // encima ya van encoladas por applyOp
+    const cached = await import('../db.js')
+      .then(({ db }) => db.char_cache.get(id)).catch(() => null)
+    if (cached?.char) applyChar(cached.char)
+    else setErr(e.message)
+  })
   useEffect(() => { load() }, [id])
 
   // "continuar" del dashboard: última ficha abierta en este dispositivo
@@ -270,12 +285,14 @@ export default function CharacterSheet() {
     // inspiración: se gasta en la PRÓXIMA tirada de d20 (SRD) —
     // antes doRoll nunca la usaba ni la consumía
     const useInsp = !!d.inspiration && rollType !== 'damage'
-    const r = await api.characterRoll(id, expr, rollType, useInsp)
-    const fx = (r.effects_applied || []).length
-      ? ` [${r.effects_applied.join(', ')}]` : ''
-    setRollLog((l) => [`${r.expression} → ${r.kept.join('+')} = ${r.total}${fx}`, ...l].slice(0, 10))
-    if (useInsp)
-      await op('character.inspiration.set', { value: false })
+    try {
+      const r = await api.characterRoll(id, expr, rollType, useInsp)
+      const fx = (r.effects_applied || []).length
+        ? ` [${r.effects_applied.join(', ')}]` : ''
+      setRollLog((l) => [`${r.expression} → ${r.kept.join('+')} = ${r.total}${fx}`, ...l].slice(0, 10))
+      if (useInsp)
+        await op('character.inspiration.set', { value: false })
+    } catch (e) { setErr(e.message) }
   }
 
   // hook incondicional — jamás después de un return (React exige
@@ -298,16 +315,18 @@ export default function CharacterSheet() {
     // iniciativa derivado (efectos) va como mod fijo
     const dexMod = Math.floor(((d.abilities?.dexterity ?? 10) - 10) / 2)
     const extra = (derived?.initiative ?? dexMod) - dexMod
-    const r = await api.characterRoll(
-      id, `1d20${mode}${extra ? `${extra >= 0 ? '+' : ''}${extra}` : ''}`,
-      'check:dex')
-    setRollLog((l) => [
+    try {
+      const r = await api.characterRoll(
+        id, `1d20${mode}${extra ? `${extra >= 0 ? '+' : ''}${extra}` : ''}`,
+        'check:dex')
+      setRollLog((l) => [
       `${t('sheet.initiative')}${mode === 'adv' ? ` ${t('sheet.advTag')}`
                 : mode === 'dis' ? ` ${t('sheet.disTag')}` : ''}: ${
         (r.kept || []).join('+')} = ${r.total}${
         (r.effects_applied || []).length
           ? ` [${r.effects_applied.join(', ')}]` : ''}`, ...l]
       .slice(0, 10))
+    } catch (e) { setErr(e.message) }
   }
 
   // contexto compartido con las pestañas extraídas (components/sheet/)
@@ -423,22 +442,28 @@ export default function CharacterSheet() {
         )}
         <span className="tsep" />
         <button className="ghost" onClick={async () => {
-          const h = await api.opHistory(id)
-          const last = (h.operations || []).find((o) => o.reversible)
-          if (last) { await api.undoOp(last.operation_id); load() }
+          try {
+            const h = await api.opHistory(id)
+            const last = (h.operations || []).find((o) => o.reversible)
+            if (last) { await api.undoOp(last.operation_id); load() }
+          } catch (e) { setErr(e.message) }
         }}>{t('sheet.undo')}</button>
         <button className="ghost" onClick={async () => {
-          const h = await api.opHistory(id)
-          setHistory(history ? null : h.operations)
+          try {
+            const h = await api.opHistory(id)
+            setHistory(history ? null : h.operations)
+          } catch (e) { setErr(e.message) }
         }}>{t('sheet.history.btn')}</button>
         <button className="ghost" onClick={async () => {
-          const ex = await api.exportCharacter(id)
-          const blob = new Blob([JSON.stringify(ex, null, 2)],
-                                { type: 'application/json' })
-          const a = document.createElement('a')
-          a.href = URL.createObjectURL(blob)
-          a.download = `${char.name}.json`
-          a.click()
+          try {
+            const ex = await api.exportCharacter(id)
+            const blob = new Blob([JSON.stringify(ex, null, 2)],
+                                  { type: 'application/json' })
+            const a = document.createElement('a')
+            a.href = URL.createObjectURL(blob)
+            a.download = `${char.name}.json`
+            a.click()
+          } catch (e) { setErr(e.message) }
         }}>{t('sheet.export')}</button>
         <button className="ghost" onClick={() => window.print()}>
           🖨 {t('sheet.print')}</button>
@@ -492,8 +517,10 @@ export default function CharacterSheet() {
         <p className="notice" role="status">
           {t('sheet.opApplied')}
           <button onClick={async () => {
-            await api.undoOp(undoable.id)
-            setUndoable(null); load()
+            try {
+              await api.undoOp(undoable.id)
+              setUndoable(null); load()
+            } catch (e) { setErr(e.message) }
           }}>{t('sheet.undoBtn')}</button>
           <button className="ghost"
                   onClick={() => setUndoable(null)}>×</button>
@@ -508,18 +535,22 @@ export default function CharacterSheet() {
               <span className="muted"> ({t('sheet.secret')})</span>}
           </p>
           <button onClick={async () => {
-            const r = await api.characterRoll(id, rollRequest.expression, 'check')
-            setRollLog((l) => [`${r.expression} → ${r.kept.join('+')} = ${r.total}`, ...l].slice(0, 10))
-            setRollRequest(null)
+            try {
+              const r = await api.characterRoll(id, rollRequest.expression, 'check')
+              setRollLog((l) => [`${r.expression} → ${r.kept.join('+')} = ${r.total}`, ...l].slice(0, 10))
+              setRollRequest(null)
+            } catch (e) { setErr(e.message) }
           }}>{t('sheet.roll')} {rollRequest.expression}</button>
           <button className="ghost" title={t('sheet.secretHint')}
                   onClick={async () => {
-            const r = await api.characterRoll(
-              id, rollRequest.expression, 'check', false, true)
-            setRollLog((l) => [
-              `🔒 ${r.expression} → ${r.total} ${t('sheet.secretTag')}`,
-              ...l].slice(0, 10))
-            setRollRequest(null)
+            try {
+              const r = await api.characterRoll(
+                id, rollRequest.expression, 'check', false, true)
+              setRollLog((l) => [
+                `🔒 ${r.expression} → ${r.total} ${t('sheet.secretTag')}`,
+                ...l].slice(0, 10))
+              setRollRequest(null)
+            } catch (e) { setErr(e.message) }
           }}>{t('sheet.secretBtn')}</button>
           <button className="ghost"
                   onClick={() => setRollRequest(null)}>

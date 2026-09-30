@@ -23,14 +23,18 @@ export function ItemPicker({ onPick }) {
   const { t } = useT()
   const [q, setQ] = useState('')
   const [hits, setHits] = useState([])
+  const [err, setErr] = useState(null)
   const go = async (e) => {
     e.preventDefault()
     if (!q.trim()) return
-    const r = await api.search(q.trim())
-    setHits(r.results
-      .filter((h) => ['item', 'magic-item', 'equipment']
-        .includes(h.entity_type))
-      .slice(0, 12))
+    try {
+      const r = await api.search(q.trim())
+      setHits(r.results
+        .filter((h) => ['item', 'magic-item', 'equipment']
+          .includes(h.entity_type))
+        .slice(0, 12))
+      setErr(null)
+    } catch (ex) { setErr(ex.message) }
   }
   return (
     <div>
@@ -39,6 +43,7 @@ export function ItemPicker({ onPick }) {
                placeholder={t('pick.itemPh')} />
         <button type="submit">{t('search.button')}</button>
       </form>
+      {err && <p className="error" role="alert">{err}</p>}
       {hits.length > 0 && (
         <ul>
           {hits.map((h) => (
@@ -62,12 +67,16 @@ export function SpellPicker({ onPick, entityType = 'spell',
   const [q, setQ] = useState('')
   const [hits, setHits] = useState([])
   const [onlyClass, setOnlyClass] = useState(Boolean(forClass))
+  const [err, setErr] = useState(null)
   const go = async (e) => {
     e.preventDefault()
     if (!q.trim()) return
-    const r = await api.search(q.trim(), entityType, undefined,
-                               onlyClass ? forClass : undefined)
-    setHits(r.results.slice(0, 12))
+    try {
+      const r = await api.search(q.trim(), entityType, undefined,
+                                 onlyClass ? forClass : undefined)
+      setHits(r.results.slice(0, 12))
+      setErr(null)
+    } catch (ex) { setErr(ex.message) }
   }
   return (
     <div>
@@ -76,6 +85,7 @@ export function SpellPicker({ onPick, entityType = 'spell',
                placeholder={placeholder || t('pick.searchPh')} />
         <button type="submit">{t('search.button')}</button>
       </form>
+      {err && <p className="error" role="alert">{err}</p>}
       {forClass && (
         <label className="row muted" style={{ fontSize: '.85em' }}>
           <input type="checkbox" checked={onlyClass}

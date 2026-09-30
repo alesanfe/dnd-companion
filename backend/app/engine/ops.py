@@ -128,6 +128,9 @@ def death_save(char: Character, p: dict, ctx):
     if d20 >= cs["death_save_crit_success"]:
         char.hp.current = 1
         char.death_saves = {"success": 0, "fail": 0}
+        # hp.heal ya lo hace; un 20 natural también levanta al PJ
+        char.conditions = [c for c in char.conditions
+                           if c.lower() not in ("muerto", "dead")]
         result = "20 natural — recupera 1 PG"
     elif d20 <= cs["death_save_crit_fail"]:
         char.death_saves["fail"] = min(
@@ -416,7 +419,9 @@ def hit_die_unspend(char: Character, p: dict, ctx):
     inv = _restore_inverse(char.model_dump())
     pool = char.hit_dice[int(p.get("pool", 0))]
     pool.remaining = min(pool.total, pool.remaining + 1)
-    char.hp.current = max(0, char.hp.current - int(p["healed"]))
+    # 'healed' solo lo lleva la inversa generada por spend; llamada
+    # directa desde la UI (recuperar dado) no deshace curación
+    char.hp.current = max(0, char.hp.current - int(p.get("healed", 0)))
     return inv, []
 
 
@@ -578,7 +583,8 @@ def _apply_level_row(char: Character, class_id: str,
                                          char.proficiency_bonus))
     sc = lvl.get("spellcasting") or {}
     target = (char.pact_slots
-              if class_id.split(":")[-1].replace("-", " ") == "warlock"
+              if class_id.split(":")[-1].replace("-", " ").lower()
+              == "warlock"
               else char.spell_slots)
     for n in range(1, 10):
         slots = sc.get(f"spell_slots_level_{n}", 0)
@@ -991,8 +997,10 @@ def spell_cast(char: Character, p: dict, ctx):
     before = char.model_dump()
     if level > 0:
         pool = _slots_for(char, str(level), p.get("pool"))
-        slot = pool.setdefault(str(level), {"total": 0, "used": 0})
-        if slot["used"] >= slot["total"]:
+        # sin setdefault: lanzar sin espacios de ese nivel no debe
+        # crear un slot fantasma {total:0,used:0} en la ficha
+        slot = pool.get(str(level))
+        if not slot or slot["used"] >= slot["total"]:
             raise ValueError(f"sin espacios de nivel {level}")
         slot["used"] += 1
     if _needs_conc(sp):
@@ -1870,9 +1878,77 @@ def noop(entity, p: dict, ctx):
     return {"operation_type": "noop", "payload": {}}, []
 
 
+# ops que tocan el estado vital de la ficha (PG/salvaciones/muerte) —
+# si el PJ está en un combate activo, el tracker del DM debe reflejarlo
+_VITAL_OPS = {
+    "character.hp.damage", "character.hp.heal", "character.hp.set",
+    "character.death_save", "character.state.restore",
+    "character.rest.short", "character.rest.long", "character.level_up",
+    "character.tick", "character.condition.apply",
+    "character.condition.remove", "character.hit_die.spend",
+    "character.hit_die.unspend",
+}
+
+
+def _sync_combat(char: Character, ctx) -> None:
+    """Espejo inverso de combat_ops._sync_character: si la ficha está
+    en un combate activo de su campaña, el combatiente vinculado sigue
+    el estado vital de la hoja. Sin esto, daño/curación/salvaciones
+    aplicadas desde la ficha del jugador dejaban el tracker del DM
+    desfasado hasta que alguien tocaba el combate."""
+    cid = getattr(ctx, "entity_id", None)
+    conn = getattr(ctx, "state_db", lambda: None)()
+    if cid is None or conn is None:
+        return
+    row = conn.execute(
+        "SELECT campaign_id FROM characters WHERE id = ?",
+        (cid,)).fetchone()
+    if row is None or not row["campaign_id"]:
+        return
+    from ..domain.combat import Combat
+    rows = conn.execute(
+        """SELECT id, data, version FROM combats
+           WHERE campaign_id = ?
+             AND json_extract(data,'$.status') = 'active'""",
+        (row["campaign_id"],)).fetchall()
+    now = datetime.now(timezone.utc).isoformat()
+    for r in rows:
+        combat = Combat(**json.loads(r["data"]))
+        cbt = next((c for c in combat.combatants
+                    if c.kind == "character" and c.ref_id == cid), None)
+        if cbt is None:
+            continue
+        before = cbt.model_dump_json()
+        cbt.hp_current = char.hp.current
+        cbt.hp_temp = char.hp.temp
+        cbt.hp_max = char.hp.max
+        cbt.death_saves = dict(char.death_saves)
+        # solo las condiciones de estado vital — igual que
+        # _sync_character no toca el resto del tracker
+        for cond in ("muerto", "dead", "estable"):
+            if cond in char.conditions and cond not in cbt.conditions:
+                cbt.conditions.append(cond)
+            elif cond not in char.conditions and \
+                    cond in cbt.conditions:
+                cbt.conditions.remove(cond)
+        if cbt.model_dump_json() == before:
+            continue                    # nada vital cambió → no bump
+        cur = conn.execute(
+            "UPDATE combats SET data = ?, version = ?, updated_at = ?"
+            " WHERE id = ? AND version = ?",
+            (combat.model_dump_json(), r["version"] + 1, now,
+             r["id"], r["version"]))
+        if cur.rowcount == 0:
+            raise ValueError("el combate vinculado cambió durante la"
+                             " op de ficha — reintenta")
+
+
 def apply_operation(char: Character, operation_type: str,
                     payload: dict, ctx=None) -> tuple[dict, list[dict]]:
     handler = HANDLERS.get(operation_type)
     if handler is None:
         raise KeyError(f"unknown operation: {operation_type}")
-    return handler(char, payload, ctx)
+    result = handler(char, payload, ctx)
+    if operation_type in _VITAL_OPS:
+        _sync_combat(char, ctx)
+    return result

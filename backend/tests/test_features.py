@@ -80,6 +80,20 @@ def test_atomic_transfer_between_characters():
     assert r2.json()["duplicate"] is True
     db = client.get(f"/api/characters/{b}").json()["data"]
     assert db["inventory"][0]["quantity"] == 2
+    # evento persistido por ficha: la hoja del receptor se refresca
+    # vía WS sin recargar — aggregate_id = la ficha afectada
+    from app.db.connections import state_db
+    conn = state_db()
+    evs = conn.execute(
+        "SELECT aggregate_id, type, json_extract(payload,'$.direction')"
+        " dir FROM events WHERE type = 'inventory.item.transferred'"
+        " AND aggregate_id IN (?,?)", (a, b)).fetchall()
+    conn.close()
+    # inventory.add también usa el tipo transferred — solo cuentan
+    # los eventos dirigidos (out/in) del transfer atómico
+    directed = [e for e in evs if e["dir"]]
+    assert {e["dir"] for e in directed} == {"out", "in"}
+    assert {e["aggregate_id"] for e in directed} == {a, b}
 
 
 def test_export_import_roundtrip():

@@ -52,6 +52,9 @@ function authHeaders() {
 async function req(path, opts = {}) {
   const res = await fetch(path, {
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    // un backend colgado no debe dejar promesas pendientes para
+    // siempre (la cola offline se quedaba "sincronizando…")
+    signal: AbortSignal.timeout(15_000),
     ...opts,
   })
   if (!res.ok) {
@@ -86,12 +89,14 @@ export async function flushQueue() {
       const url = op.payload.entity_kind === 'combat'
         ? `/api/combat/${op.payload.entity_id}`
         : `/api/characters/${op.payload.entity_id}`
-      const cur = await fetch(url, { headers: authHeaders() })
+      const cur = await fetch(url, { headers: authHeaders(),
+        signal: AbortSignal.timeout(15_000) })
       if (cur.ok)
         op.payload.entity_version = (await cur.json()).version
       const r = await fetch('/api/operations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify(op.payload),
       })
       // 409 = conflicto de versión (visible en SyncConflicts vía el
@@ -143,7 +148,10 @@ export const api = {
         body: JSON.stringify({ endpoint }) }),
   present: (campaignId, entityId) =>
     req(`/api/campaigns/${campaignId}/present`,
-        { method: 'POST', body: JSON.stringify({ entity_id }) }),
+        { method: 'POST',
+          // { entity_id } mandaba undefined → el botón 📺 cerraba la
+          // presentación en vez de abrirla
+          body: JSON.stringify({ entity_id: entityId }) }),
   moveToken: (campaignId, entityId, tokenId, x, y) =>
     req(`/api/campaigns/${campaignId}/entities/${entityId}/token-move`,
         { method: 'POST',
@@ -152,6 +160,26 @@ export const api = {
     req(`/api/campaigns/${campaignId}/entities/${entityId}`, {
       method: 'PATCH', body: JSON.stringify(body),
     }),
+  /** PATCH con optimistic lock + rebase ante 409: `build` recibe el
+      `data` (posiblemente) fresco y devuelve el data completo a
+      guardar. Un writer concurrente (p. ej. un jugador moviendo su
+      token con token-move) no se pisa: si perdemos la carrera, el
+      append se rehace sobre la copia ganadora. */
+  patchEntityRebase: async (campaignId, entity, build) => {
+    try {
+      return await api.patchEntity(campaignId, entity.id, {
+        data: build(entity.data || {}),
+        expected_version: entity.version })
+    } catch (e) {
+      if (e.status !== 409) throw e
+    }
+    const fresh = (await api.listEntities(campaignId, null, 'dm'))
+      .entities.find((e) => e.id === entity.id)
+    if (!fresh) throw new Error('entity gone')
+    return api.patchEntity(campaignId, entity.id, {
+      data: build(fresh.data || {}),
+      expected_version: fresh.version })
+  },
   listSessions: (campaignId) =>
     req(`/api/campaigns/${campaignId}/sessions`),
   createSession: (campaignId, body) =>

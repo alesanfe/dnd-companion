@@ -13,6 +13,7 @@ from .auth import member_role, optional_user
 from .campaigns import _DM_ROLES, _has_owner
 from ..db.connections import state_db
 from ..domain.character import Character, InventoryItem
+from ..domain.events import Event, EventType
 
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
 
@@ -27,8 +28,8 @@ class TransferIn(BaseModel):
 
 
 @router.post("/transfer")
-def transfer(body: TransferIn,
-             user: dict | None = Depends(optional_user)):
+async def transfer(body: TransferIn,
+                   user: dict | None = Depends(optional_user)):
     conn = state_db()
     conn.execute("BEGIN IMMEDIATE")
 
@@ -93,6 +94,7 @@ def transfer(body: TransferIn,
                 "payload": {"item_id": dst_item_id, "quantity": qty}}),
         }
 
+        out_events = []
         for row, char in ((src_row, src), (dst_row, dst)):
             cur = conn.execute(
                 "UPDATE characters SET data=?, version=?, updated_at=?"
@@ -114,10 +116,39 @@ def transfer(body: TransferIn,
                              "peer": dst_row["id"] if row is src_row
                              else src_row["id"]}),
                  inverses[row["id"]]))
+            # evento por ficha: la hoja abierta del otro jugador se
+            # refresca vía WS — sin él solo el que hizo clic veía el
+            # inventario actualizado
+            ev = Event(
+                event_id=uuid.uuid4().hex,
+                type=EventType.INVENTORY_ITEM_TRANSFERRED,
+                campaign_id=row["campaign_id"] or "",
+                aggregate_id=row["id"],
+                aggregate_version=row["version"] + 1,
+                actor_id=body.user_id,
+                occurred_at=datetime.now(timezone.utc),
+                payload={"item": moved.name, "quantity": qty,
+                         "peer": dst_row["id"] if row is src_row
+                         else src_row["id"],
+                         "direction": "out" if row is src_row else "in"})
+            conn.execute(
+                """INSERT INTO events
+                   (event_id, campaign_id, aggregate_id, aggregate_version,
+                    actor_id, occurred_at, type, payload)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (ev.event_id, ev.campaign_id, ev.aggregate_id,
+                 ev.aggregate_version, ev.actor_id,
+                 ev.occurred_at.isoformat(), ev.type.value,
+                 json.dumps(ev.payload)))
+            out_events.append(ev)
         conn.commit()
     except Exception:
         conn.rollback()
         raise
+    from ..ws.rooms import manager
+    for ev in out_events:
+        if ev.campaign_id:
+            await manager.broadcast(ev.campaign_id, ev)
     return {"duplicate": False, "transfer_id": body.transfer_id,
             "moved": {"name": moved.name, "quantity": qty}}
 

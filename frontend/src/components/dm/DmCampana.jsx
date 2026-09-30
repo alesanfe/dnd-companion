@@ -128,11 +128,14 @@ export default function DmCampana({ c }) {
                   if (!line?.trim()) return
                   const [nm, pr, qt] = line.split('|').map((s) => s.trim())
                   if (!nm) return
-                  const stock = [...(e.data.stock || []),
-                                 { name: nm, price_cp: +pr || 0,
-                                   quantity: +qt || 1 }]
-                  await api.patchEntity(campaign.id, e.id,
-                                        { data: { ...e.data, stock } })
+                  // append con optimistic lock + rebase — stock se
+                  // toca desde varios sitios (compra del jugador)
+                  await api.patchEntityRebase(campaign.id, e, (d) => ({
+                    ...d,
+                    stock: [...(d.stock || []),
+                            { name: nm, price_cp: +pr || 0,
+                              quantity: +qt || 1 }],
+                  }))
                   reload()
                 }}>📦</button>)}
               {e.kind === 'scene' && (e.data.monsters || []).length > 0 && (
@@ -190,8 +193,10 @@ export default function DmCampana({ c }) {
                 const uid = ev.target.value
                 if (!uid) return
                 const kt = [...new Set([...(e.known_to || []), uid])]
-                await api.patchEntity(campaign.id, e.id,
-                                      { known_to: kt })
+                try {
+                  await api.patchEntity(campaign.id, e.id, {
+                    known_to: kt, expected_version: e.version })
+                } catch { reload(); return }   // 409 → lista fresca
                 reload()
               }}>
                 <option value="">—</option>
@@ -207,9 +212,12 @@ export default function DmCampana({ c }) {
               <button key={uid} className="ghost"
                       title={t('camp.unshare')}
                       onClick={async () => {
-                await api.patchEntity(campaign.id, e.id, {
-                  known_to: (e.known_to || []).filter((u) => u !== uid),
-                })
+                try {
+                  await api.patchEntity(campaign.id, e.id, {
+                    known_to: (e.known_to || [])
+                              .filter((u) => u !== uid),
+                    expected_version: e.version })
+                } catch { /* 409 → la lista se refresca igual */ }
                 reload()
               }}>{uid} ×</button>))}
             {/* reveal_condition: auto-revelar al arrancar sesión */}
@@ -217,9 +225,12 @@ export default function DmCampana({ c }) {
               <select value={e.reveal_condition || 'manual'}
                       aria-label={t('camp.autoReveal')}
                       onChange={async (ev) => {
-                await api.patchEntity(campaign.id, e.id, {
-                  reveal_condition: ev.target.value === 'manual'
-                    ? null : ev.target.value })
+                try {
+                  await api.patchEntity(campaign.id, e.id, {
+                    reveal_condition: ev.target.value === 'manual'
+                      ? null : ev.target.value,
+                    expected_version: e.version })
+                } catch { /* 409 → la lista se refresca igual */ }
                 reload()
               }}>
                 <option value="manual">{t('camp.revealManual')}</option>
@@ -252,8 +263,12 @@ export default function DmCampana({ c }) {
                   <option key={x.id} value={x.name}>{x.name}</option>))}
               </select>
               <button onClick={async () => {
-                await api.patchEntity(campaign.id, e.id,
-                  { data: { ...e.data, notes: notesDraft } })
+                try {
+                  // data se mergea en el servidor — el draft escribe
+                  // sobre la copia fresca si hubo una carrera (409)
+                  await api.patchEntityRebase(campaign.id, e, (d) => ({
+                    ...d, notes: notesDraft }))
+                } catch { return }   // entidad borrada: conservar draft
                 setEditNotes(null)
                 reload()
               }}>{t('common.save')}</button>

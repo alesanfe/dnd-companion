@@ -6,7 +6,7 @@ import { api } from '../../api.js'
 export default function TabAcciones({ c }) {
   const { id, d, op, t, tf, focus, hud, tab,
           actions, setActions, expr, setExpr, rollType, setRollType,
-          doRoll, rollLog, setRollLog } = c
+          doRoll, rollLog, setRollLog, setNotice } = c
   const show = (g) => focus ? hud.has(g) : tab === g
 
   /* las acciones se cargan solas al abrir la pestaña la primera
@@ -46,11 +46,13 @@ export default function TabAcciones({ c }) {
                 <button className="primary act-btn"
                         aria-label={tf('acc.attackWith', { name: label })}
                         onClick={async () => {
-                  const r = await api.characterAttack(id, label)
-                  setRollLog((l) => [
-                    `${label}: ${t('acc.hit')} ${r.hit.total} · ${
-                      t('acc.dmg')} ${r.damage.total}`,
-                    ...l].slice(0, 10))
+                  try {
+                    const r = await api.characterAttack(id, label)
+                    setRollLog((l) => [
+                      `${label}: ${t('acc.hit')} ${r.hit.total} · ${
+                        t('acc.dmg')} ${r.damage.total}`,
+                      ...l].slice(0, 10))
+                  } catch (e) { setNotice(e.message) }
                 }}>⚔</button>)}
               {isSpell && (
                 <button className="act-btn"
@@ -117,24 +119,28 @@ export default function TabAcciones({ c }) {
                   aria-label={tf('dice.rollAria', { die })}
                   onClick={async () => {
             const ex = `1${die}`
-            const r = await api.characterRoll(id, ex, rollType)
-            setRollLog((l) => [
-              `${r.expression} → ${r.kept.join('+')} = ${r.total}${
-                (r.effects_applied || []).length
-                  ? ` [${r.effects_applied.join(', ')}]` : ''}`,
-              ...l].slice(0, 10))
+            try {
+              const r = await api.characterRoll(id, ex, rollType)
+              setRollLog((l) => [
+                `${r.expression} → ${r.kept.join('+')} = ${r.total}${
+                  (r.effects_applied || []).length
+                    ? ` [${r.effects_applied.join(', ')}]` : ''}`,
+                ...l].slice(0, 10))
+            } catch (e) { setNotice(e.message) }
           }}>{die}</button>))}
         {[['adv', `+ ${t('stats.adv')}`],
           ['dis', `− ${t('stats.dis')}`]].map(([m, lbl]) => (
           <button key={m} className="ghost" style={{ minWidth: 56 }}
                   aria-label={tf('dice.rollModeAria', { mode: lbl })}
                   onClick={async () => {
-            const r = await api.characterRoll(id, `1d20${m}`, rollType)
-            setRollLog((l) => [
-              `${r.expression} → ${r.kept.join('+')} = ${r.total}${
-                (r.effects_applied || []).length
-                  ? ` [${r.effects_applied.join(', ')}]` : ''}`,
-              ...l].slice(0, 10))
+            try {
+              const r = await api.characterRoll(id, `1d20${m}`, rollType)
+              setRollLog((l) => [
+                `${r.expression} → ${r.kept.join('+')} = ${r.total}${
+                  (r.effects_applied || []).length
+                    ? ` [${r.effects_applied.join(', ')}]` : ''}`,
+                ...l].slice(0, 10))
+            } catch (e) { setNotice(e.message) }
           }}>d20{lbl}</button>))}
       </div>
       <ul className="log" role="status" aria-live="polite">

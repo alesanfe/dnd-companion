@@ -3,6 +3,7 @@ import { api } from '../api.js'
 import { blockedByWall, inCone } from '../mapMath.js'
 import { useT } from '../i18n.jsx'
 import WikiText from './WikiText.jsx'
+import { MapToken, MapPin, InitiativeRibbon } from './MapPieces.jsx'
 
 const CELL = 44
 const MARK_COLORS = ['#27ae60', '#2980b9', '#c0392b', '#f39c12',
@@ -13,6 +14,41 @@ const DEFAULTS = { cols: 16, rows: 10, cell_ft: 5, tokens: [],
 // distancia en pies entre el centro de dos celdas
 const cellDist = (x1, y1, x2, y2, ft) =>
   Math.hypot(x2 - x1, y2 - y1) * ft
+
+/**
+ * @typedef {Object} MapTokenData
+ * @property {string} id
+ * @property {string} name
+ * @property {number} x @property {number} y      posición (esquina sup-izq)
+ * @property {string} [color]
+ * @property {number} [size]                      casillas de lado (2 = grande)
+ * @property {string} [ref_id]                    ficha vinculada
+ * @property {string} [combatant_id]              combatiente del tracker
+ * @property {string} [player_id]                 dueño (vista de jugador)
+ * @property {number} [hp] [max_hp]
+ * @property {number} [light_ft] [vision_ft]      luz emitida / radio de visión
+ * @property {string} [image_url]                 retrato (vacío = iniciales)
+ *
+ * @typedef {Object} MapData
+ * @property {number} cols @property {number} rows
+ * @property {number} cell_ft                     pies por casilla (5 estándar)
+ * @property {MapTokenData[]} tokens
+ * @property {string[]} fog                       claves "x,y" ocultas
+ * @property {Object<string,string>} marks        "x,y" → color de zona
+ * @property {Object[]} pins                      {id,x,y,entity_id}
+ * @property {string[]} walls                     bordes "x,y,E|S"
+ * @property {string} [image_url] [music_url]
+ *
+ * @typedef {Object} CombatantData
+ * @property {string} id @property {string} name
+ * @property {'character'|'monster'|string} kind
+ * @property {string} [ref_id]                    ficha si kind=character
+ * @property {number} initiative
+ * @property {number} [hp_current] [hp_max] [hp_temp]
+ * @property {number} [ac]                        oculto en vista de jugador
+ * @property {string[]} [conditions]
+ * @property {Object} [stat_block]                oculto en vista de jugador
+ */
 
 
 
@@ -28,7 +64,10 @@ export default function MapBoard({ campaign, size = CELL,
                                   chars = [], myUid = null,
                                   ping = null,
                                   activeRef = null,
-                                  turnOrder = {} }) {
+                                  activeName = null,
+                                  turnOrder = {},
+                                  combatants = [],
+                                  combat = null }) {
   // entities externas → la lista la gestiona el padre (vista de
   // jugador: mantiene la escena elegida al refrescar por WS)
   const [ownMaps, setMaps] = useState(null)
@@ -42,10 +81,37 @@ export default function MapBoard({ campaign, size = CELL,
   const [measure, setMeasure] = useState(null) // {a:[x,y], b:[x,y]}
   const [drag, setDrag] = useState(null)    // pintar área {a,b,kind}
   const [dragTok, setDragTok] = useState(null) // arrastrar token {id,x,y}
+  /* presupuesto de movimiento por turno (orientativo, no bloquea):
+     acumula pies recorridos por token; se resetea cuando cambia el
+     combatiente activo — la velocidad sale de la ficha/stat block */
+  const [movedFt, setMovedFt] = useState({})
+  const moveTurnRef = useRef(null)
+  const turnKey = `${combat?.id ?? ''}:${activeName ?? ''}:${activeRef ?? ''}`
+  useEffect(() => {
+    if (moveTurnRef.current !== turnKey) {
+      moveTurnRef.current = turnKey
+      setMovedFt({})
+    }
+  }, [turnKey])
+  const _tokSpeed = (tk) => {
+    const lc = linkedChar(tk)
+    if (lc?.speed) return lc.speed
+    const sb = (_combatantOf(tk)?.stat_block || {}).speed
+    if (typeof sb === 'number') return sb
+    const w = sb?.walk ?? sb?.land
+    if (w) return +String(w).replace(/[^\d.]/g, '') || 0
+    return 0                      // desconocida → sin aviso
+  }
   const [tokMoved, setTokMoved] = useState(false)
   const [tokDmg, setTokDmg] = useState(0)   // daño rápido al token
   const [zoneDmg, setZoneDmg] = useState(0) // daño a la zona marcada
+  const [zoneDc, setZoneDc] = useState(0)   // CD de salvación (0=sin tirada)
+  const [zoneSave, setZoneSave] = useState('dex')
+  const [zoneDtype, setZoneDtype] = useState('') // tipo p/ res/imm
   const [zoneLog, setZoneLog] = useState(null)
+  const [atkFrom, setAtkFrom] = useState(null)   // token atacante
+  const [atkOpts, setAtkOpts] = useState([])     // armas/acciones
+  const [atkIdx, setAtkIdx] = useState(0)
   const [suppress, setSuppress] = useState(false)
   const [speeds, setSpeeds] = useState(() => {
     try { return JSON.parse(localStorage.getItem('map.speeds')) ||
@@ -53,6 +119,11 @@ export default function MapBoard({ campaign, size = CELL,
     catch { return { walk: 30, fly: 0, swim: 0, climb: 0 } }
   })
   const { t, tf } = useT()
+  /* versión del combate que sigue a cada op aplicada — la prop
+     llega por props/WS y queda stale entre dos ops seguidas (409) */
+  const combatVerRef = useRef(null)
+  const cver = () => combatVerRef.current ?? combat?.version
+  useEffect(() => { combatVerRef.current = null }, [combat?.id])
 
   const map = (maps || []).find((m) => m.id === curId) || null
   const d = map ? { ...DEFAULTS, ...(map.data || {}) } : DEFAULTS
@@ -80,7 +151,7 @@ export default function MapBoard({ campaign, size = CELL,
 
   // al cambiar de escena el token seleccionado deja de existir
   useEffect(() => {
-    setSel(null); setMeasure(null); setSelPin(null)
+    setSel(null); setMeasure(null); setSelPin(null); setAtkFrom(null)
   }, [curId])
 
   // escena por defecto: la primera disponible; conserva la elegida
@@ -92,9 +163,21 @@ export default function MapBoard({ campaign, size = CELL,
   }, [maps])
 
   const save = async (data) => {
-    await api.patchEntity(campaign.id, map.id, { data })
-    setMaps((ms) => ms.map((m) =>
-      m.id === map.id ? { ...m, data } : m))
+    /* optimistic lock: la escritura lleva la versión que leímos — un
+       409 significa que otro cliente (jugador moviendo su token,
+       otro DM) ganó la carrera; recargar en vez de pisar su cambio */
+    try {
+      await api.patchEntity(campaign.id, map.id,
+        { data, expected_version: map?.version })
+      // con `entities` prop ownMaps es null — antes ms.map sobre
+      // null era un TypeError en cualquier save() futuro
+      setMaps((ms) => (ms ?? []).map((m) => m.id === map.id
+        ? { ...m, data, version: (m.version || 0) + 1 } : m))
+    } catch (e) {
+      setZoneLog(`⚠ ${e.message}`)
+      load()                    // re-sincronizar la escena
+      throw e
+    }
   }
 
   const resize = (dim, delta) =>
@@ -131,7 +214,7 @@ export default function MapBoard({ campaign, size = CELL,
     } else if (mode === 'pin' && pinEnt) {
       // pin ligado a una entidad del mundo (lugar, PNJ, misión…)
       save({ ...d, pins: [...d.pins,
-        { id: `p${Date.now()}`, x, y, entity_id: pinEnt }] })
+        { id: `p${crypto.randomUUID()}`, x, y, entity_id: pinEnt }] })
     }
   }
 
@@ -145,7 +228,7 @@ export default function MapBoard({ campaign, size = CELL,
     const used = d.tokens.map((tk) => tk.color)
     const hue = [0, 40, 90, 140, 200, 260, 300, 330][used.length % 8]
     const token = {
-      id: `t${Date.now()}`,
+      id: `t${crypto.randomUUID()}`,
       name: n ? `${base} ${n + 1}` : base, x: 0, y: 0,
       color: `hsl(${hue} 70% 50%)`,
     }
@@ -199,6 +282,32 @@ export default function MapBoard({ campaign, size = CELL,
         if (d.marks[`${tk.x + dx},${tk.y + dy}`]) return true
     return false
   }
+  /* salvación de zona: ficha vinculada → tirada por el motor
+     (mods + ventaja/desventaja de condiciones); combatiente del
+     tracker → combatant.save (stat block); token suelto → d20 seco */
+  const _tokSave = async (tk, lc, cbt) => {
+    if (lc) {
+      const r = await api.characterRoll(
+        lc.id, '1d20', `save:${zoneSave}`).catch(() => null)
+      if (!r) return null
+      return r.auto_fail ? -999 : r.total
+    }
+    if (cbt && combat) {
+      const r = await api.applyOp(
+        { id: combat.id, version: cver() }, 'combatant.save',
+        { combatant_id: cbt.id, ability: zoneSave }, 'combat'
+      ).catch(() => null)
+      if (!r) return null
+      combatVerRef.current = r.version   // la op bumpea la versión
+      const ev = (r.events || []).find(
+        (e) => e.type === 'dice.roll.created')
+      if (!ev) return null
+      return ev.payload.auto_fail ? -999 : ev.payload.total ?? null
+    }
+    const r = await api.roll('1d20').catch(() => null)
+    return r?.total ?? null
+  }
+
   const dmgZone = async () => {
     if (!zoneDmg) return
     const res = []
@@ -206,25 +315,275 @@ export default function MapBoard({ campaign, size = CELL,
     for (const tk of d.tokens) {
       if (!tokOnMark(tk)) continue
       const lc = linkedChar(tk)
+      const cbt = tk.combatant_id
+        ? combatants.find((cb) => cb.id === tk.combatant_id) : null
+      let amount = zoneDmg
+      let tag = ''
+      if (zoneDc > 0) {
+        const total = await _tokSave(tk, lc, cbt)
+        if (total != null) {
+          const passed = total >= zoneDc
+          amount = passed ? Math.floor(zoneDmg / 2) : zoneDmg
+          tag = ` ${zoneSave.toUpperCase()} ${total < 0 ? '✗auto' : total}` +
+                ` ${passed ? '✓' : '✗'}`
+        }
+      }
       if (lc) {
         // op real sobre la ficha — idempotente y deshacible
         const r = await api.applyOp(lc, 'character.hp.damage',
-                                    { amount: zoneDmg }).catch(() => null)
-        res.push(`${tk.name}: ${r ? zoneDmg : '✗'}`)
+                                    { amount }).catch(() => null)
+        res.push(`${tk.name}:${tag} ${r ? amount : '✗'}`)
+      } else if (cbt && combat) {
+        // combatiente del tracker → op con res/imm del stat block
+        const r = await api.applyOp(
+          { id: combat.id, version: cver() }, 'combatant.damage',
+          { combatant_id: cbt.id, amount,
+            damage_type: zoneDtype || undefined }, 'combat'
+        ).catch(() => null)
+        if (r) combatVerRef.current = r.version
+        res.push(`${tk.name}:${tag} ${r ? amount : '✗'}`)
       } else {
-        const hp = Math.max(0, (tk.hp ?? 0) - zoneDmg)
+        const hp = Math.max(0, (tk.hp ?? 0) - amount)
         toks = toks.map((t2) => t2.id === tk.id ? { ...t2, hp } : t2)
-        res.push(`${tk.name}: ${zoneDmg}`)
+        res.push(`${tk.name}:${tag} ${amount}`)
       }
     }
     if (toks !== d.tokens) save({ ...d, tokens: toks })
     setZoneLog(res.length ? res.join(' · ') : t('map.zoneEmpty'))
   }
 
+  /* ── ataque token→token (bucle VTT completo) ────────────────────
+     atacante: arma de la ficha vinculada o acción del stat block del
+     combatiente; objetivo: CA real de la ficha/stat block; impacto →
+     daño por op auditable sobre ficha o tracker, o PG del token. */
+  const _cbOf = (tk) => tk.combatant_id
+    ? combatants.find((cb) => cb.id === tk.combatant_id) : null
+
+  /* alcance del arma/acción medido en el grid — distancia entre los
+     bordes de los footprints (tokens grandes ocupan varias casillas) */
+  const _tokDistFt = (a, b) => {
+    const sa = Math.max(1, +(a.size || 1))
+    const sb = Math.max(1, +(b.size || 1))
+    const dCells = Math.hypot(b.x - a.x, b.y - a.y)
+      - (sa - 1) / 2 - (sb - 1) / 2
+    return Math.max(0, dCells * d.cell_ft)
+  }
+
+  /* alcance (ft): arma del inventario vía content DB (melee 5/10 por
+     'reach', ranged normal/long) o texto del stat block ('reach 10
+     ft.' / 'range 20/60 ft.'). null = no pudo determinarse → se
+     permite el ataque sin chequeo. */
+  const _optRange = async (opt) => {
+    if (opt.kind === 'cbt') {
+      const text = opt.text || ''
+      const mR = text.match(/reach\s*(\d+)\s*ft/i)
+      const mN = text.match(/range\s*(\d+)\s*\/\s*(\d+)\s*ft/i)
+      if (mR) return { normal: +mR[1], long: +mR[1] }
+      if (mN) return { normal: +mN[1], long: +mN[2] }
+      return { normal: 5, long: 5 }          // cuerpo a cuerpo
+    }
+    if (opt.kind !== 'char' || !opt.source_id)
+      return null
+    const w = (await api.getEntity(opt.source_id)
+      .catch(() => null))?.data
+    if (!w) return null
+    const props = (w.properties || []).map((p) =>
+      String(p.index || p).toLowerCase())
+    const rng = w.range || {}
+    if (String(w.weapon_range || '').toLowerCase().includes('ranged')
+        || rng.normal) {
+      const n = rng.normal || 30
+      return { normal: n, long: rng.long || n }
+    }
+    const reach = props.includes('reach') ? 10 : 5
+    return { normal: reach, long: reach }
+  }
+
+  const startAttack = async (tk) => {
+    const lc = linkedChar(tk)
+    const cbt = _cbOf(tk)
+    let opts = []
+    if (lc) {
+      // armas del inventario real — el endpoint valida el nombre
+      const ch = await api.getCharacter(lc.id).catch(() => null)
+      opts = ((ch?.data || ch || {}).inventory || [])
+        .filter((i) => i.name)
+        .map((i) => ({ label: i.name, kind: 'char', item: i.name,
+                       source_id: i.source_id }))
+    } else if (cbt) {
+      opts = ((cbt.stat_block || {}).actions || [])
+        .map((a, i2) => ({ label: a.name || `acción ${i2 + 1}`,
+                           kind: 'cbt', action_index: i2,
+                           text: a.text }))
+    }
+    if (!opts.length) { setZoneLog(`⚠ ${tk.name}: ${t('map.atkNone')}`); return }
+    setAtkFrom(tk); setAtkOpts(opts); setAtkIdx(0)
+  }
+
+  const _targetAc = async (tk) => {
+    const tlc = linkedChar(tk)
+    if (tlc) {
+      const r = await api.derivedAll(tlc.id).catch(() => null)
+      return r?.armor_class?.total ?? null
+    }
+    const tcbt = _cbOf(tk)
+    if (tcbt) return tcbt.stat_block?.ac ?? null
+    const v = +prompt(tf('map.atkAcPrompt', { name: tk.name }), 10)
+    return Number.isFinite(v) && v > 0 ? v : null
+  }
+
+  const _combatantOf = (tk) => tk.combatant_id
+    ? combatants.find((cb) => cb.id === tk.combatant_id)
+    : combatants.find((cb) =>
+        (tk.ref_id && cb.ref_id === tk.ref_id) || cb.name === tk.name)
+
+  const resolveAtk = async (target) => {
+    const atk = atkFrom
+    setAtkFrom(null)
+    if (!atk || target.id === atk.id) return
+    const opt = atkOpts[atkIdx]
+    /* alcance: fuera del máximo = imposible; un arma a distancia más
+       allá de su alcance normal dispara con desventaja */
+    const rng = await _optRange(opt)
+    const distFt = rng ? _tokDistFt(atk, target) : 0
+    if (rng && distFt > rng.long) {
+      setZoneLog(tf('map.atkOutOfRange',
+        { atk: atk.name, dist: distFt.toFixed(0),
+          range: rng.long })); return
+    }
+    const mode = rng && distFt > rng.normal ? 'dis' : 'normal'
+    /* jugador: resolución server-side — combat.attack compara contra
+       la CA real del objetivo en el backend (nunca llega la CA al
+       cliente) y aplica el daño; idempotente y auditable */
+    if (readOnly) {
+      if (!combat) return
+      const atkCb = _combatantOf(atk)
+      const tgtCb = _combatantOf(target)
+      if (!atkCb || !tgtCb) {
+        setZoneLog(t('map.atkNoTarget')); return }
+      const r = await api.applyOp(
+        { id: combat.id, version: cver() }, 'combat.attack',
+        { attacker_combatant_id: atkCb.id,
+          target_combatant_id: tgtCb.id,
+          item_name: opt.item, mode }, 'combat').catch((e) => {
+        setZoneLog(`⚠ ${e.message}`); return null })
+      if (!r) return
+      combatVerRef.current = r.version
+      const ev = (r.events || []).find(
+        (e) => e.type === 'dice.roll.created') || {}
+      setZoneLog(tf('map.atkResult', {
+        atk: atk.name, tgt: target.name, opt: opt.label,
+        hit: ev.payload?.total ?? '?', ac: '·',
+        res: ev.payload?.hits
+          ? `−${ev.payload?.damage ?? '?'} PG`
+          : t('map.atkMiss') }))
+      return
+    }
+    const ac = await _targetAc(target)
+    let hitTotal = null, dmgTotal = null, hits = ac == null ? true : null
+    if (opt.kind === 'char') {
+      const r = await api.characterAttack(linkedChar(atk).id, opt.item,
+                                        mode, ac).catch(() => null)
+      if (!r) { setZoneLog(`⚠ ${atk.name}: ✗`); return }
+      hitTotal = r.hit?.total
+      dmgTotal = r.auto_fail ? 0 : r.damage?.total
+      if (r.hit?.hits != null) hits = r.hit.hits
+      if (r.auto_fail) hits = false
+    } else {
+      if (!combat) return
+      const cbt = _cbOf(atk)
+      const r = await api.applyOp(
+        { id: combat.id, version: cver() }, 'combatant.action.roll',
+        { combatant_id: cbt.id, action_index: opt.action_index,
+          mode },
+        'combat').catch(() => null)
+      if (!r) { setZoneLog(`⚠ ${atk.name}: ✗`); return }
+      combatVerRef.current = r.version
+      const ev = (r.events || []).find(
+        (e) => e.type === 'dice.roll.created') || {}
+      hitTotal = ev.payload?.attack_total ?? null
+      dmgTotal = ev.payload?.damage_total ?? null
+      if (ac != null && hitTotal != null) hits = hitTotal >= ac
+    }
+    // impacto → daño por op auditable; fallo → solo el log
+    let applied = null
+    if (hits && dmgTotal != null) {
+      const tlc = linkedChar(target)
+      const tcbt = _cbOf(target)
+      if (tlc) {
+        applied = await api.applyOp(
+          tlc, 'character.hp.damage', { amount: dmgTotal })
+          .then(() => dmgTotal).catch(() => null)
+      } else if (tcbt && combat) {
+        applied = await api.applyOp(
+          { id: combat.id, version: cver() }, 'combatant.damage',
+          { combatant_id: tcbt.id, amount: dmgTotal }, 'combat')
+          .then((r) => { combatVerRef.current = r.version
+                         return dmgTotal }).catch(() => null)
+      } else if (target.hp != null) {
+        const hp = Math.max(0, target.hp - dmgTotal)
+        save({ ...d, tokens: d.tokens.map((t2) =>
+          t2.id === target.id ? { ...t2, hp } : t2) })
+        applied = dmgTotal
+      }
+    }
+    setZoneLog(tf('map.atkResult', {
+      atk: atk.name, tgt: target.name, opt: opt.label,
+      hit: hitTotal ?? '?', ac: ac ?? '?',
+      res: hits ? `−${applied ?? dmgTotal} PG`
+                : t('map.atkMiss') }))
+  }
+
   const dropTok = () => {
     if (!confirm(tf('map.tokenDelConfirm', { name: sel.name }))) return
     save({ ...d, tokens: d.tokens.filter((tk) => tk.id !== sel.id) })
     setSel(null)
+  }
+
+  /* combate → mapa: un token por combatiente del tracker. El match es
+     por ref_id (fichas), combatant_id (monstruos) o nombre — así un
+     token colocado a mano no se duplica al sincronizar. Tamaño según
+     el stat block (Large = 2×2, Huge = 3×3). */
+  const _TOK_SIZE = { Tiny: 1, Small: 1, Medium: 1, Large: 2,
+                      Huge: 3, Gargantuan: 4 }
+  const _freeCell = (tokens, startX = 0, startY = 0) => {
+    const used = new Set(tokens.map((tk) => `${tk.x},${tk.y}`))
+    for (let y = startY; y < d.rows; y++)
+      for (let x = startX; x < d.cols; x++)
+        if (!used.has(`${x},${y}`)) return [x, y]
+    return [d.cols - 1, d.rows - 1]       // mapa lleno: apilar abajo
+  }
+  const syncCombatants = () => {
+    let tokens = [...d.tokens]
+    for (const cb of combatants) {
+      const hit = tokens.find((tk) =>
+        (cb.ref_id && tk.ref_id === cb.ref_id) ||
+        tk.combatant_id === cb.id ||
+        tk.name === cb.name)
+      if (hit) {
+        // refrescar PG de token no vinculado (monstruos: la ficha no
+        // existe y sus PG solo los lleva el combatiente)
+        if (!hit.ref_id &&
+            (hit.hp !== cb.hp_current || hit.max_hp !== cb.hp_max))
+          tokens = tokens.map((tk) => tk.id === hit.id
+            ? { ...tk, hp: cb.hp_current, max_hp: cb.hp_max } : tk)
+        continue
+      }
+      const [x, y] = _freeCell(tokens)
+      const lc = cb.ref_id
+        ? chars.find((c2) => c2.id === cb.ref_id) : null
+      const hue = (tokens.length * 47) % 360
+      tokens = [...tokens, {
+        id: `t${crypto.randomUUID()}`, name: cb.name,
+        x, y, color: `hsl(${hue} 70% 50%)`,
+        combatant_id: cb.id,
+        ref_id: cb.ref_id || null,
+        player_id: lc?.player_id || null,
+        size: _TOK_SIZE[(cb.stat_block || {}).size] || 1,
+        hp: cb.hp_current, max_hp: cb.hp_max,
+      }]
+    }
+    save({ ...d, tokens })
   }
 
   const cellAt = (e) => {
@@ -310,6 +669,23 @@ export default function MapBoard({ campaign, size = CELL,
       if (tk && (tk.x !== dragTok.x || tk.y !== dragTok.y)) {
         moveTokRemote(tk, dragTok.x, dragTok.y)
         setTokMoved(true)          // el click posterior no alterna selección
+        // presupuesto de movimiento: acumula el tramo y avisa si el
+        // token del turno se pasa de su velocidad
+        const distFt = dragTok.ox != null
+          ? cellDist(dragTok.ox, dragTok.oy,
+                     dragTok.x, dragTok.y, d.cell_ft) : 0
+        if (distFt > 0 && combat) {
+          const isActive = (activeRef && tk.ref_id === activeRef) ||
+                           (activeName && tk.name === activeName)
+          if (isActive) {
+            const total = (movedFt[tk.id] || 0) + distFt
+            setMovedFt((m) => ({ ...m, [tk.id]: total }))
+            const spd = _tokSpeed(tk)
+            if (spd && total > spd)
+              setZoneLog(tf('map.moveOverSpeed', {
+                name: tk.name, ft: total.toFixed(0), speed: spd }))
+          }
+        }
       }
       setDragTok(null)
       return
@@ -432,7 +808,8 @@ export default function MapBoard({ campaign, size = CELL,
   const renameMap = async () => {
     const name = prompt(t('map.renamePrompt'), map.name)
     if (!name?.trim() || name.trim() === map.name) return
-    await api.patchEntity(campaign.id, map.id, { name: name.trim() })
+    await api.patchEntity(campaign.id, map.id,
+      { name: name.trim(), expected_version: map.version })
     load()
   }
 
@@ -509,18 +886,46 @@ export default function MapBoard({ campaign, size = CELL,
             <button className="ghost"
                     onClick={() => save({ ...d, marks: {} })}>
               {t('map.clearMarks')}</button>
-            {/* resolver daño sobre las casillas pintadas */}
+            {/* resolver daño sobre las casillas pintadas; CD>0 →
+                tirada de salvación por afectado (mitad al superar) */}
             <input type="number" min="0" style={{ width: 52 }}
                    aria-label={t('map.zoneDmgAria')}
                    title={t('map.zoneDmgTitle')}
                    value={zoneDmg || ''}
                    onChange={(e) => setZoneDmg(+e.target.value || 0)} />
+            <input type="number" min="0" style={{ width: 44 }}
+                   aria-label={t('map.zoneDcAria')}
+                   title={t('map.zoneDcTitle')}
+                   placeholder="CD"
+                   value={zoneDc || ''}
+                   onChange={(e) => setZoneDc(+e.target.value || 0)} />
+            {zoneDc > 0 && (<>
+              <select value={zoneSave} aria-label={t('map.zoneSaveAria')}
+                      style={{ maxWidth: 74 }}
+                      onChange={(e) => setZoneSave(e.target.value)}>
+                {['str', 'dex', 'con', 'int', 'wis', 'cha'].map((a) =>
+                  <option key={a} value={a}>{a.toUpperCase()}</option>)}
+              </select>
+              <input value={zoneDtype} style={{ width: 66 }}
+                     aria-label={t('map.zoneDtypeAria')}
+                     title={t('map.zoneDtypeTitle')}
+                     placeholder={t('map.zoneDtypePh')}
+                     onChange={(e) => setZoneDtype(
+                       e.target.value.trim().toLowerCase())} />
+            </>)}
             <button className="dmg" disabled={!zoneDmg}
                     title={t('map.zoneDmgTitle')}
                     onClick={dmgZone}>{t('map.zoneDmg')}</button>
           </>)}
           <button className="ghost" onClick={addToken}>
             {t('map.addToken')}</button>
+          {/* combate → mapa: volcar los combatientes como tokens
+              (los que ya están se actualizan, no se duplican) */}
+          {combatants.length > 0 && (
+            <button className="ghost" title={t('map.syncTokTitle')}
+                    aria-label={t('map.syncTokTitle')}
+                    onClick={syncCombatants}>
+              ⚔ {t('map.syncTok')}</button>)}
           <button className="ghost" title={t('map.bgTitle')}
                   aria-label={t('map.bgTitle')}
                   onClick={() => {
@@ -641,6 +1046,50 @@ export default function MapBoard({ campaign, size = CELL,
           <span className="muted">
             {tf('map.range',
                 { ft: Math.max(...Object.values(speeds)) })}</span>
+          {/* retrato del token: URL de imagen renderizada en el
+              círculo (vacío = vuelve a iniciales+color) */}
+          <button className="ghost" title={t('map.tokImg')}
+                  onClick={() => {
+                    const u = prompt(t('map.tokImgPrompt'),
+                                     sel.image_url || '')
+                    if (u !== null)
+                      patchTok({ image_url: u.trim() || undefined })
+                  }}>🖼</button>
+          {/* atacar: arma de la ficha vinculada o acción del stat
+              block — luego clic en el token objetivo */}
+          {(linkedChar(sel) || _cbOf(sel)) && (
+            <button className="ghost" title={t('map.atkTitle')}
+                    onClick={() => startAttack(sel)}>⚔</button>)}
+          {/* mapa → tracker: mete el token en el combate activo —
+              iniciativa tirada por el servidor, PG de la ficha si
+              está vinculado */}
+          {combat && !combatants.some((cb) =>
+            cb.id === sel.combatant_id ||
+            (sel.ref_id && cb.ref_id === sel.ref_id) ||
+            cb.name === sel.name) && (
+            <button className="ghost" title={t('map.addToCombatTitle')}
+                    onClick={async () => {
+                      const lc = linkedChar(sel)
+                      const r = await api.applyOp(
+                        { id: combat.id, version: cver() },
+                        'combatant.add',
+                        { name: sel.name,
+                          kind: lc ? 'character' : 'monster',
+                          ref_id: sel.ref_id || undefined,
+                          hp_max: lc ? undefined : sel.max_hp },
+                        'combat').catch((e) => setZoneLog(`⚠ ${e.message}`))
+                      if (!r) return
+                      combatVerRef.current = r.version
+                      // enlaza el token al combatiente recién creado
+                      // (la prop combatants aún es stale → GET fresco)
+                      const fresh = await api.getCombat(combat.id)
+                        .catch(() => null)
+                      const cbt = (fresh?.combat?.combatants || []).find(
+                        (cb) => cb.name === sel.name &&
+                                !d.tokens.some((t2) =>
+                                  t2.combatant_id === cb.id))
+                      if (cbt) patchTok({ combatant_id: cbt.id }, sel)
+                    }}>＋⚔</button>)}
           {/* vincular a ficha: PG en vivo en el mapa y el jugador
               mueve SU token en la vista de jugador */}
           {chars.length > 0 && (
@@ -664,14 +1113,38 @@ export default function MapBoard({ campaign, size = CELL,
             {t('map.tokenDel')}</button>
         </div>
       )}
-      {/* vista de jugador: seleccionado su token — pista de destino */}
+      {/* modo ataque: arma/acción elegida → clic en el objetivo */}
+      {atkFrom && (
+        <div className="row" style={{ fontSize: '.9rem',
+                                      alignItems: 'center' }}>
+          <strong>⚔ {atkFrom.name}</strong>
+          <select value={atkIdx} aria-label={t('map.atkPickAria')}
+                  onChange={(e) => setAtkIdx(+e.target.value)}>
+            {atkOpts.map((o, i2) => (
+              <option key={i2} value={i2}>{o.label}</option>))}
+          </select>
+          <span className="muted">{t('map.atkHint')}</span>
+          <button className="ghost" onClick={() => setAtkFrom(null)}>
+            ✕</button>
+        </div>)}
+      {/* vista de jugador: seleccionado su token — pista de destino
+          y ⚔ para atacar desde el mapa (resolución server-side, la
+          CA del objetivo no se expone) */}
       {readOnly && sel && (
         <p className="muted" style={{ fontSize: '.9rem' }}>
           <strong>{sel.name}</strong> — {t('map.moveHint')}
+          {linkedChar(sel) && canMoveTok(sel) && combat && (
+            <button className="ghost" title={t('map.atkTitle')}
+                    onClick={() => startAttack(sel)}>⚔</button>)}
         </p>)}
       {/* música ambiental del mapa: url que el DM puso — en la vista
           de jugador aparece un reproductor; el autoplay lo decide el
           navegador (se muestra con controles propios) */}
+      {/* es tu turno: un token tuyo es el activo en el tracker */}
+      {readOnly && myToks.some((tk) =>
+        (activeRef && tk.ref_id === activeRef) ||
+        (activeName && tk.name === activeName)) && (
+        <p className="notice" role="alert">{t('map.yourTurn')}</p>)}
       {d.music_url && (
         <audio key={d.music_url} controls preload="none" loop
                src={d.music_url}
@@ -685,6 +1158,26 @@ export default function MapBoard({ campaign, size = CELL,
         <p className="muted">{tf('map.dist', {
           ft: dist.toFixed(0),
           sq: Math.round(dist / d.cell_ft) })}</p>)}
+      {/* regla en vivo al arrastrar un token: pies recorridos desde
+          el origen — budget de movimiento de la criatura */}
+      {dragTok && dragTok.ox != null && (
+        <p className="muted">{tf('map.dragDist', {
+          ft: cellDist(dragTok.ox, dragTok.oy,
+                       dragTok.x, dragTok.y, d.cell_ft).toFixed(0) })}</p>)}
+      {/* presupuesto de movimiento del turno: pies acumulados / velocidad */}
+      {sel && movedFt[sel.id] != null && (
+        <p className="muted">{tf('map.moveBudget', {
+          ft: movedFt[sel.id].toFixed(0),
+          speed: _tokSpeed(sel) || '?' })}</p>)}
+
+      {/* cinta de iniciativa sobre el tablero: orden del tracker,
+          turno activo dorado; clic → selecciona su token en el grid */}
+      {combatants.length > 0 && Object.keys(turnOrder).length > 0 && (
+        <InitiativeRibbon combatants={combatants} turnOrder={turnOrder}
+            activeRef={activeRef} activeName={activeName}
+            tokens={d.tokens} t={t} tf={tf}
+            selectable={(tk) => !readOnly || canMoveTok(tk)}
+            onSelect={setSel} />)}
 
       {map && (
       <svg ref={svgRef} width={W} height={H} role="img"
@@ -744,12 +1237,27 @@ export default function MapBoard({ campaign, size = CELL,
                     stroke="#e8b033" strokeWidth="3" />
         })}
 
-        {/* alcance del token seleccionado */}
+        {/* alcance del token seleccionado: velocidad máx. (azul) y,
+            si tiene acciones melé, el alcance mayor (rojo suave —
+            zona de amenaza visible sin abrir el stat block) */}
         {!readOnly && sel && (
-          <circle cx={(sel.x + .5) * size} cy={(sel.y + .5) * size}
+          <circle cx={(sel.x + (Math.max(1, +(sel.size || 1)) * .5)) * size}
+                  cy={(sel.y + (Math.max(1, +(sel.size || 1)) * .5)) * size}
                   r={Math.max(...Object.values(speeds)) / d.cell_ft * size}
                   fill="none" stroke="#4da3ff" strokeWidth="2"
                   strokeDasharray="6 4" opacity=".6" />)}
+        {!readOnly && sel && (() => {
+          const cbt = _cbOf(sel)
+          const acts = (cbt?.stat_block || {}).actions || []
+          const reach = Math.max(0, ...acts.map((a) => {
+            const m = (a.text || '').match(/reach\s*(\d+)\s*ft/i)
+            return m ? +m[1] : 0 }))
+          return reach > 0 && (
+            <circle cx={(sel.x + (Math.max(1, +(sel.size || 1)) * .5)) * size}
+                    cy={(sel.y + (Math.max(1, +(sel.size || 1)) * .5)) * size}
+                    r={reach / d.cell_ft * size}
+                    fill="#e74c3c" opacity=".12" pointerEvents="none" />)
+        })()}
 
         {/* preview del área al arrastrar: rect para niebla/zona,
             círculo para la plantilla de explosión */}
@@ -822,92 +1330,49 @@ export default function MapBoard({ campaign, size = CELL,
           const lx = dragTok?.id === tk.id ? dragTok.x : tk.x
           const ly = dragTok?.id === tk.id ? dragTok.y : tk.y
           const lc = linkedChar(tk)
-          // PG: vinculado a ficha → en vivo; suelto → hp del token
-          const hp = lc ? lc.hp_current : tk.hp
-          const hpMax = lc ? lc.hp_max : tk.max_hp
+          // PG en vivo por prioridad: ficha vinculada → combatiente
+          // del tracker (monstruos sincronizados) → valor del token
+          const cbt = tk.combatant_id
+            ? combatants.find((cb) => cb.id === tk.combatant_id)
+            : null
+          const hp = lc ? lc.hp_current
+            : cbt ? cbt.hp_current : tk.hp
+          const hpMax = lc ? lc.hp_max
+            : cbt ? cbt.hp_max : tk.max_hp
           const movable = canMoveTok(tk)
-          // size = casillas que ocupa (grande 2×2, enorme 3×3…) —
-          // el anchor es la esquina sup. izquierda del footprint
-          const tsize = Math.max(1, +(tk.size || 1))
-          const tr = tsize * size * .5 - 2
+          const isActive = (activeRef && tk.ref_id === activeRef) ||
+                           (activeName && tk.name === activeName)
+          const conds = (lc?.conditions?.length ? lc.conditions : null)
+            ?? (cbt?.conditions?.length ? cbt.conditions : null)
           return (
-            <g key={tk.id}
-               onMouseDown={(e) => {
-                 // arrastrar = mover (modo move del DM o token propio)
-                 if (movable && (mode === 'move' || readOnly)) {
-                   e.stopPropagation()   // no arranca pintura de niebla
-                   setDragTok({ id: tk.id, x: tk.x, y: tk.y })
-                 }
-               }}
-               onClick={(e) => {
-                 e.stopPropagation()
-                 if (tokMoved) { setTokMoved(false); return }
-                 if (movable)
-                   setSel(sel?.id === tk.id ? null : tk)
-               }}
-               opacity={dragTok?.id === tk.id ? .55 : 1}
-               style={{ cursor: movable ? 'grab' : 'default' }}>
-              <circle cx={(lx + tsize * .5) * size}
-                      cy={(ly + tsize * .5) * size}
-                      r={tr} fill={tk.color}
-                      stroke={sel?.id === tk.id ? '#fff'
-                        : (activeRef && tk.ref_id === activeRef)
-                          ? '#ffd700' : '#111'}
-                      strokeWidth={sel?.id === tk.id ||
-                                   (activeRef && tk.ref_id === activeRef)
-                        ? 3 : 1} />
-              {/* halo de luz: el token que emite ilumina su radio
-                  (los muros recortan la luz en el render de niebla) */}
-              {tk.light_ft > 0 && (
-                <circle cx={(lx + tsize * .5) * size}
-                        cy={(ly + tsize * .5) * size}
-                        r={(tk.light_ft / d.cell_ft) * size}
-                        fill="#f5c542" opacity=".10"
-                        pointerEvents="none" />)}
-              {/* posición en la iniciativa: número sobre el token si
-                  el combatiente está en el tracker activo */}
-              {tk.ref_id && turnOrder[tk.ref_id] && (
-                <text x={(lx + tsize * .5 - tsize * .45) * size}
-                      y={(ly + tsize * .5 - tsize * .4) * size + size * .18}
-                      fill="#9cf" fontSize={size * .26}
-                      fontWeight="bold" pointerEvents="none">
-                  {turnOrder[tk.ref_id]}</text>)}
-              {/* turno activo en el tracker → anillo dorado pulsante */}
-              {activeRef && tk.ref_id === activeRef && (
-                <circle cx={(lx + tsize * .5) * size}
-                        cy={(ly + tsize * .5) * size}
-                        r={tr + 3} fill="none" stroke="#ffd700"
-                        strokeWidth={1.5}>
-                  <animate attributeName="opacity" values="1;.3;1"
-                           dur="1.2s" repeatCount="indefinite" />
-                </circle>)}
-              <text x={(lx + tsize * .5) * size}
-                    y={(ly + tsize * .5) * size + tr * .5}
-                    textAnchor="middle" fill="#fff"
-                    fontSize={tr * .72} pointerEvents="none">
-                {tk.name.slice(0, 2).toUpperCase()}</text>
-              {/* insignia de condiciones: la ficha vinculada lleva
-                  estados activos → punto naranja en la esquina */}
-              {lc && (lc.conditions || []).length > 0 && (
-                <circle cx={(lx + tsize * .92) * size}
-                        cy={(ly + tsize * .08) * size}
-                        r={size * .13} fill="#e67e22"
-                        stroke="#111" strokeWidth={1}>
-                  <title>{lc.conditions.join(', ')}</title>
-                </circle>)}
-              {hp != null && hpMax != null && (
-                <g>
-                  <rect x={lx * size + 2} y={ly * size + 2}
-                        width={tsize * size - 4} height={4} rx={2}
-                        fill="#000" opacity=".6" />
-                  <rect x={lx * size + 2} y={ly * size + 2}
-                        width={(tsize * size - 4) *
-                               Math.max(0, hp / hpMax)}
-                        height={4} rx={2}
-                        fill={hp / hpMax > .5 ? '#27ae60'
-                              : hp > 0 ? '#e67e22' : '#c0392b'} />
-                </g>)}
-            </g>)
+            <MapToken key={tk.id}
+                tk={{ ...tk, _cellFt: d.cell_ft }} size={size}
+                lx={lx} ly={ly} movable={movable}
+                dragging={dragTok?.id === tk.id}
+                selected={sel?.id === tk.id} active={isActive}
+                zoneColor={tokOnMark(tk)
+                  ? d.marks[`${tk.x},${tk.y}`] || '#e67e22' : null}
+                order={turnOrder[tk.ref_id || tk.name]}
+                conds={conds} hp={hp} hpMax={hpMax}
+                onDown={(e) => {
+                  // arrastrar = mover (modo move del DM o token propio);
+                  // ox/oy = origen para la regla de distancia en vivo
+                  if (movable && (mode === 'move' || readOnly)) {
+                    e.stopPropagation()
+                    setDragTok({ id: tk.id, x: tk.x, y: tk.y,
+                                 ox: tk.x, oy: tk.y })
+                  }
+                }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (tokMoved) { setTokMoved(false); return }
+                  // modo ataque: el clic en otro token lo resuelve
+                  // como objetivo en vez de seleccionarlo
+                  if (atkFrom && tk.id !== atkFrom.id) {
+                    resolveAtk(tk); return }
+                  if (movable)
+                    setSel(sel?.id === tk.id ? null : tk)
+                }} />)
         })}
 
         {/* pins ligados a entidades del mundo — atlas estilo
@@ -919,22 +1384,12 @@ export default function MapBoard({ campaign, size = CELL,
           if (readOnly && d.fog.includes(`${p.x},${p.y}`) &&
               !lit(p.x, p.y) && !litByLight(p.x, p.y)) return null
           return (
-            <g key={p.id}
-               onClick={(e) => {
-                 e.stopPropagation()
-                 setSelPin(selPin?.id === p.id ? null : p)
-               }}
-               style={{ cursor: 'pointer' }}>
-              <text x={(p.x + .5) * size} y={(p.y + .58) * size}
-                    textAnchor="middle" fontSize={size * .55}>
-                📍</text>
-              {ent && (
-                <text x={(p.x + .5) * size} y={(p.y + .98) * size}
-                      textAnchor="middle" fill="#fff"
-                      stroke="#000" strokeWidth={size * .012}
-                      fontSize={size * .26} pointerEvents="none">
-                  {ent.name.slice(0, 16)}</text>)}
-            </g>)
+            <MapPin key={p.id} p={p} ent={ent} size={size}
+                selected={selPin?.id === p.id}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setSelPin(selPin?.id === p.id ? null : p)
+                }} />)
         })}
       </svg>)}
 

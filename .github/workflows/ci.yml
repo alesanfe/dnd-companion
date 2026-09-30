@@ -26,8 +26,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Build
+      - name: Test + build
         run: |
           cd frontend
           npm ci
+          npm test
           npm run build

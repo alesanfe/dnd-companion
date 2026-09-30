@@ -4,16 +4,22 @@ import MapBoard from '../MapBoard.jsx'
     en vez de ocupar siempre la pantalla de la mesa. */
 export default function DmMapa({ c }) {
   const { dmTab, campaign, entities, partyChars, ping,
-          ordered, activeIdx } = c
+          ordered, activeIdx, combat } = c
   if (!campaign || dmTab !== 'mapa') return null
   // entities = todas las entidades de campaña → pins enlazables;
   // partyChars → tokens vinculados a ficha (PG en vivo + nombre)
-  // ref_id → posición en la iniciativa (badge sobre el token)
+  // iniciativa indexada por ref_id Y nombre — los monstruos no
+  // tienen ficha y antes no llevaban badge ni anillo de turno
   const turnOrder = {}
   ;(ordered || []).forEach((cb, i) => {
-    if (cb.ref_id) turnOrder[cb.ref_id] = i + 1 })
+    turnOrder[cb.ref_id || cb.name] = i + 1
+    if (cb.name) turnOrder[cb.name] = i + 1
+  })
+  const active = ordered?.[activeIdx]
   return <MapBoard campaign={campaign} worldEntities={entities || []}
                    chars={partyChars || []} ping={ping}
-                   activeRef={ordered?.[activeIdx]?.ref_id}
-                   turnOrder={turnOrder} />
+                   activeRef={active?.ref_id} activeName={active?.name}
+                   turnOrder={turnOrder}
+                   combatants={combat?.combat?.combatants || []}
+                   combat={combat} />
 }

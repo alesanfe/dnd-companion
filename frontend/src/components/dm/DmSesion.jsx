@@ -4,7 +4,8 @@ import { api } from '../../api.js'
 /** Pestaña Sesión: datos de campaña, feed de tiradas en vivo,
     sesiones y preparación, peticiones de tirada a jugadores. */
 export default function DmSesion({ c }) {
-  const { t, tf, dmTab, campaign, setCampaign, campName, setCampName,
+  const { t, tf, dmTab, setDmTab, campaign, setCampaign,
+          campName, setCampName,
           eventFeed, setEventFeed, rollFeed, feedFilter, setFeedFilter,
           newRolls, setNewRolls, feedRef, playerView,
           sessTitle, setSessTitle, sessions, setSessions,
@@ -214,6 +215,9 @@ export default function DmSesion({ c }) {
                             onClick={async () => {
                       const r = await api.startScene(campaign.id, sc.id)
                       refresh(r.combat_id)
+                      // escena → tablero: el combate nace y el DM cae
+                      // en el mapa para colocar tokens ("Del combate")
+                      setDmTab?.('mapa')
                     }}>▶ {t('ses.combatBtn')}</button>
                   )}
                 </li>

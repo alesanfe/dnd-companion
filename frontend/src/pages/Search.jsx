@@ -48,8 +48,7 @@ export default function Search() {
       setResults(r.results)
       setParsed(r.parsed || null)
       if (term0.trim()) {                   // historial de consultas
-        const rec = JSON.parse(sessionStorage.getItem(
-          'dnd-recent-searches') || '[]')
+        const rec = loadJSON('dnd-recent-searches', [], sessionStorage)
         sessionStorage.setItem('dnd-recent-searches',
           JSON.stringify([term0.trim(),
             ...rec.filter((x) => x !== term0.trim())].slice(0, 8)))
@@ -109,8 +108,13 @@ export default function Search() {
               </option>))}
           </select>
           <button className="ghost" onClick={async () => {
-            const r = await api.rulesAsk(q)
-            setAsked(r)
+            try {
+              // el asistente respeta el filtro de edición — antes se
+              // ignoraba y citaba las dos ediciones mezcladas
+              const r = await api.rulesAsk(
+                q, edition ? `dnd5e-${edition}` : null)
+              setAsked(r)
+            } catch (e2) { setErr(e2.message) }
           }}>{t('search.ask')}</button>
         </div>
       </details>
@@ -201,6 +205,7 @@ export default function Search() {
 
 /** Comparación lado a lado: campos renderizados de ambas entidades. */
 function Compare({ ids }) {
+  const { t } = useT()
   const [views, setViews] = useState([])
   useEffect(() => {
     setViews([])
@@ -212,7 +217,7 @@ function Compare({ ids }) {
     views.flatMap((v) => (v.render?.fields || []).map((f) => f.label)))]
   return (
     <section className="card">
-      <h2>{useT().t('search.compare')}</h2>
+      <h2>{t('search.compare')}</h2>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead><tr>
           <th />
@@ -280,11 +285,12 @@ function QuickAccess({ onSearch, t }) {
 
 /** Últimas consultas escritas — recuperables con un toque. */
 function RecentSearches({ onSearch }) {
+  const { t } = useT()
   const items = loadJSON('dnd-recent-searches', [], sessionStorage)
   if (!items.length) return null
   return (
     <section className="card">
-      <h2>{useT().t('search.recentQueries')}</h2>
+      <h2>{t('search.recentQueries')}</h2>
       <div className="row" style={{ flexWrap: 'wrap' }}>
         {items.map((x) => (
           <button key={x} className="ghost"
@@ -308,6 +314,7 @@ function HomebrewForm() {
     str: '', dex: '', con: '', int: '', wis: '', cha: '', actions: '' })
   const setMf = (k) => (e) => setM({ ...m, [k]: e.target.value })
   const [msg, setMsg] = useState(null)
+  const [saving, setSaving] = useState(false)
   if (!open) return (
     <button className="ghost" onClick={() => setOpen(true)}>
       {t('search.homebrew')}</button>)
@@ -377,7 +384,8 @@ function HomebrewForm() {
                   onChange={setMf('actions')} />
       </>)}
       <div className="row">
-        <button className="primary" disabled={!form.name.trim()}
+        <button className="primary"
+                disabled={!form.name.trim() || saving}
                 onClick={async () => {
           const data = form.desc ? { desc: form.desc } : {}
           if (form.entity_type === 'monster') {
@@ -399,14 +407,18 @@ function HomebrewForm() {
               })
             if (acts.length) data.actions = acts
           }
-          const r = await api.createHomebrew({
-            entity_type: form.entity_type,
-            name: form.name.trim(),
-            ruleset: form.ruleset,
-            data,
-            license: 'user-created',
-          })
-          setMsg(`${t('search.hbCreated')}: ${r.id}`)
+          setSaving(true)
+          try {
+            const r = await api.createHomebrew({
+              entity_type: form.entity_type,
+              name: form.name.trim(),
+              ruleset: form.ruleset,
+              data,
+              license: 'user-created',
+            })
+            setMsg(`${t('search.hbCreated')}: ${r.id}`)
+          } catch (ex) { setMsg(`⚠ ${ex.message}`) }
+          setSaving(false)
         }}>{t('search.hbSave')}</button>
         <button className="ghost" onClick={() => setOpen(false)}>
           {t('common.close')}</button>

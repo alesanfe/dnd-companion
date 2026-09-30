@@ -30,9 +30,11 @@ export default function TabResumen({ c }) {
       {d.inspiration
         ? <span className="chip">✦ {t('sheet.inspiration')}
             <button aria-label={t('sheet.inspSpendAria')} onClick={async () => {
-              const r = await api.characterRoll(id, expr, rollType, true)
-              setRollLog((l) => [`${r.expression} → ${r.kept.join('+')} = ${r.total} [${t('sheet.inspiration')}]`, ...l].slice(0, 10))
-              await op('character.inspiration.set', { value: false })
+              try {
+                const r = await api.characterRoll(id, expr, rollType, true)
+                setRollLog((l) => [`${r.expression} → ${r.kept.join('+')} = ${r.total} [${t('sheet.inspiration')}]`, ...l].slice(0, 10))
+                await op('character.inspiration.set', { value: false })
+              } catch (e) { setNotice(e.message) }
             }}>{t('common.use').toLowerCase()}</button>
             <button aria-label={t('sheet.inspRemoveAria')} onClick={() =>
               op('character.inspiration.set', { value: false })}>×</button>
@@ -103,8 +105,10 @@ export default function TabResumen({ c }) {
                   i < (d.death_saves?.fail || 0) ? ' on' : ''}`} />))}
             </span>
             <button className="primary" onClick={async () => {
-              const r = await api.roll('1d20')
-              await op('character.death_save', { roll: r.total })
+              try {
+                const r = await api.roll('1d20')
+                await op('character.death_save', { roll: r.total })
+              } catch (e) { setNotice(e.message) }
             }}>{t('sheet.rollSave')}</button>
           </div>
         </div>)}

@@ -58,7 +58,18 @@ cd frontend && npm install && npm run dev
   **y** en el path WS de operaciones (main.py `_dispatch_ws`).
 - Ops `entity_kind=combat` = DM-only (REST y WS); `character` = miembro
   y, si la ficha tiene `player_id`, solo su dueño (o el DM) la muta.
-  Excepción: `combatant.death_save_roll` sobre el propio PJ (y su undo).
+  Excepciones del jugador sobre SU combatiente-PJ:
+  `combatant.death_save_roll` (y su undo) y `combat.attack` (ataque
+  desde el mapa: el servidor resuelve impacto vs CA del objetivo sin
+  exponerla y aplica el daño — `attacker_combatant_id` debe ser el
+  combatiente-PJ del jugador).
+- **Fichas sin campaña con `player_id`** (`_personal_ownership`):
+  cuando hay usuarios registrados solo las muta su dueño — el guard
+  de campaña no aplica porque `entity_camp` es None. En WS solo
+  cuenta la identidad por token (`authed`): un `?user_id=` suelto
+  es spoofable y NO la satisface. Sin usuarios (local puro) todo
+  abierto. El listado `GET /characters` tampoco enumera fichas
+  personales ajenas.
 - Fichas libres (`player_id` NULL) se reclaman vía PATCH — el no-DM
   solo puede poner su propio uid o soltar la suya.
 - Visibilidad `dm` se filtra en el servidor, no solo en la UI: eventos
@@ -70,6 +81,65 @@ cd frontend && npm install && npm run dev
   chat/typing lo firma el servidor con la identidad del socket.
 - Conflictos de optimistic locking: `POST /api/operations/conflicts/
   {id}/retry|dismiss` — resolución asistida desde Settings.
+- El Bearer token del WS viaja en `?token=` (queda en logs de proxy)
+  — aceptado para deployment local/LAN; si se expone a internet,
+  migrarlo a `Sec-WebSocket-Protocol` o mensaje `auth` inicial.
+- CORS: `DND_CORS_ORIGINS` (lista separada por comas; por defecto
+  `http://localhost:5173`). En Docker el front es same-origin vía
+  proxy nginx — CORS solo hace falta si el front vive en otro host.
+- Deployment Docker: `frontend/nginx.conf` proxifica `/api` y `/ws`
+  (con Upgrade) a `backend:8000` + fallback SPA. Sin él la imagen
+  del front no llega al backend.
+
+## Sincronización ficha ↔ combate
+
+- Bidireccional dentro de la misma transacción SQLite: ops de combate
+  sobre un PJ (`combat_ops._sync_character`) actualizan la ficha; ops
+  vitales de ficha (`ops._sync_combat`, set `_VITAL_OPS`: hp.damage/
+  heal/set, death_save, state.restore, rests, level_up, tick,
+  condition.apply/remove, hit_die.*) actualizan al combatiente
+  vinculado (`ref_id`) en combates `active` de su campaña.
+- Ambos espejos bumpean `version` con guardia optimista y solo tocan
+  el estado vital (PG/temp/salvaciones/condiciones muerto·dead·
+  estable) — nunca las condiciones persistentes ajenas.
+- `OpContext` lleva `entity_id` (apply_to_store) para que la ficha
+  encuentre su campaña/combate. El frontend refresca por
+  `aggregate_id` o `payload.character_id` (sheet) y por `ref_id` de
+  combatientes (DmBoard).
+
+## Sincronización mapa ↔ combate (VTT)
+
+- Token ↔ combatiente: `token.ref_id` = id de ficha (PG en vivo);
+  `token.combatant_id` = id del combatiente (monstruos). El badge de
+  iniciativa y el anillo de turno casan por ref_id **o nombre**.
+- `MapBoard` props: `combatants` (lista del tracker) + `combat`
+  (entidad, para ops). Botón "Del combate" vuelca combatientes como
+  tokens (sin duplicar; tamaño desde `stat_block.size`).
+- Daño de zona (casillas pintadas): CD>0 tira salvación por token
+  (motor de ficha o `combatant.save`) → mitad al superar; el tipo de
+  daño activa res/imm/vul del stat block vía `combatant.damage`.
+- Ataque token→token (⚔): arma del inventario de la ficha o acción
+  del stat block vs CA real del objetivo → daño por op auditable.
+- Token suelto → combate: botón ＋⚔ (`combatant.add`, initiative
+  server-rolled) y el token queda enlazado por `combatant_id`.
+- El jugador también ataca desde su token (vista readOnly): misma op
+  `combat.attack` — autorizada solo si el atacante es su PJ.
+- `combat.version` stale: MapBoard sigue la versión en
+  `combatVerRef` tras cada op — dos ops seguidas no chocan en 409.
+- `PATCH /entities/{id}` acepta `expected_version` (optimistic lock →
+  409): el frontend siempre la manda; MapBoard recarga al chocar.
+  `token-move` escribe con guardia de versión y reaplica el delta
+  sobre la copia fresca si otro escritor ganó. Tras un UPDATE que no
+  cambia filas hay que hacer `rollback` — la txn de escritura
+  dejada abierta bloquea WAL al siguiente writer.
+- Token: `image_url` = retrato (clip circular; vacío = iniciales),
+  `light_ft`/`vision_ft` = niebla, `size` = footprint en casillas.
+- Regla al arrastrar: pies recorridos en vivo + presupuesto de
+  movimiento del turno (acumulado por token, reset al cambiar el
+  activo; velocidad de la ficha/stat block — avisa, no bloquea).
+- `MapPieces.jsx` = capas de presentación SVG (MapToken, MapPin,
+  InitiativeRibbon); la lógica (arrastre, ataques, alcance, niebla)
+  sigue en `MapBoard.jsx`.
 
 ## Verificación
 

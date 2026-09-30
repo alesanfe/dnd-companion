@@ -49,8 +49,9 @@ class OpContext:
     """Acceso a las DBs desde handlers. state_conn es la conexión de la
     transacción actual: los handlers que tocan otras entidades (tiendas)
     quedan dentro de la misma transacción atómica."""
-    def __init__(self, state_conn=None):
+    def __init__(self, state_conn=None, entity_id=None):
         self._state = state_conn
+        self.entity_id = entity_id
 
     def content_db(self):
         return content_db()
@@ -370,10 +371,12 @@ def apply_to_store(op: OperationIn) -> dict:
     try:
         if op.entity_kind == "combat":
             inverse, events = apply_combat_operation(
-                entity, op.operation_type, op.payload, OpContext(conn))
+                entity, op.operation_type, op.payload,
+                OpContext(conn, op.entity_id))
         else:
             inverse, events = apply_operation(
-                entity, op.operation_type, op.payload, OpContext(conn))
+                entity, op.operation_type, op.payload,
+                OpContext(conn, op.entity_id))
     except (KeyError, ValueError, IndexError) as exc:
         # los handlers escriben sobre esta misma conexión (tiendas);
         # rollback descarta escrituras parciales antes de registrar
@@ -482,12 +485,63 @@ def _char_ownership(conn, entity_id: str, user: dict | None) -> None:
         raise HTTPException(403, "la ficha es de otro jugador")
 
 
+def _personal_ownership(conn, op: OperationIn,
+                        user: dict | None) -> None:
+    """Fichas SIN campaña con player_id: fuera del modo local solo
+    las muta su dueño. Antes el guard de campaña saltaba entero y
+    cualquier autenticado (o anónimo) podía editar fichas personales
+    ajenas — el listado las enumera, así que el id es conocible.
+    Sin usuarios registrados (local puro) player_id no significa
+    nada y todo sigue abierto."""
+    if op.entity_kind != "character":
+        return
+    row = conn.execute(
+        "SELECT campaign_id, player_id FROM characters WHERE id = ?",
+        (op.entity_id,)).fetchone()
+    if row is None or not row["player_id"]:
+        return
+    if not conn.execute("SELECT 1 FROM users LIMIT 1").fetchone():
+        return                                   # local puro: abierto
+    uid = (user or {}).get("user_id")
+    if uid == row["player_id"]:
+        return
+    camp = row["campaign_id"]
+    if camp and member_role(camp, uid) in _DM_ROLES:
+        return
+    raise HTTPException(403, "la ficha es de otro usuario")
+
+
+def _is_own_char_combatant(conn, combat_id: str, cbt_id: str,
+                           uid: str | None) -> bool:
+    """El combatiente es un PJ cuya ficha tiene player_id = uid."""
+    row = conn.execute("SELECT data FROM combats WHERE id = ?",
+                       (combat_id,)).fetchone()
+    if not (row and cbt_id and uid):
+        return False
+    for c in Combat(**json.loads(row["data"])).combatants:
+        if c.id == cbt_id and c.kind == "character" and c.ref_id:
+            ch = conn.execute(
+                "SELECT player_id FROM characters WHERE id = ?",
+                (c.ref_id,)).fetchone()
+            if ch and ch["player_id"] == uid:
+                return True
+    return False
+
+
 def _player_combat_op(conn, op: OperationIn,
                       user: dict | None) -> None:
-    """Única excepción al tracker DM-only: el jugador tira la salvación
-    de muerte de SU combatiente-PJ (en la mesa la tira el jugador,
-    no el DM). Solo death_save_roll y solo sobre combatientes cuyo
-    personaje tiene su player_id."""
+    """Excepciones al tracker DM-only: salvación de muerte de SU
+    combatiente-PJ (en la mesa la tira el jugador, no el DM) y
+    combat.attack con SU combatiente-PJ como atacante — el servidor
+    resuelve contra la CA del objetivo sin exponerla. Solo sobre
+    combatientes cuyo personaje tiene su player_id."""
+    uid = (user or {}).get("user_id")
+    if op.operation_type == "combat.attack":
+        if _is_own_char_combatant(
+                conn, op.entity_id,
+                (op.payload or {}).get("attacker_combatant_id"), uid):
+            return
+        raise HTTPException(403, "solo atacas con tu personaje")
     if op.operation_type == "combatant.death_save.set" \
             and (op.payload or {}).get("_undoes"):
         # deshacer la propia salvación: la inversa solo vale si la op
@@ -517,17 +571,10 @@ def _player_combat_op(conn, op: OperationIn,
             return
     if op.operation_type != "combatant.death_save_roll":
         raise HTTPException(403, "solo el DM dirige el combate")
-    row = conn.execute("SELECT data FROM combats WHERE id = ?",
-                       (op.entity_id,)).fetchone()
-    cbt_id = (op.payload or {}).get("combatant_id")
-    if row and cbt_id:
-        for c in Combat(**json.loads(row["data"])).combatants:
-            if c.id == cbt_id and c.kind == "character" and c.ref_id:
-                ch = conn.execute(
-                    "SELECT player_id FROM characters WHERE id = ?",
-                    (c.ref_id,)).fetchone()
-                if ch and ch["player_id"] == (user or {}).get("user_id"):
-                    return
+    if _is_own_char_combatant(
+            conn, op.entity_id,
+            (op.payload or {}).get("combatant_id"), uid):
+        return
     raise HTTPException(403, "solo el DM dirige el combate")
 
 
@@ -551,6 +598,10 @@ async def apply(op: OperationIn,
         if user:
             # con token, el autor es el autenticado — no el del body
             op.user_id = user["user_id"]
+    elif camp_id is None:
+        # entidad sin campaña: una ficha con player_id solo la muta
+        # su dueño (modo local puro = sin usuarios → sigue abierto)
+        _personal_ownership(conn, op, user)
     result = apply_to_store(op)
     events = result.pop("_event_objs", [])
     if result.get("campaign_id") and not result.get("duplicate"):

@@ -22,5 +22,10 @@ def state_db() -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")   # lectores + escritor
     conn.execute("PRAGMA busy_timeout = 5000")
-    conn.executescript(_STATE_SCHEMA.read_text(encoding="utf-8"))
+    # el schema solo corre una vez por DB (user_version actúa como
+    # marcador de migración) — antes cada conexión re-ejecutaba el
+    # DDL completo por request
+    if conn.execute("PRAGMA user_version").fetchone()[0] < 1:
+        conn.executescript(_STATE_SCHEMA.read_text(encoding="utf-8"))
+        conn.execute("PRAGMA user_version = 1")
     return conn

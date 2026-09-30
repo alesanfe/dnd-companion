@@ -75,9 +75,15 @@ def _sync_character(c: Combatant, ctx) -> None:
     ch = Character(**json.loads(row["data"]))
     ch.hp.current = c.hp_current
     ch.hp.temp = c.hp_temp
-    # la ficha refleja el estado vital del tablero — si el DM deja al
-    # PJ muerto/estable en combate, la hoja no puede quedar desfasada
-    ch.conditions = list(c.conditions)
+    # solo el estado vital se sincroniza: el tracker no conoce las
+    # condiciones persistentes de la ficha (agotamiento, envenenado
+    # de un efecto largo…) — copiar la lista entera las borraba y
+    # dejaba condition_stacks huérfano
+    for cond in ("muerto", "dead", "estable"):
+        if cond in c.conditions and cond not in ch.conditions:
+            ch.conditions.append(cond)
+        elif cond not in c.conditions and cond in ch.conditions:
+            ch.conditions.remove(cond)
     ch.death_saves = dict(c.death_saves)
     # el bump es imprescindible: sin él una op posterior de la ficha
     # (con la versión que tenía abierta) pisaba el HP del combate sin
@@ -251,9 +257,18 @@ def combatant_damage(combat: Combat, p: dict, ctx):
     o vulnerabilidad (×2) del stat block si lo hay."""
     c = _find(combat, p["combatant_id"])
     inv = _hp_inverse(c)
-    amount = max(0, int(p["amount"]))
+    amount, note = _typed_amount(c, max(0, int(p["amount"])),
+                               (p.get("damage_type") or "")
+                               .strip().lower())
+    payload = _apply_dmg(c, amount, note)
+    _sync_character(c, ctx)
+    return inv, [{"type": "character.hp.changed",
+                  "payload": payload}]
+
+
+def _typed_amount(c: Combatant, amount: int, dtype: str):
+    """(daño final, nota) — res/imm/vul del stat block si lo hay."""
     note = None
-    dtype = (p.get("damage_type") or "").strip().lower()
     if dtype and c.stat_block:
         res = [str(x).lower() for x in c.stat_block.get("resistances", [])]
         imm = [str(x).lower() for x in c.stat_block.get("immunities", [])]
@@ -265,6 +280,12 @@ def combatant_damage(combat: Combat, p: dict, ctx):
             amount, note = amount // 2, f"resistente a {dtype} (÷2)"
         elif any(dtype in x for x in vul):
             amount, note = amount * 2, f"vulnerable a {dtype} (×2)"
+    return amount, note
+
+
+def _apply_dmg(c: Combatant, amount: int, note: str | None) -> dict:
+    """Aplica daño al combatiente (absorción por temp + reglas de
+    muerte para PJ) y devuelve el payload del evento hp.changed."""
     absorbed = min(c.hp_temp, amount)
     c.hp_temp -= absorbed
     dmg = amount - absorbed
@@ -275,9 +296,7 @@ def combatant_damage(combat: Combat, p: dict, ctx):
                "state": hp_state(c), **_char_ref(c),
                **({"note": note} if note else {})}
     _death_rules_cbt(c, dmg, was_zero, overflow, payload)
-    _sync_character(c, ctx)
-    return inv, [{"type": "character.hp.changed",
-                  "payload": payload}]
+    return payload
 
 
 def _death_rules_cbt(c: Combatant, dmg: int, was_zero: bool,
@@ -338,11 +357,13 @@ def combatant_death_save(combat: Combat, p: dict, ctx):
     c.death_saves[key] += 1
     outcome = None
     if c.death_saves["success"] >= 3:
-        c.conditions.append("estable")
+        if "estable" not in c.conditions:
+            c.conditions.append("estable")
         c.death_saves = {"success": 0, "fail": 0}
         outcome = "estable"
     elif c.death_saves["fail"] >= 3:
-        c.conditions.append("muerto")
+        if "muerto" not in c.conditions:
+            c.conditions.append("muerto")
         outcome = "muerto"
     _sync_character(c, ctx)   # la salvación manual desfasaba la ficha
     return inv, [{"type": "character.hp.changed",
@@ -368,6 +389,9 @@ def combatant_death_save_roll(combat: Combat, p: dict, ctx):
     if r.total == 20:                     # pifia natural inversa: revive
         c.hp_current = 1
         c.death_saves = {"success": 0, "fail": 0}
+        # levanta también el estado — como hp.heal y la save de la hoja
+        c.conditions = [x for x in c.conditions
+                        if x.lower() not in ("muerto", "dead", "estable")]
         outcome = "recupera 1 PG"
     elif r.total == 1:
         c.death_saves["fail"] += 2
@@ -377,11 +401,13 @@ def combatant_death_save_roll(combat: Combat, p: dict, ctx):
     else:
         c.death_saves["fail"] += 1
     if c.death_saves["success"] >= 3:
-        c.conditions.append("estable")
+        if "estable" not in c.conditions:
+            c.conditions.append("estable")
         c.death_saves = {"success": 0, "fail": 0}
         outcome = "estable"
     elif c.death_saves["fail"] >= 3:
-        c.conditions.append("muerto")
+        if "muerto" not in c.conditions:
+            c.conditions.append("muerto")
         outcome = "muerto"
     _sync_character(c, ctx)
     return inv, [{"type": "character.hp.changed",
@@ -551,6 +577,13 @@ def combatant_action_roll(combat: Combat, p: dict, ctx):
     m_dmg = re.search(r"(\d+d\d+(?:\s*[+-]\s*\d+)?)", text)
 
     adv, dis, _fail, notes = mods_for(c.conditions, "attack")
+    # mode del cliente: el mapa pide desventaja cuando el objetivo
+    # queda más allá del alcance normal del arma a distancia
+    mode = str(p.get("mode", "normal"))
+    if mode == "adv":
+        adv = True
+    elif mode == "dis":
+        dis = True
     ev = {"type": "dice.roll.created", "payload": {
         "combatant": c.name, "action": action.get("name", "?"),
         **({"notes": notes} if notes else {})}}
@@ -615,6 +648,98 @@ SKILL_ABILITY = {
     "perception": "wis", "survival": "wis", "deception": "cha",
     "intimidation": "cha", "performance": "cha", "persuasion": "cha",
 }
+
+
+def _weapon_attack(char, item_name: str, ctx):
+    """(item, mod, hit_bonus, dmg_dice, damage_type) del arma de la
+    ficha — misma lógica que character.attack: finesse/ranged → DES,
+    resto → FUE; prof siempre suma al impacto."""
+    from .ops import _item_damage
+    item = next((i for i in char.inventory
+                 if i.name.lower() == item_name.lower()), None)
+    if item is None:
+        raise ValueError("arma no en inventario")
+    w = {}
+    if item.source_id:
+        r = ctx.content_db().execute(
+            "SELECT data FROM content_entities WHERE id = ?",
+            (item.source_id,)).fetchone()
+        w = json.loads(r["data"]) if r else {}
+    props = [p.get("index") for p in w.get("properties", [])]
+    mod = char.abilities.modifier(
+        "dex" if "finesse" in props or "ranged" in
+        str(w.get("weapon_range", "")).lower() else "str")
+    dtype = (((w.get("damage") or {}).get("damage_type") or {})
+             .get("index") or w.get("dmgType") or None)
+    return (item, mod, char.proficiency_bonus + mod,
+            _item_damage(w) or "1d4", dtype)
+
+
+def _double_dice(expr: str) -> str:
+    """'2d6+3' → '4d6+3': crítico dobla los dados, no el bono."""
+    import re
+    return re.sub(r"(\d+)d(\d+)",
+                  lambda m: f"{int(m.group(1)) * 2}d{m.group(2)}",
+                  expr)
+
+
+@op("combat.attack")
+def combat_attack(combat: Combat, p: dict, ctx):
+    """Un PJ ataca a otro combatiente: el servidor tira impacto con el
+    arma de SU ficha (prof + mod + condiciones) contra la CA del
+    objetivo — que nunca sale del servidor en la vista de jugador —
+    y aplica el daño si impacta (res/imm/vul del stat block incluida).
+    Reversible: restaura el estado vital del objetivo."""
+    atk = _find(combat, p["attacker_combatant_id"])
+    tgt = _find(combat, p["target_combatant_id"])
+    if atk.id == tgt.id:
+        raise ValueError("el atacante no puede ser su objetivo")
+    if atk.kind != "character" or not atk.ref_id:
+        raise ValueError("combat.attack lo ejecuta un personaje")
+    from ..domain.conditions import is_incapacitated, mods_for
+    incap = is_incapacitated(atk.conditions)
+    if incap:
+        raise ValueError(f"{atk.name} está incapacitado ({incap})")
+    row = ctx.state_db().execute(
+        "SELECT data FROM characters WHERE id = ?",
+        (atk.ref_id,)).fetchone()
+    if row is None:
+        raise ValueError("ficha del atacante no encontrada")
+    from ..domain.character import Character
+    char = Character(**json.loads(row["data"]))
+    item, mod, hit_bonus, dmg_dice, dtype = _weapon_attack(
+        char, str(p.get("item_name", "")), ctx)
+    dtype = (p.get("damage_type") or dtype or "")
+    # mismas reglas de condición que /character/attack + modo manual
+    adv, dis, fail, notes = mods_for(atk.conditions, "attack")
+    mode = str(p.get("mode", "normal"))
+    if mode == "adv":
+        adv = True
+    elif mode == "dis":
+        dis = True
+    hit = roll("1d20adv" if adv and not dis else
+               "1d20dis" if dis and not adv else "1d20")
+    hit_total = hit.total + hit_bonus
+    crit = bool(hit.rolls) and max(hit.rolls) >= \
+        rules()["combat"]["death_save_crit_success"]
+    ac = tgt.ac or (tgt.stat_block or {}).get("ac", 10)
+    hits = not fail and (crit or hit_total >= ac)
+    ev = {"type": "dice.roll.created", "payload": {
+        "combatant": atk.name, "attack": item.name, "target": tgt.name,
+        "roll": hit.total, "total": hit_total, "hits": hits,
+        **({"crit": True} if crit else {}),
+        **({"notes": notes} if notes else {})}}
+    if not hits:
+        return {"operation_type": "noop", "payload": {}}, [ev]
+    expr = _double_dice(dmg_dice) if crit else dmg_dice
+    dmg_total = roll(f"{expr}{mod:+d}").total
+    inv = _hp_inverse(tgt)
+    amount, note = _typed_amount(tgt, dmg_total, dtype.strip().lower())
+    dmg_payload = _apply_dmg(tgt, amount, note)
+    ev["payload"]["damage"] = amount
+    _sync_character(tgt, ctx)
+    return inv, [ev, {"type": "character.hp.changed",
+                      "payload": dmg_payload}]
 
 
 @op("noop")

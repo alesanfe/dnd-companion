@@ -47,7 +47,7 @@ export default function Dashboard() {
     try {
       const r = await api.roll(expr.trim())
       setRollResult(`${r.expression} → ${r.rolls?.join('+') || ''} = ${r.total}`)
-    } catch { setRollResult(null) }
+    } catch (e2) { setRollResult(`⚠ ${e2.message}`) }
   }
 
   const relTime = (ts) => {

@@ -131,15 +131,17 @@ export function AttackPanel({ charId, item, onResult, onClose }) {
   const [ac, setAc] = useState('')
   const [last, setLast] = useState(null)
   const roll = async () => {
-    const r = await api.characterAttack(
-      charId, item.name, mode, ac ? +ac : null)
-    setLast(r)
+    try {
+      const r = await api.characterAttack(
+        charId, item.name, mode, ac ? +ac : null)
+      setLast(r)
     const miss = r.hit.hits === false ? ` — ${t('pan.miss')}`
                : r.hit.hits === true ? ` — ${t('pan.hitBang')}` : ''
-    onResult(`${item.name}: ${t('pan.hit')} ${r.hit.total}${miss}` +
-             ` · ${t('pan.dmg')} ${r.damage.expression} = ${
-               r.damage.total}` +
-             (r.notes?.length ? ` [${r.notes.join(', ')}]` : ''))
+      onResult(`${item.name}: ${t('pan.hit')} ${r.hit.total}${miss}` +
+               ` · ${t('pan.dmg')} ${r.damage.expression} = ${
+                 r.damage.total}` +
+               (r.notes?.length ? ` [${r.notes.join(', ')}]` : ''))
+    } catch (e) { onResult(`⚠ ${e.message}`) }
   }
   return (
     <div className="card" role="dialog"

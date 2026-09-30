@@ -67,9 +67,18 @@ cd frontend && npm install && npm run dev
   cuando hay usuarios registrados solo las muta su dueño — el guard
   de campaña no aplica porque `entity_camp` es None. En WS solo
   cuenta la identidad por token (`authed`): un `?user_id=` suelto
-  es spoofable y NO la satisface. Sin usuarios (local puro) todo
-  abierto. El listado `GET /characters` tampoco enumera fichas
-  personales ajenas.
+  es spoofable y NO la satisface (ni resuelve rol en campañas con
+  owner → spectator). Sin usuarios (local puro) todo abierto. El
+  listado `GET /characters` tampoco enumera fichas personales
+  ajenas; `GET /campaigns` anónimo solo ve campañas sin owner; y
+  historial/conflictos/dismiss de fichas personales son del dueño.
+  `campaign_id=""` se normaliza a NULL en PATCH — un "" saltaba los
+  dos branches de guards.
+- **Combates sin campaña** (`_campaignless_combat_guard`): solo
+  admiten combatientes-PJ libres o del llamante; si el tracker ya
+  apunta a una ficha ajena, toda op posterior de un tercero es 403
+  (y `award-xp` igual) — `_sync_character` no debe escribir en la
+  hoja de otro usuario.
 - Fichas libres (`player_id` NULL) se reclaman vía PATCH — el no-DM
   solo puede poner su propio uid o soltar la suya.
 - Visibilidad `dm` se filtra en el servidor, no solo en la UI: eventos
@@ -88,8 +97,10 @@ cd frontend && npm install && npm run dev
   `http://localhost:5173`). En Docker el front es same-origin vía
   proxy nginx — CORS solo hace falta si el front vive en otro host.
 - Deployment Docker: `frontend/nginx.conf` proxifica `/api` y `/ws`
-  (con Upgrade) a `backend:8000` + fallback SPA. Sin él la imagen
-  del front no llega al backend.
+  (con Upgrade) a `backend:8000` + fallback SPA. El backend NO
+  publica 8000 al host (solo `expose` en la red interna); corre
+  como `dnd` (uid 10001) con healthcheck `/api/health`; el front
+  usa `node:20` + `npm ci` (paridad con CI, lockfile).
 - `state_db()`: el schema corre solo si `PRAGMA user_version` <
   `_SCHEMA_VERSION` — añadir tablas = subir la constante y el DDL
   (IF NOT EXISTS) en `state_schema.sql`. Rate-limit de auth =
@@ -102,9 +113,19 @@ cd frontend && npm install && npm run dev
   combate con la composición).
 - **Delegación**: op `combatant.delegate` (DM-only) fija
   `combatant.delegated_to = user_id`. El delegado mueve el token
-  vinculado (`combatant_id`) y ataca con él (`combat.attack`) como
-  si fuera su PJ — el check es `_is_own_char_combatant`, que cubre
-  delegados. No gana ops de dirección (next_turn = 403).
+  vinculado (`combatant_id`) y tira las acciones de su stat block
+  (`combatant.action.roll`) — el check es `_is_own_char_combatant`,
+  que cubre delegados. `combat.attack` sigue pidiendo un PJ con
+  ficha. No gana ops de dirección (next_turn = 403).
+- **Reglas en ops de jugador**: en `combat.attack` el payload del
+  jugador NO declara `damage_type` ni `mode` (se eliminan en
+  `_player_combat_op` — declararlos era vuln/resist/adv a voluntad).
+- `inventory.transfer` es **no-reversible** (sin `inverse`): el undo
+  de una sola mitad duplicaba objetos — pendiente undo compuesto.
+- Auth: PBKDF2-SHA256 600k iteraciones con migración perezosa de los
+  hashes a 100k al primer login; `secrets.compare_digest`; throttle
+  por usuario normalizado + por IP; `DND_ALLOW_REGISTRATION=0`
+  cierra el alta en instancias expuestas.
 
 ## Sincronización ficha ↔ combate
 

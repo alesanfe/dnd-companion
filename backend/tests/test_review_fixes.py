@@ -2231,3 +2231,127 @@ def test_insert_entity_cross_type_collision_disambiguates():
     pdb.insert_entity(conn, entity_type="monster", **common)
     assert conn.execute(
         "SELECT COUNT(*) n FROM content_entities").fetchone()[0] == 2
+
+
+# --- Fase C de la auditoría: triggers declarativos --------------------
+
+def test_triggered_effect_not_passive():
+    """Un Effect con trigger NO aplica a resolve_stat — antes una
+    inmunidad 'al recibir daño' quedaba permanente."""
+    from app.engine.engine import resolve_stat
+    from app.domain.effects import Trigger
+    eff = Effect(id="e1", name="escudo de emergencia",
+                 trigger=Trigger.BEFORE_DAMAGE,
+                 operations=[EffectOperation(
+                     op=Operation.ADD_MODIFIER,
+                     target="armor_class", value=5)])
+    bd = resolve_stat("armor_class", 10, [eff])
+    assert bd.total == 10          # no +5 permanente
+    # el mismo efecto como pasivo sí suma
+    eff2 = eff.model_copy(update={"trigger": None})
+    assert resolve_stat("armor_class", 10, [eff2]).total == 15
+
+
+def test_effect_conditions_resolve_nested_ctx():
+    """{field:'hp.pct'} resolvía contra ctx plano y moría — ahora _dig
+    navega el model_dump anidado."""
+    from app.engine.engine import check_conditions
+    from app.domain.effects import EffectCondition
+    ctx = {"hp": {"current": 3, "max": 10}}
+    c_lt = EffectCondition(field="hp.current", lt=5)
+    c_gt = EffectCondition(field="hp.current", gt=5)
+    assert check_conditions([c_lt], ctx) is True
+    assert check_conditions([c_gt], ctx) is False
+
+
+def test_before_after_damage_triggers_run():
+    """hp.damage ejecuta triggers de daño: restaurar recurso al
+    recibir daño muta la ficha dentro de la misma op."""
+    from app.domain.effects import Trigger
+    from app.domain.character import Resource
+    c = Character(name="t")
+    c.resources.append(Resource(id="rabia", name="Rabia",
+                                current=0, max=2))
+    c.effects.append(Effect(
+        id="e", name="grito", trigger=Trigger.AFTER_DAMAGE,
+        operations=[EffectOperation(op=Operation.RESTORE_RESOURCE,
+                                    target="rabia", value=1)]))
+    apply_operation(c, "character.hp.damage",
+                    {"amount": 3, "type": "fire"}, _Ctx())
+    assert c.resources[0].current == 1     # el trigger disparó
+
+
+def test_damage_grant_with_damage_trigger_applies():
+    """grant_resistance bajo before_damage SÍ cuenta en el daño —
+    solo los triggers ajenos al contexto se ignoran."""
+    from app.domain.effects import Trigger
+    c = Character(name="t", hp={"current": 10, "max": 10, "temp": 0})
+    c.effects.append(Effect(
+        id="e", name="amorfo", trigger=Trigger.BEFORE_DAMAGE,
+        operations=[EffectOperation(op=Operation.GRANT_RESISTANCE,
+                                    target="fire")]))
+    apply_operation(c, "character.hp.damage",
+                    {"amount": 8, "type": "fire"}, _Ctx())
+    assert c.hp.current == 6               # 8÷2, no 8 ni 0
+    # pero el mismo grant con trigger de descanso NO aplica al daño
+    c2 = Character(name="t", hp={"current": 10, "max": 10, "temp": 0})
+    c2.effects.append(c.effects[0].model_copy(
+        update={"trigger": Trigger.ON_SHORT_REST}))
+    apply_operation(c2, "character.hp.damage",
+                    {"amount": 8, "type": "fire"}, _Ctx())
+    assert c2.hp.current == 2              # daño íntegro
+
+
+def test_on_apply_on_remove_triggers():
+    """effect.add/remove disparan los triggers de ciclo de vida."""
+    from app.domain.effects import Trigger
+    from app.domain.character import Resource
+    c = Character(name="t")
+    c.resources.append(Resource(id="carga", name="Carga",
+                                current=1, max=3))
+    apply_operation(c, "character.effect.add", {"effect": {
+        "id": "furia", "name": "Furia", "trigger": "on_apply",
+        "operations": [{"op": "consume_resource", "target": "carga",
+                        "value": 1}]}}, _Ctx())
+    assert c.resources[0].current == 0     # on_apply consumió
+    c2 = Character(name="t", conditions=["furia-x"])
+    c2.effects.append(Effect(
+        id="f", name="F", trigger=Trigger.ON_REMOVE,
+        operations=[EffectOperation(op=Operation.REMOVE_CONDITION,
+                                    value="furia-x")]))
+    apply_operation(c2, "character.effect.remove",
+                    {"effect_id": "f"}, _Ctx())
+    assert "furia-x" not in c2.conditions  # on_remove disparó
+
+
+def test_turn_triggers_fire_on_linked_char():
+    """next_turn dispara on_turn_end/on_turn_start sobre las fichas
+    vinculadas — el efecto declarativo muta resources del PJ."""
+    from app.domain.character import Resource
+    from app.db.connections import state_db
+    from app.api.operations import OpContext
+    conn = state_db()
+    ctx = OpContext(conn)
+    ch = Character(name="Ki")
+    ch.resources.append(Resource(id="ki", name="Ki", current=0, max=3))
+    ch.effects.append(Effect(
+        id="med", name="Meditación", trigger="on_turn_start",
+        operations=[EffectOperation(op=Operation.RESTORE_RESOURCE,
+                                    target="ki", value=1)]))
+    conn.execute("INSERT INTO characters (id, name, version, data,"
+                 " updated_at) VALUES (?,?,0,?,?)",
+                 ("ki-pj", "Ki", ch.model_dump_json(), "x"))
+    conn.commit()
+    cm = Combat(combatants=[
+        Combatant(id="k", kind="character", name="Ki", initiative=20,
+                  hp_current=5, hp_max=5, ref_id="ki-pj"),
+        Combatant(id="g", name="Goblin", initiative=10)])
+    apply_combat_operation(cm, "combat.next_turn", {}, ctx)  # Ki→Goblin
+    # cierra ronda (on_round_start de todos) y vuelve a Ki (turn_start)
+    apply_combat_operation(cm, "combat.next_turn", {}, ctx)
+    conn.commit()   # el UPDATE del trigger abrió txn de escritura —
+                    # sin commit dejaba la DB bloqueada a tests ajenos
+    row = conn.execute("SELECT data FROM characters WHERE id='ki-pj'"
+                       ).fetchone()
+    assert Character(**json.loads(row["data"])
+                     ).resources[0].current == 1              # +1 ki

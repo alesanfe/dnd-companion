@@ -38,11 +38,18 @@ def _matches(op_target: str, stat: str) -> bool:
     return op_target == stat or op_target == f"*.{stat}" or op_target == "*"
 
 
-def resolve_stat(stat: str, base: float, effects: list[Effect]) -> StatBreakdown:
+def resolve_stat(stat: str, base: float, effects: list[Effect],
+                 ctx: dict | None = None) -> StatBreakdown:
     """Resolve one derived stat through all passive effects.
 
     Order: set_value ops (by priority, lowest wins — last applied) then
     additive modifiers. Non-numeric ops land in the breakdown flags.
+
+    Solo PASIVOS: un Effect con trigger (p.ej. on_short_rest) no es una
+    propiedad permanente — antes `resolve_stat` aplicaba sus ops como
+    siempre-activas y una inmunidad temporal quedaba perpetua.
+    `ctx` (p.ej. character.model_dump()) evalúa las EffectCondition —
+    sin él todas se asumen ciertas (compat hacia atrás).
     """
     entries: list[ModifierEntry] = []
     sets: list[tuple[int, Effect, float]] = []
@@ -50,6 +57,10 @@ def resolve_stat(stat: str, base: float, effects: list[Effect]) -> StatBreakdown
     out = StatBreakdown(stat=stat, base=base, total=base)
 
     for eff in sorted(effects, key=lambda e: e.priority):
+        if eff.trigger is not None:
+            continue                       # trigger ≠ pasivo
+        if ctx is not None and not check_conditions(eff.conditions, ctx):
+            continue                       # condición no satisfecha
         for op in eff.operations:
             _collect_op(out, entries, sets, adds, eff, op, stat)
 
@@ -122,12 +133,29 @@ def _collapse_adds(out, adds, entries) -> None:
             reason=f"{val:+g} (no apilable)"))
 
 
+def _dig(ctx: dict, field: str):
+    """Resuelve 'a.b.c' en dicts anidados (o atributos de modelo) —
+    el ctx de apply_triggered es model_dump() anidado, no plano:
+    {field:'hp.current'} nunca resolvía y la condición moría en eq."""
+    cur = ctx
+    for part in field.split("."):
+        if isinstance(cur, dict):
+            cur = cur.get(part)
+        else:
+            cur = getattr(cur, part, None)
+        if cur is None:
+            return None
+    return cur
+
+
 def check_conditions(conditions: list[EffectCondition],
                      ctx: dict) -> bool:
     """Evalúa condiciones declarativas contra un contexto (p.ej. campos
     del personaje o del ataque). Sin condiciones = siempre aplica."""
     for c in conditions:
-        val = ctx.get(c.field)
+        val = ctx.get(c.field)          # plano primero (compat)
+        if val is None and "." in c.field:
+            val = _dig(ctx, c.field)    # 'hp.current', 'attack.hit'…
         if c.eq is not None and val != c.eq:
             return False
         if c.ne is not None and val == c.ne:

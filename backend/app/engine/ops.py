@@ -47,6 +47,9 @@ def hp_damage(char: Character, p: dict, ctx):
     amount = max(0, int(p["amount"]))
     # resistencia/vulnerabilidad/inmunidad declarativas por tipo de daño
     dtype = str(p.get("type", "")).lower()
+    # ops mutantes "antes del daño" (p.ej. consumir carga para reducir)
+    _run_trigger(char, Trigger.BEFORE_DAMAGE,
+                 {"damage": {"amount": amount, "type": dtype}})
     mult, applied = _damage_mult(char, dtype)
     amount = int(amount * mult)
     absorbed = min(char.hp.temp, amount)
@@ -67,6 +70,10 @@ def hp_damage(char: Character, p: dict, ctx):
         payload["concentration_check"] = True
         payload["concentration_dc"] = max(floor, amount // 2)
         payload["spell"] = char.concentrating_on
+    # "al recibir daño…" (furor, represalia) — ops mutantes tras aplicar
+    _run_trigger(char, Trigger.AFTER_DAMAGE,
+                 {"damage": {"amount": amount, "type": dtype,
+                             "current": char.hp.current}})
     return inv, [{"type": "character.hp.changed", "payload": payload}]
 
 
@@ -76,6 +83,12 @@ def _damage_mult(char: Character, dtype: str) -> tuple[float, list]:
     (mult, [notas])."""
     mult, applied = 1.0, []
     for eff in char.effects:
+        # pasivos + triggers de contexto de daño (un grant bajo
+        # before_damage/after_damage ES de este momento); el resto
+        # de triggers no son propiedades permanentes
+        if eff.trigger is not None and eff.trigger not in (
+                Trigger.BEFORE_DAMAGE, Trigger.AFTER_DAMAGE):
+            continue
         for o in eff.operations:
             tgt = (o.target or "").lower()
             if dtype and tgt not in (dtype, "*"):
@@ -961,6 +974,9 @@ def effect_add(char: Character, p: dict, ctx):
     if any(e.id == eff.id for e in char.effects):
         raise ValueError(f"efecto duplicado: {eff.id}")
     char.effects.append(eff)
+    # on_apply: el propio efecto recién añadido (y otros con ese
+    # trigger) ejecuta sus ops mutantes — "al aplicar furia, -1 carga"
+    _run_trigger(char, Trigger.ON_APPLY)
     return {"operation_type": "character.effect.remove",
             "payload": {"effect_id": eff.id}}, [
         {"type": "character.condition.applied",
@@ -973,6 +989,9 @@ def effect_remove(char: Character, p: dict, ctx):
                 if e.id == p["effect_id"]), None)
     if idx is None:
         raise ValueError(f"efecto no encontrado: {p['effect_id']}")
+    # on_remove ANTES de quitarlo: su propio trigger "al retirarse"
+    # debe disparar (p.ej. "al caer la furia, gana agotamiento")
+    _run_trigger(char, Trigger.ON_REMOVE)
     eff = char.effects.pop(idx)
     return {"operation_type": "character.effect.add",
             "payload": {"effect": eff.model_dump(mode="json")}}, [
@@ -1901,10 +1920,12 @@ def _restore_resources(char: Character, resets: set[str]) -> None:
             r.current = r.max
 
 
-def _run_trigger(char: Character, trigger: Trigger) -> None:
-    """Aplica los Effect con este trigger (p.ej. 'regain ki on short rest')."""
+def _run_trigger(char: Character, trigger: Trigger,
+                 ctx: dict | None = None) -> None:
+    """Aplica los Effect con este trigger (p.ej. 'regain ki on short rest').
+    `ctx` nutre las EffectCondition ('damage.amount', 'attack.hit'…)."""
     from .engine import apply_triggered
-    apply_triggered(char, trigger)
+    apply_triggered(char, trigger, ctx)
 
 
 @op("noop")

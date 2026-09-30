@@ -15,6 +15,7 @@ from typing import Callable
 
 from ..domain import statblock
 from ..domain.combat import Combat, Combatant, hp_state
+from ..domain.effects import Trigger
 from ..rules import rules
 from .dice import roll
 
@@ -100,6 +101,41 @@ def _sync_character(c: Combatant, ctx) -> None:
                          " combate — reintenta")
 
 
+def _char_trigger(ctx, c: Combatant, trigger, extra: dict | None = None):
+    """Dispara los Effect de la ficha vinculada con este trigger y
+    persiste (recursos/condiciones mutados por _trigger_op).
+    Sin ficha/DB = no-op. Devuelve True si el estado cambió."""
+    if c.kind != "character" or not c.ref_id:
+        return False
+    try:
+        conn = ctx.state_db()
+    except AttributeError:
+        return False
+    if conn is None:
+        return False
+    row = conn.execute("SELECT data, version FROM characters"
+                       " WHERE id = ?", (c.ref_id,)).fetchone()
+    if row is None:
+        return False
+    from ..domain.character import Character
+    from .engine import apply_triggered
+    ch = Character(**json.loads(row["data"]))
+    snap = ch.model_dump_json()
+    apply_triggered(ch, trigger, extra)
+    if ch.model_dump_json() == snap:
+        return False                          # nada mutó → no bump
+    cur = conn.execute(
+        "UPDATE characters SET data = ?, version = ?, updated_at = ?"
+        " WHERE id = ? AND version = ?",
+        (ch.model_dump_json(), row["version"] + 1,
+         datetime.now(timezone.utc).isoformat(),
+         c.ref_id, row["version"]))
+    if cur.rowcount == 0:
+        raise ValueError("la ficha vinculada cambió durante la op de"
+                         " combate — reintenta")
+    return True
+
+
 @op("combat.next_turn")
 def next_turn(combat: Combat, p: dict, ctx):
     order = combat.ordered()
@@ -109,6 +145,8 @@ def next_turn(combat: Combat, p: dict, ctx):
     # podría restaurarlas (duración y lista ya mutadas)
     inv = {"operation_type": "combat.state.restore",
            "payload": {"data": combat.model_dump()}}
+    # el combatiente que sale de turno dispara sus on_turn_end
+    prev_active = combat.active
     combat.turn_index += 1
     expired: list[str] = []
     if combat.turn_index >= len(order):
@@ -123,7 +161,13 @@ def next_turn(combat: Combat, p: dict, ctx):
                     if cond in c.conditions:
                         c.conditions.remove(cond)
                         expired.append(f"{c.name}:{cond}")
+            # efectos declarativos "al inicio de la ronda" (PJ)
+            _char_trigger(ctx, c, Trigger.ON_ROUND_START)
     active = combat.active
+    if prev_active is not None and prev_active is not active:
+        _char_trigger(ctx, prev_active, Trigger.ON_TURN_END)
+    if active is not None:
+        _char_trigger(ctx, active, Trigger.ON_TURN_START)
     payload = {"round": combat.round,
                "active": active.name if active else None}
     if expired:
@@ -300,13 +344,44 @@ def combatant_damage(combat: Combat, p: dict, ctx):
     o vulnerabilidad (×2) del stat block si lo hay."""
     c = _find(combat, p["combatant_id"])
     inv = _hp_inverse(c)
-    amount, note = _typed_amount(c, max(0, int(p["amount"])),
-                               (p.get("damage_type") or "")
-                               .strip().lower())
+    dtype = (p.get("damage_type") or "").strip().lower()
+    if c.kind == "character" and c.ref_id:
+        # PJ: res/imm/vul declarativas de SU ficha (efectos pasivos +
+        # triggers de daño) — el tracker antes solo miraba stat_block
+        # y un PJ con resistencia recibía daño íntegro en el mapa
+        amount, note = _char_typed_amount(ctx, c,
+                                          max(0, int(p["amount"])),
+                                          dtype)
+    else:
+        amount, note = _typed_amount(c, max(0, int(p["amount"])), dtype)
     payload = _apply_dmg(c, amount, note)
     _sync_character(c, ctx)
+    _char_trigger(ctx, c, Trigger.AFTER_DAMAGE,
+                  {"damage": {"amount": payload["amount"],
+                              "type": dtype}})
     return inv, [{"type": "character.hp.changed",
                   "payload": payload}]
+
+
+def _char_typed_amount(ctx, c: Combatant, amount: int, dtype: str):
+    """(daño final, nota) usando los Effect declarativos de la ficha
+    del PJ — la misma regla que character.hp.damage en la hoja."""
+    try:
+        conn = ctx.state_db()
+    except AttributeError:
+        return _typed_amount(c, amount, dtype)
+    if conn is None:
+        return _typed_amount(c, amount, dtype)
+    row = conn.execute("SELECT data FROM characters WHERE id = ?",
+                       (c.ref_id,)).fetchone()
+    if row is None:
+        return _typed_amount(c, amount, dtype)
+    from ..domain.character import Character
+    from .ops import _damage_mult
+    ch = Character(**json.loads(row["data"]))
+    mult, applied = _damage_mult(ch, dtype)
+    amount = int(amount * mult)
+    return amount, "; ".join(applied) if applied else None
 
 
 def _typed_amount(c: Combatant, amount: int, dtype: str):
@@ -593,10 +668,20 @@ def combatant_save(combat: Combat, p: dict, ctx):
     r = roll("1d20adv" if adv and not dis else
              "1d20dis" if dis and not adv else "1d20")
     total = r.total + total_mod
+    dc = p.get("dc")
+    if dc is not None:
+        # triggers declarativos del PJ: "al superar/fallar salvación…"
+        ok = total >= int(dc)
+        _char_trigger(ctx, c,
+                      Trigger.ON_SAVE_SUCCESS if ok
+                      else Trigger.ON_SAVE_FAILURE,
+                      {"save": {"ability": ability, "total": total,
+                                "dc": int(dc), "success": ok}})
     return {"operation_type": "noop", "payload": {}}, [
         {"type": "dice.roll.created",
          "payload": {"combatant": c.name, "save": ability,
                      "roll": r.total, "total": total,
+                     **({"dc": int(dc)} if dc is not None else {}),
                      **({"notes": notes} if notes else {})}}]
 
 
@@ -768,6 +853,11 @@ def combat_attack(combat: Combat, p: dict, ctx):
         rules()["combat"].get("attack_crit_on", 20)
     ac = tgt.ac or (tgt.stat_block or {}).get("ac", 10)
     hits = not fail and (crit or hit_total >= ac)
+    # on_hit/on_miss del atacante (p.ej. "al impactar, restaura ki")
+    # — muta la ficha; la guardia de versión la hace conflict-safe
+    _char_trigger(ctx, atk, Trigger.ON_HIT if hits else Trigger.ON_MISS,
+                  {"attack": {"hit": hits, "item": item.name,
+                              "target": tgt.name}})
     ev = {"type": "dice.roll.created", "payload": {
         "combatant": atk.name, "attack": item.name, "target": tgt.name,
         "roll": hit.total, "total": hit_total, "hits": hits,

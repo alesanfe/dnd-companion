@@ -578,7 +578,8 @@ def derived_stat(character_id: str, stat: str, base: float = 10,
         raise HTTPException(404, "character not found")
     _char_camp_guard(conn, row["campaign_id"], user)
     char = Character(**json.loads(row["data"]))
-    return resolve_stat(stat, base, char.effects).model_dump()
+    return resolve_stat(stat, base, char.effects,
+                        char.model_dump()).model_dump()
 
 
 @router.get("/{character_id}/derived")

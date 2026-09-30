@@ -1,5 +1,6 @@
 """Currency ops, shop buy, compare, homebrew, rules assistant,
 packages, sessions/scenes, timeline, contextual actions."""
+import os
 import uuid
 from pathlib import Path
 
@@ -10,7 +11,12 @@ from app.main import app
 
 client = TestClient(app)
 
-CONTENT_DB = Path(__file__).resolve().parents[2] / "data" / "content.sqlite3"
+# el marker debe mirar la DB EFECTIVA (conftest la copia a tmp) —
+# mirar data/content.sqlite3 saltaba o corría tests según la
+# existencia del corpus real aunque la conexión usara otra ruta
+CONTENT_DB = Path(os.environ.get("DND_CONTENT_DB") or
+                  (Path(__file__).resolve().parents[2] / "data"
+                   / "content.sqlite3"))
 needs_content = pytest.mark.skipif(
     not CONTENT_DB.exists(), reason="content DB no importada")
 

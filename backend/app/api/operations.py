@@ -422,6 +422,16 @@ def apply_to_store(op: OperationIn) -> dict:
                  event.occurred_at.isoformat(), event.type.value,
                  json.dumps(event.payload)))
             out_events.append(event)
+        # retención: el resync solo mira los últimos ~200 eventos —
+        # conservar 500 por campaña y podar el resto para que la
+        # tabla no crezca sin límite con sesiones largas
+        if campaign_id:
+            conn.execute(
+                """DELETE FROM events WHERE campaign_id = ?
+                   AND event_id NOT IN (
+                       SELECT event_id FROM events WHERE campaign_id = ?
+                       ORDER BY occurred_at DESC LIMIT 500)""",
+                (campaign_id, campaign_id))
         conn.commit()
     except _ConcurrentUpdate:
         conn.rollback()

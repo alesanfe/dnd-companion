@@ -363,6 +363,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ party_levels, monster_crs }),
     }),
+  encounterSuggest: (body) =>
+    req('/api/encounters/suggest', {
+      method: 'POST', body: JSON.stringify(body),
+    }),
   listEntities: (campaignId, kind, viewer = 'dm') =>
     req(`/api/campaigns/${campaignId}/entities?viewer=${viewer}` +
         (kind ? `&kind=${kind}` : '')),

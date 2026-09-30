@@ -1,13 +1,18 @@
 """Encounter difficulty calculator — XP thresholds + multipliers
-(reglas 2014, DMG). Input: niveles del grupo + CRs de monstruos."""
+(reglas 2014, DMG). Input: niveles del grupo + CRs de monstruos.
+`/suggest` va en sentido inverso: presupuesto + filtros → composición
+de monstruos de la content DB."""
 from __future__ import annotations
 
+import json
+import random
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .auth import optional_user
 from .campaigns import _DM_ROLES, _has_owner, _require_role
-from ..db.connections import state_db
+from ..db.connections import content_db, state_db
 from ..domain.xp import (cr_to_xp, encounter_multiplier,
                          encounter_threshold)
 
@@ -80,3 +85,73 @@ def combat_difficulty(combat_id: str,
                                      for c in classes)))
     return difficulty(EncounterIn(party_levels=levels or [1],
                                   monster_crs=crs))
+
+
+_DIFFS = ("easy", "medium", "hard", "deadly")
+
+
+class SuggestIn(BaseModel):
+    party_levels: list[int]
+    difficulty: str = "medium"
+    monster_types: list[str] = []        # filtro: undead, beast…
+    max_count: int = Field(6, ge=1, le=20)
+    seed: int | None = None              # composición reproducible
+
+
+@router.post("/suggest")
+def suggest(body: SuggestIn):
+    """Composición de encuentro dentro del presupuesto ajustado:
+    greedy aleatorio (con semilla opcional) que solo mete monstruos
+    que no pasen el presupuesto — el multiplicador sube con cada
+    alta, así que reevalúa tras cada pick."""
+    dif = body.difficulty
+    if dif not in _DIFFS:
+        raise HTTPException(400, f"difficulty debe ser {'|'.join(_DIFFS)}")
+    budget = sum(encounter_threshold(l)[_DIFFS.index(dif)]
+                 for l in body.party_levels)
+    if budget <= 0:
+        raise HTTPException(400, "party_levels requerido")
+    want = {t.strip().lower() for t in body.monster_types if t.strip()}
+    cands = []
+    for r in content_db().execute(
+            "SELECT id, name, data FROM content_entities "
+            "WHERE entity_type = 'monster'").fetchall():
+        try:
+            d = json.loads(r["data"])
+        except (TypeError, ValueError):
+            continue
+        cr = d.get("cr") or d.get("challenge_rating") \
+            or d.get("challenge") or 0
+        xp = cr_to_xp(cr)
+        if xp <= 0:
+            continue
+        if want:
+            hay = json.dumps(
+                [d.get("type"), d.get("creature_type"),
+                 d.get("monster_type")], ensure_ascii=False).lower()
+            if not any(t in hay for t in want):
+                continue
+        cands.append({"id": r["id"], "name": r["name"],
+                      "cr": str(cr), "xp": xp})
+    if not cands:
+        raise HTTPException(404, "sin monstruos en la content DB")
+    rng = random.Random(body.seed)
+    rng.shuffle(cands)
+    picked, raw, adj = [], 0, 0
+    for m in cands:
+        if len(picked) >= body.max_count:
+            break
+        cand_raw = raw + m["xp"]
+        cand_adj = int(cand_raw * encounter_multiplier(len(picked) + 1))
+        if cand_adj <= budget:
+            picked.append(m)
+            raw, adj = cand_raw, cand_adj
+    if not picked:
+        # ni el más barato entra → devolver ese solo (el DM decide)
+        cheapest = min(cands, key=lambda m: m["xp"])
+        picked = [cheapest]
+        raw = cheapest["xp"]
+        adj = int(raw * encounter_multiplier(1))
+    return {"budget": budget, "difficulty": dif,
+            "raw_xp": raw, "adjusted_xp": adj,
+            "monsters": picked}

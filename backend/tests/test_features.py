@@ -1,5 +1,6 @@
 """Level-up, export/import, inventory transfer, entities, encounters,
 command search."""
+import os
 from pathlib import Path
 
 import pytest
@@ -9,7 +10,9 @@ from app.main import app
 
 client = TestClient(app)
 
-CONTENT_DB = Path(__file__).resolve().parents[2] / "data" / "content.sqlite3"
+CONTENT_DB = Path(os.environ.get("DND_CONTENT_DB") or
+                  (Path(__file__).resolve().parents[2] / "data"
+                   / "content.sqlite3"))
 needs_content = pytest.mark.skipif(
     not CONTENT_DB.exists(), reason="content DB no importada")
 
@@ -161,6 +164,33 @@ def test_encounter_difficulty():
     assert body["adjusted_xp"] == 1200
     # party 4x lvl3: easy 300, med 600, hard 900, deadly 1600 → hard
     assert body["rating"] == "hard"
+
+
+def test_encounter_suggest_validation():
+    assert client.post("/api/encounters/suggest", json={
+        "party_levels": [3], "difficulty": "epic"}).status_code == 400
+    assert client.post("/api/encounters/suggest", json={
+        "party_levels": []}).status_code == 400
+
+
+@needs_content
+def test_encounter_suggest_within_budget():
+    r = client.post("/api/encounters/suggest", json={
+        "party_levels": [3, 3, 3, 3], "difficulty": "medium",
+        "seed": 42})
+    if r.status_code == 404:
+        pytest.skip("corpus sin monstruos")
+    body = r.json()
+    assert body["monsters"]                       # nunca vacío
+    if len(body["monsters"]) > 1:
+        # la composición respeta el presupuesto ajustado
+        assert body["adjusted_xp"] <= body["budget"]
+    # la semilla hace la sugerencia reproducible
+    again = client.post("/api/encounters/suggest", json={
+        "party_levels": [3, 3, 3, 3], "difficulty": "medium",
+        "seed": 42}).json()
+    assert [m["id"] for m in again["monsters"]] == \
+           [m["id"] for m in body["monsters"]]
 
 
 @needs_content

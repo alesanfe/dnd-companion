@@ -90,6 +90,15 @@ cd frontend && npm install && npm run dev
 - Deployment Docker: `frontend/nginx.conf` proxifica `/api` y `/ws`
   (con Upgrade) a `backend:8000` + fallback SPA. Sin él la imagen
   del front no llega al backend.
+- `state_db()`: el schema corre solo si `PRAGMA user_version` <
+  `_SCHEMA_VERSION` — añadir tablas = subir la constante y el DDL
+  (IF NOT EXISTS) en `state_schema.sql`. Rate-limit de auth =
+  `auth_throttle` (persistente, no en memoria).
+- Retención: `events` se poda a las últimas 500 por campaña en cada
+  op aplicada; `auth_tokens`/`auth_throttle` tienen GC perezosa.
+- Constructor de encuentros: `POST /api/encounters/suggest`
+  (presupuesto ajustado → composición greedy con `seed` opcional);
+  UI en pestaña Combate del DM (📍 suelta al mapa).
 
 ## Sincronización ficha ↔ combate
 

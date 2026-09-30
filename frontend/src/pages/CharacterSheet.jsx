@@ -465,7 +465,14 @@ export default function CharacterSheet() {
             a.click()
           } catch (e) { setErr(e.message) }
         }}>{t('sheet.export')}</button>
-        <button className="ghost" onClick={() => window.print()}>
+        {/* el navegador nombra el PDF con document.title — fijarlo
+            al nombre del PJ durante la impresión */}
+        <button className="ghost" onClick={() => {
+          const prev = document.title
+          document.title = char.name || prev
+          window.print()
+          document.title = prev
+        }}>
           🖨 {t('sheet.print')}</button>
         {char.campaign_id && (
           <button className="ghost" aria-pressed={notify}

@@ -558,6 +558,21 @@ def test_personal_char_ws_op_guard():
         assert d.get("type") == "error"
 
 
+def test_auth_throttle_persists_in_db(monkeypatch):
+    """El rate-limit vive en state DB (no en memoria): un reinicio
+    ya no regala 5 intentos gratis."""
+    from app.api.auth import _throttle
+    from fastapi import HTTPException
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    key = f"login:{uuid.uuid4().hex[:8]}"
+    for _ in range(5):
+        _throttle(key)
+    with pytest.raises(HTTPException) as exc:
+        _throttle(key)
+    assert exc.value.status_code == 429
+    _throttle(f"login:{uuid.uuid4().hex[:8]}")  # otra clave pasa
+
+
 def test_char_claim_and_release():
     """Reclamar una ficha sin dueño en campaña con owner: player_id
     pasa a ser el uid del que la reclama; otro jugador ya no puede

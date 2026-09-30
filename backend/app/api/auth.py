@@ -54,11 +54,9 @@ def register(body: Credentials, request: Request):
     return {"user_id": uid, "token": _issue(conn, uid)}
 
 
-# throttle en memoria: max 5 intentos/min por clave (usuario en login,
-# IP en register — por nombre no frenaría la creación masiva)
-_login_attempts: dict[str, list[float]] = {}
-
-
+# throttle persistente en state DB: max 5 intentos/min por clave
+# (usuario en login, IP en register). En memoria se reseteaba al
+# reiniciar y era por-proceso → N workers = 5×N intentos reales.
 def _throttle(key: str) -> None:
     import os
     import time
@@ -67,12 +65,23 @@ def _throttle(key: str) -> None:
     if os.environ.get("PYTEST_CURRENT_TEST"):
         return
     now = time.time()
-    tries = [t for t in _login_attempts.get(key, [])
-             if now - t < 60]
-    if len(tries) >= 5:
+    conn = state_db()
+    row = conn.execute(
+        "SELECT tries, window_start FROM auth_throttle WHERE k = ?",
+        (key,)).fetchone()
+    fresh = row is None or now - row["window_start"] > 60
+    if not fresh and row["tries"] >= 5:
         raise HTTPException(429, "demasiados intentos; espera un minuto")
-    tries.append(now)
-    _login_attempts[key] = tries
+    conn.execute(
+        "INSERT OR REPLACE INTO auth_throttle"
+        " (k, tries, window_start) VALUES (?,?,?)",
+        (key, 1 if fresh else row["tries"] + 1,
+         now if fresh else row["window_start"]))
+    # GC perezosa: purga ventanas viejas para que la tabla no crezca
+    conn.execute(
+        "DELETE FROM auth_throttle WHERE ? - window_start > 300",
+        (now,))
+    conn.commit()
 
 
 @router.post("/login")

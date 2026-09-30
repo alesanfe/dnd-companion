@@ -160,3 +160,12 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id);
+
+-- Rate-limit de auth persistente: sobrevive reinicios y es común a
+-- todos los workers (el contador en memoria se reseteaba y era
+-- por-proceso → 5×N intentos reales).
+CREATE TABLE IF NOT EXISTS auth_throttle (
+    k            TEXT PRIMARY KEY,   -- 'reg:ip' | 'login:user'
+    tries        INTEGER NOT NULL,
+    window_start REAL NOT NULL
+);

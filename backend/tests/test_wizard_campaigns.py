@@ -1,5 +1,6 @@
 """Wizard create-from-options + campaign join/state (necesita la
 content DB real del SRD; se salta si no existe)."""
+import os
 from pathlib import Path
 
 import pytest
@@ -9,7 +10,9 @@ from app.main import app
 
 client = TestClient(app)
 
-CONTENT_DB = Path(__file__).resolve().parents[2] / "data" / "content.sqlite3"
+CONTENT_DB = Path(os.environ.get("DND_CONTENT_DB") or
+                  (Path(__file__).resolve().parents[2] / "data"
+                   / "content.sqlite3"))
 needs_content = pytest.mark.skipif(
     not CONTENT_DB.exists(), reason="content DB no importada")
 

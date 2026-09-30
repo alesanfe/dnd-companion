@@ -17,6 +17,8 @@ export default function DmCombate({ c }) {
           setRollReq, setDmTab, entities } = c
   const [xpMsg, setXpMsg] = useState(null)
   const [creating, setCreating] = useState(false)
+  const [suggestDiff, setSuggestDiff] = useState('medium')
+  const [suggested, setSuggested] = useState(null)
   if (!campaign) return null
 
   /* Primera casilla libre para un token, calculada sobre el data
@@ -106,6 +108,49 @@ export default function DmCombate({ c }) {
           {difficulty.warnings.map((w) => <em key={w} className="error"><br />{w}</em>)}
         </p>
       )}
+      {/* constructor: presupuesto → composición de la content DB */}
+      <div className="row">
+        <select value={suggestDiff}
+                aria-label={t('com.suggest')}
+                onChange={(e) => setSuggestDiff(e.target.value)}>
+          <option value="easy">easy</option>
+          <option value="medium">medium</option>
+          <option value="hard">hard</option>
+          <option value="deadly">deadly</option>
+        </select>
+        <button className="ghost" onClick={async () => {
+          const lv = partyLevels.split(',')
+            .map((x) => +x.trim()).filter(Boolean)
+          try {
+            const r = await api.encounterSuggest({
+              party_levels: lv, difficulty: suggestDiff })
+            setSuggested(r)
+            setCrs(r.monsters.map((m) => m.cr).join(','))
+          } catch (e) { setSuggested({ error: e.message }) }
+        }}>{t('com.suggest')}</button>
+      </div>
+      {suggested?.error && (
+        <p className="error">{suggested.error}</p>)}
+      {suggested?.monsters && (
+        <div>
+          <p className="muted">
+            {tf('com.suggestBudget', {
+              difficulty: suggested.difficulty,
+              n: suggested.budget })}
+            {' '}· {tf('com.adjXp', {
+              n: suggested.adjusted_xp, base: suggested.raw_xp })}
+          </p>
+          <ul style={{ margin: 0 }}>
+            {suggested.monsters.map((m) => (
+              <li key={m.id}>
+                {m.name} <em className="muted">CR {m.cr}</em>
+                {' '}<button className="ghost"
+                  title={t('com.toMap')}
+                  onClick={() => dropMonster(
+                    { id: m.id, name: m.name })}>📍</button>
+              </li>))}
+          </ul>
+        </div>)}
     </section>
 
     {!combat && (

@@ -179,6 +179,87 @@ def test_death_save_stable_not_duplicated():
     assert c.conditions.count("estable") == 1
 
 
+def test_sync_character_preserves_sheet_conditions():
+    """El daño/cura de combate sincroniza solo el estado vital: las
+    condiciones persistentes de la ficha (agotamiento…) sobreviven y
+    'muerto' del tracker se propaga. Antes la lista se copiaba entera
+    y el tracker borraba las condiciones de la hoja."""
+    from app.db.connections import state_db
+    from app.api.operations import OpContext
+    from app.domain.character import Character
+    conn = state_db()
+    ch = Character(name="Pj", conditions=["exhaustion"],
+                   condition_stacks={"exhaustion": 2})
+    conn.execute(
+        "INSERT INTO characters (id, name, version, data, updated_at)"
+        " VALUES (?,?,0,?,?)",
+        ("pj-sync", "Pj", ch.model_dump_json(), "x"))
+    conn.commit()
+    ctx = OpContext(conn)
+    cm = Combat(combatants=[
+        Combatant(id="c", kind="character", name="Pj", initiative=10,
+                  hp_current=10, hp_max=10, ref_id="pj-sync")])
+    # daño masivo: muerte instantánea en el tracker
+    apply_combat_operation(
+        cm, "combatant.damage",
+        {"combatant_id": "c", "amount": 30}, ctx)
+    conn.commit()
+    data = json.loads(conn.execute(
+        "SELECT data FROM characters WHERE id = 'pj-sync'"
+    ).fetchone()["data"])
+    assert data["hp"]["current"] == 0
+    assert "muerto" in data["conditions"]        # propagado
+    assert "exhaustion" in data["conditions"]    # NO borrado
+    assert data["condition_stacks"] == {"exhaustion": 2}
+    # y la cura quita 'muerto' sin tocar el resto
+    apply_combat_operation(
+        cm, "combatant.heal",
+        {"combatant_id": "c", "amount": 5}, ctx)
+    conn.commit()
+    data = json.loads(conn.execute(
+        "SELECT data FROM characters WHERE id = 'pj-sync'"
+    ).fetchone()["data"])
+    assert data["hp"]["current"] == 5
+    assert "muerto" not in data["conditions"]
+    assert data["conditions"] == ["exhaustion"]
+
+
+def test_death_save_roll_nat20_revives_and_clears_dead(monkeypatch):
+    """Un 20 natural en la salvación de combate revive con 1 PG y
+    limpia 'muerto'/'estable' — antes solo reiniciaba los contadores."""
+    import app.engine.combat_ops as co
+
+    class _R:
+        total = 20
+
+    monkeypatch.setattr(co, "roll", lambda _expr: _R())
+    cm = Combat(combatants=[
+        Combatant(id="c", kind="character", name="Pj", initiative=10,
+                  hp_current=0, hp_max=10,
+                  conditions=["muerto"],
+                  death_saves={"success": 0, "fail": 2})])
+    _, evs = apply_combat_operation(
+        cm, "combatant.death_save_roll", {"combatant_id": "c"}, _Ctx())
+    c = cm.combatants[0]
+    assert c.hp_current == 1
+    assert "muerto" not in c.conditions
+    assert evs[0]["payload"]["outcome"] == "recupera 1 PG"
+
+
+def test_death_save_stable_not_duplicated():
+    """3 éxitos marca 'estable' — si ya estaba no se duplica."""
+    cm = Combat(combatants=[
+        Combatant(id="c", kind="character", name="Pj", initiative=10,
+                  hp_current=0, hp_max=10,
+                  conditions=["estable"],
+                  death_saves={"success": 2, "fail": 0})])
+    apply_combat_operation(
+        cm, "combatant.death_save",
+        {"combatant_id": "c", "success": True}, _Ctx())
+    c = cm.combatants[0]
+    assert c.conditions.count("estable") == 1
+
+
 def _atk_ctx(monkeypatch, roll_seq):
     """Ctx con state_db real + tiradas scripted (impacto, daño…)."""
     import app.engine.combat_ops as co

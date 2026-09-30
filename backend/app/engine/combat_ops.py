@@ -407,6 +407,9 @@ def combatant_death_save_roll(combat: Combat, p: dict, ctx):
         # levanta también el estado — como hp.heal y la save de la hoja
         c.conditions = [x for x in c.conditions
                         if x.lower() not in ("muerto", "dead", "estable")]
+        # levanta también el estado — como hp.heal y la save de la hoja
+        c.conditions = [x for x in c.conditions
+                        if x.lower() not in ("muerto", "dead", "estable")]
         outcome = "recupera 1 PG"
     elif r.total == 1:
         c.death_saves["fail"] += 2

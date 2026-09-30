@@ -19,7 +19,6 @@ export default function DmCombate({ c }) {
   const [creating, setCreating] = useState(false)
   const [suggestDiff, setSuggestDiff] = useState('medium')
   const [suggested, setSuggested] = useState(null)
-  const [delegMembers, setDelegMembers] = useState(null)
   if (!campaign) return null
 
   /* Primera casilla libre para un token, calculada sobre el data
@@ -141,20 +140,6 @@ export default function DmCombate({ c }) {
             {' '}· {tf('com.adjXp', {
               n: suggested.adjusted_xp, base: suggested.raw_xp })}
           </p>
-          {/* crear el combate y meter la composición de un tirón —
-              cada op devuelve la versión nueva para encadenar */}
-          <button className="ghost" onClick={async () => {
-            const r = await api.createCombat(
-              combatName || t('com.defaultName'), campaign.id)
-            let v = r.version ?? 1
-            for (const m of suggested.monsters) {
-              const op = await api.applyOp({ id: r.id, version: v },
-                'combatant.add', { content_entity_id: m.id }, 'combat')
-              if (op.queued) break   // offline — el resto luego
-              v = op.version ?? v + 1
-            }
-            refresh(r.id)
-          }}>▶ {t('com.start')}</button>
           <ul style={{ margin: 0 }}>
             {suggested.monsters.map((m) => (
               <li key={m.id}>
@@ -467,31 +452,6 @@ export default function DmCombate({ c }) {
               <button type="submit" className="ghost">
                 {t('com.checkGo')}</button>
             </form>
-            {/* delegar un NPC/monstruo a un jugador: puede mover su
-                token y atacar con él — el guard vive en el servidor
-                (op DM-only); un PJ ya tiene dueño, no se delega */}
-            {sel.kind !== 'character' && (
-              <div className="row" style={{ marginTop: '.35rem' }}>
-                <select value={sel.delegated_to || ''}
-                        aria-label={t('com.delegateAria')}
-                        onFocus={() => {
-                          if (delegMembers === null)
-                            api.listMembers(campaign.id)
-                              .then((r) => setDelegMembers(r.members))
-                              .catch(() => {})
-                        }}
-                        onChange={(e) => cop('combatant.delegate', {
-                          combatant_id: sel.id,
-                          player_uid: e.target.value || null })}>
-                  <option value="">{t('com.delegateNone')}</option>
-                  {(delegMembers || [])
-                    .filter((m) => m.role === 'player'
-                                   || m.role === 'guest')
-                    .map((m) => (
-                      <option key={m.user_id} value={m.user_id}>
-                        {m.user_id.slice(0, 8)} ({m.role})</option>))}
-                </select>
-              </div>)}
           </section>)}
         {/* stat block completo estilo Kobold Plus: características,
             defensas y sentidos junto al tracker, sin abrir el

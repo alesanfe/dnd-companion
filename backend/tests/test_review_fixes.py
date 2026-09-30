@@ -1368,8 +1368,7 @@ def test_packages_install_deps_and_uninstall():
     assert not any(h["id"] == f"pkg:{child_id}:x" for h in hits)
     # solo packs — una fuente de pipeline no se borra por aquí
     assert client.delete("/api/packages/srd:2014").status_code == 404
-    # limpieza: el test escribe en la content DB REAL del usuario —
-    # sin esto cada pytest dejaba un 'pkg:base-*' huérfano
+    # limpieza: sin esto cada pytest dejaba un 'pkg:base-*' huérfano
     assert client.delete(f"/api/packages/{base_id}").status_code == 200
 
 

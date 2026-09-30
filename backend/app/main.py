@@ -120,7 +120,14 @@ def _ws_identity(campaign_id: str, token: str | None,
         name = (info or {}).get("username")
         authed = resolved is not None
     elif user_id:
-        resolved = name = user_id   # el id local ya es el nombre
+        # un ?user_id suelto solo acredita identidad en campañas SIN
+        # dueño (modo local puro). Con owner es spoofable: antes
+        # heredaba el rol real del uid suplantado — incluido owner/DM
+        row = state_db().execute(
+            "SELECT owner_id FROM campaigns WHERE id = ?",
+            (campaign_id,)).fetchone()
+        if not (row and row["owner_id"]):
+            resolved = name = user_id   # el id local ya es el nombre
     role = "local"
     if resolved:
         from .api.auth import member_role

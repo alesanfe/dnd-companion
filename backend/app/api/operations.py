@@ -588,7 +588,7 @@ def _player_combat_op(conn, op: OperationIn,
     if _is_own_char_combatant(
             conn, op.entity_id,
             (op.payload or {}).get("combatant_id"), uid):
-        return
+                    return
     raise HTTPException(403, "solo el DM dirige el combate")
 
 

@@ -246,10 +246,7 @@ export default function MapBoard({ campaign, size = CELL,
   const linkedChar = (tk) => tk.ref_id
     ? chars.find((c) => c.id === tk.ref_id) : null
   const tokOwner = (tk) => tk.player_id
-    || linkedChar(tk)?.player_id
-    // token vinculado a un NPC que el DM le delegó al jugador
-    || (combatants.some((c) => c.id === tk.combatant_id
-          && c.delegated_to === myUid) ? myUid : null)
+    || linkedChar(tk)?.player_id || null
   const canMoveTok = (tk) => !readOnly
     || (myUid != null && tokOwner(tk) === myUid)
   const moveTokRemote = (tk, x, y) => {

@@ -103,8 +103,8 @@ cd frontend && npm install && npm run dev
 - **Delegación**: op `combatant.delegate` (DM-only) fija
   `combatant.delegated_to = user_id`. El delegado mueve el token
   vinculado (`combatant_id`) y ataca con él (`combat.attack`) como
-  si fuera su PJ — el check es `_is_own_char_combatant`, que ahora
-  cubre delegados. No gana ops de dirección (next_turn = 403).
+  si fuera su PJ — el check es `_is_own_char_combatant`, que cubre
+  delegados. No gana ops de dirección (next_turn = 403).
 
 ## Sincronización ficha ↔ combate
 

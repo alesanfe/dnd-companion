@@ -250,10 +250,10 @@ def import_campaign(body: dict,
                  e.get("updated_at", now), e.get("version", 1)))
         for m in body.get("members", []):
             conn.execute(
-                "INSERT OR IGNORE INTO members (id, campaign_id, user_id, "
-                "role, joined_at) VALUES (?,?,?,?,?)",
-                (m["id"], camp["id"], m["user_id"], m["role"],
-                 m.get("joined_at", now)))
+                "INSERT OR IGNORE INTO members (campaign_id, user_id, "
+                "role, character_id, joined_at) VALUES (?,?,?,?,?)",
+                (camp["id"], m["user_id"], m["role"],
+                 m.get("character_id"), m.get("joined_at", now)))
         for s in body.get("sessions", []):
             conn.execute(
                 "INSERT OR IGNORE INTO sessions (id, campaign_id, number, "
@@ -966,7 +966,8 @@ async def patch_session(campaign_id: str, session_id: str,
         raise HTTPException(404, "session not found")
     for r in revealed:
         await _notify_reveal(conn, campaign_id, r["id"], r["name"])
-    return {"id": session_id, "changed": sets,
+    return {"id": session_id,
+            "changed": [s.split(" = ")[0] for s in sets],
             "revealed": [r["id"] for r in revealed]}
 
 

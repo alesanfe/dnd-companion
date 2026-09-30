@@ -523,12 +523,15 @@ def _personal_ownership(conn, op: OperationIn,
 
 def _is_own_char_combatant(conn, combat_id: str, cbt_id: str,
                            uid: str | None) -> bool:
-    """El combatiente es un PJ cuya ficha tiene player_id = uid."""
+    """El combatiente es un PJ cuya ficha tiene player_id = uid — o
+    un NPC/monstruo que el DM le delegó (combatant.delegate)."""
     row = conn.execute("SELECT data FROM combats WHERE id = ?",
                        (combat_id,)).fetchone()
     if not (row and cbt_id and uid):
         return False
     for c in Combat(**json.loads(row["data"])).combatants:
+        if c.id == cbt_id and c.delegated_to and c.delegated_to == uid:
+            return True
         if c.id == cbt_id and c.kind == "character" and c.ref_id:
             ch = conn.execute(
                 "SELECT player_id FROM characters WHERE id = ?",
@@ -544,7 +547,8 @@ def _player_combat_op(conn, op: OperationIn,
     combatiente-PJ (en la mesa la tira el jugador, no el DM) y
     combat.attack con SU combatiente-PJ como atacante — el servidor
     resuelve contra la CA del objetivo sin exponerla. Solo sobre
-    combatientes cuyo personaje tiene su player_id."""
+    combatientes cuyo personaje tiene su player_id o que el DM le
+    delegó."""
     uid = (user or {}).get("user_id")
     if op.operation_type == "combat.attack":
         if _is_own_char_combatant(

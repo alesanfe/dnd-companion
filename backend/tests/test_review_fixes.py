@@ -1261,6 +1261,77 @@ def test_token_move_blocked_by_wall():
     assert _mv(4, 3, owner).status_code == 200
 
 
+def test_delegated_npc_control():
+    """Delegación: el DM cede un NPC a un jugador → puede mover su
+    token; otro jugador no; al revocar vuelve a 403. Delegar sigue
+    siendo op DM-only y el delegado no gana ops de dirección."""
+    owner = _auth_headers(f"dg{uuid.uuid4().hex[:8]}")
+    pr = client.post("/api/auth/register", json={
+        "username": f"dp{uuid.uuid4().hex[:8]}",
+        "password": "pw123456"})
+    player = {"Authorization": f"Bearer {pr.json()['token']}"}
+    puid = pr.json()["user_id"]          # el uid exacto del delegado
+    other = _auth_headers(f"do{uuid.uuid4().hex[:8]}")
+    camp = client.post("/api/campaigns", json={"name": "C"},
+                       headers=owner).json()
+    code = client.get(f"/api/campaigns/{camp['id']}",
+                      headers=owner).json()["invite_code"]
+    for h in (player, other):
+        client.post("/api/campaigns/join",
+                    json={"invite_code": code}, headers=h)
+
+    comb = client.post("/api/combat", json={
+        "name": "X", "campaign_id": camp["id"]}, headers=owner).json()
+
+    def _cop(otype, payload, h):
+        v = client.get(f"/api/combat/{comb['id']}",
+                       headers=h).json()["version"]
+        return client.post("/api/operations", json={
+            "operation_id": uuid.uuid4().hex, "entity_id": comb["id"],
+            "entity_version": v, "client_id": "t", "user_id": "x",
+            "entity_kind": "combat", "operation_type": otype,
+            "payload": payload}, headers=h)
+
+    _cop("combatant.add", {"name": "Lobo", "kind": "npc",
+                           "hp_max": 11, "initiative": 5}, owner)
+    cdata = client.get(f"/api/combat/{comb['id']}",
+                       headers=owner).json()["combat"]
+    npc = next(c for c in cdata["combatants"] if c["name"] == "Lobo")
+
+    ent = client.post(f"/api/campaigns/{camp['id']}/entities", json={
+        "kind": "map", "name": "M", "visibility": "public",
+        "data": {"cols": 8, "rows": 6, "tokens": [
+            {"id": "lobo", "name": "Lobo", "x": 0, "y": 0,
+             "combatant_id": npc["id"]}]}}, headers=owner).json()
+
+    def _mv(h):
+        return client.post(
+            f"/api/campaigns/{camp['id']}/entities/{ent['id']}/"
+            "token-move",
+            json={"token_id": "lobo", "x": 2, "y": 0}, headers=h)
+
+    # sin delegar: el jugador no mueve el token del NPC
+    assert _mv(player).status_code == 403
+    # un jugador no puede delegarse a sí mismo (op DM-only)
+    assert _cop("combatant.delegate",
+                {"combatant_id": npc["id"], "player_uid": puid},
+                player).status_code == 403
+    # el DM delega → el jugador mueve el token del NPC
+    assert _cop("combatant.delegate",
+                {"combatant_id": npc["id"], "player_uid": puid},
+                owner).status_code == 200
+    assert _mv(player).status_code == 200
+    # otro jugador sigue fuera
+    assert _mv(other).status_code == 403
+    # pero el delegado no dirige el combate (next_turn sigue siendo DM)
+    assert _cop("combat.next_turn", {}, player).status_code == 403
+    # revocar → vuelve a 403
+    assert _cop("combatant.delegate",
+                {"combatant_id": npc["id"], "player_uid": None},
+                owner).status_code == 200
+    assert _mv(player).status_code == 403
+
+
 def test_packages_install_deps_and_uninstall():
     """Packs: dependencias obligatorias, conteo por tipo y
     desinstalación limpia (fuente + entidades + FTS)."""

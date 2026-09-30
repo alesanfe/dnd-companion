@@ -702,13 +702,25 @@ async def token_move(campaign_id: str, entity_id: str,
         """Ownership + muros sobre UNA copia del mapa — se re-ejecuta
         sobre la copia fresca si el UPDATE pierde la carrera (el DM
         pudo desvincular el token o murar el borde entretanto)."""
-        # solo el token cuya ficha pertenece al jugador
+        # solo el token cuya ficha pertenece al jugador — o un
+        # combatiente que el DM le delegó (combatant.delegate)
         owner_uid = tk_cur.get("player_id")
         if owner_uid is None and tk_cur.get("ref_id"):
             prow = conn.execute(
                 "SELECT player_id FROM characters WHERE id = ?",
                 (tk_cur["ref_id"],)).fetchone()
             owner_uid = prow["player_id"] if prow else None
+        if owner_uid is None and tk_cur.get("combatant_id") and uid:
+            for crow in conn.execute(
+                    "SELECT data FROM combats WHERE campaign_id = ?",
+                    (campaign_id,)).fetchall():
+                cd = json.loads(crow["data"])
+                if cd.get("status") != "active":
+                    continue
+                for cb in cd.get("combatants", []):
+                    if cb.get("id") == tk_cur["combatant_id"] \
+                            and cb.get("delegated_to") == uid:
+                        owner_uid = uid
         if uid is None or owner_uid != uid:
             raise HTTPException(403, "ese token no es tuyo")
         # muros: una casilla adyacente ortogonal no se cruza si el

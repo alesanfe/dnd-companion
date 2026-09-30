@@ -23,6 +23,9 @@ class Combatant(BaseModel):
         default_factory=lambda: {"success": 0, "fail": 0})
     condition_durations: dict[str, int] = Field(default_factory=dict)
     # {'stunned': 2} → expira tras 2 rondas
+    # user_id del jugador al que el DM delegó este NPC/monstruo —
+    # puede mover su token y atacar con él (como si fuera su PJ)
+    delegated_to: str | None = None
 
 
 class Combat(BaseModel):

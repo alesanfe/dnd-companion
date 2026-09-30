@@ -98,7 +98,13 @@ cd frontend && npm install && npm run dev
   op aplicada; `auth_tokens`/`auth_throttle` tienen GC perezosa.
 - Constructor de encuentros: `POST /api/encounters/suggest`
   (presupuesto ajustado → composición greedy con `seed` opcional);
-  UI en pestaña Combate del DM (📍 suelta al mapa).
+  UI en pestaña Combate del DM (📍 suelta al mapa, ▶ crea el
+  combate con la composición).
+- **Delegación**: op `combatant.delegate` (DM-only) fija
+  `combatant.delegated_to = user_id`. El delegado mueve el token
+  vinculado (`combatant_id`) y ataca con él (`combat.attack`) como
+  si fuera su PJ — el check es `_is_own_char_combatant`, que ahora
+  cubre delegados. No gana ops de dirección (next_turn = 403).
 
 ## Sincronización ficha ↔ combate
 

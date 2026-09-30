@@ -242,6 +242,21 @@ def combatant_remove(combat: Combat, p: dict, ctx):
             "payload": {"combatant": c.model_dump(), "index": idx}}, []
 
 
+@op("combatant.delegate")
+def combatant_delegate(combat: Combat, p: dict, ctx):
+    """El DM cede un NPC/monstruo a un jugador (`player_uid`, None lo
+    retira). El delegado puede mover su token y atacar con él como
+    si fuera su PJ — guard de auth en api/operations."""
+    c = _find(combat, p["combatant_id"])
+    prev = c.delegated_to
+    c.delegated_to = p.get("player_uid")
+    return {"operation_type": "combatant.delegate",
+            "payload": {"combatant_id": c.id, "player_uid": prev}}, [
+            {"type": "combatant.delegated",
+             "payload": {"combatant": c.name,
+                         "player_uid": c.delegated_to}}]
+
+
 @op("combatant.add_raw")
 def combatant_add_raw(combat: Combat, p: dict, ctx):
     """Undo helper: reinserta un combatiente con su id original."""

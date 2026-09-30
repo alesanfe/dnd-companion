@@ -54,6 +54,7 @@ class EventType(str, Enum):
     INVENTORY_ITEM_CHARGED = "inventory.item.charged"
     CHARACTER_STATE_RESTORED = "character.state.restored"
     COMBAT_STATE_RESTORED = "combat.state.restored"
+    COMBATANT_DELEGATED = "combatant.delegated"      # DM cede un NPC
     # PATCH/DELETE de ficha (nombre, campaña, player_id): sin él los
     # otros sockets (misma ficha en otro dispositivo, lista del DM)
     # no se enteraban del cambio

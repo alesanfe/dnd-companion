@@ -15,6 +15,7 @@ const TOUR_KEYS = ['tour.identity', 'tour.focus', 'tour.vitalbar',
     peticiones del DM y resync cuando un evento toca esta ficha. */
 export function useCampaignSocket(char, id, notify, load, sinks) {
   const { setChat, setRollLog, setRollRequest, setTyping } = sinks
+  const { tf } = useT()
   const wsRef = useRef(null)
   useEffect(() => {
     if (!char?.campaign_id) return undefined
@@ -55,6 +56,14 @@ export function useCampaignSocket(char, id, notify, load, sinks) {
       // (el DM daña/cura al PJ desde el tablero: payload.character_id)
       if (ev.aggregate_id !== id && ev.payload?.character_id !== id)
         return
+      /* concentración: el daño vino por el tracker (combatant.damage)
+         — el evento lleva la CD; sin este aviso el jugador no
+         sabía que debía tirar CON */
+      if (ev.payload?.concentration_check) {
+        sinks.setNotice?.(tf('sheet.concCheck', {
+          spell: ev.payload.spell,
+          dc: ev.payload.concentration_dc }))
+      }
       if (ev.type === 'dice.roll.requested') {
         setRollRequest(ev.payload)
         if (notify && 'Notification' in window)

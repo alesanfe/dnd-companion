@@ -11,7 +11,7 @@ from ...domain.effects import Trigger
 from ...rules import rules
 from ..dice import roll
 from ._base import (
-    COMBAT_HANDLERS, op, _apply_dmg, _char_ref, _char_trigger, _char_typed_amount, _find, _hp_inverse, _spend_heroic, _sync_character, _typed_amount, op
+    COMBAT_HANDLERS, op, _apply_dmg, _char_ref, _char_trigger, _char_typed_amount, _find, _hp_inverse, _load_char, _spend_heroic, _sync_character, _typed_amount, op
 )
 
 @op("combatant.damage")
@@ -31,6 +31,15 @@ def combatant_damage(combat: Combat, p: dict, ctx):
     else:
         amount, note = _typed_amount(c, max(0, int(p["amount"])), dtype)
     payload = _apply_dmg(c, amount, note)
+    # concentración del PJ: la ficha ve la CD en el evento (la CON
+    # save la tira el jugador — mismo contrato que character.hp.damage)
+    ch = _load_char(ctx, c)
+    if ch and ch.concentrating_on:
+        floor = rules()["combat"]["concentration_dc_floor"]
+        payload["concentration_check"] = True
+        payload["concentration_dc"] = max(floor,
+                                          payload["amount"] // 2)
+        payload["spell"] = ch.concentrating_on
     _sync_character(c, ctx)
     _char_trigger(ctx, c, Trigger.AFTER_DAMAGE,
                   {"damage": {"amount": payload["amount"],

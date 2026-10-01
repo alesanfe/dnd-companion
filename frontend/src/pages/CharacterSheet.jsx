@@ -211,7 +211,8 @@ export default function CharacterSheet() {
   // y peticiones del DM (y dispara resync cuando algo toca la ficha)
   const wsRef = useCampaignSocket(char, id, notify, load,
                                   { setChat, setRollLog,
-                                    setRollRequest, setTyping })
+                                    setRollRequest, setTyping,
+                                    setNotice })
 
   // el "está escribiendo" caduca a los 3s — no hay 'stop typing'
   useEffect(() => {

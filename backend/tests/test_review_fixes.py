@@ -2691,6 +2691,32 @@ def test_shove_grapple_2024_and_2014():
     assert "atk_roll" in ev and "tgt_roll" in ev   # contestada
 
 
+def test_combatant_damage_emits_concentration_dc():
+    """El DM daña al PJ desde el tracker: la ficha debe recibir la
+    CD de concentración en el evento (antes se perdía — solo la
+    ruta character.hp.damage la emitía)."""
+    cop, comb, atk, tgt, cid = _mastery_setup()
+    # el PJ se concentra en un conjuro
+    v = _version(cid)
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    d["concentrating_on"] = "Bendición"
+    r = _op(cid, v, "character.set", {"data": d})
+    if r.status_code != 200:
+        # si character.set no existe, patch directo para el test
+        import app.db.connections as dbc
+        conn = dbc.state_db()
+        conn.execute("UPDATE characters SET data = ? WHERE id = ?",
+                     (json.dumps(d), cid))
+        conn.commit()
+    r = cop("combatant.damage", {"combatant_id": atk, "amount": 12})
+    assert r.status_code == 200, r.text
+    p = next(e for e in r.json()["events"]
+             if e["type"] == "character.hp.changed")["payload"]
+    assert p["concentration_check"] is True
+    assert p["concentration_dc"] == max(10, 12 // 2)
+    assert p["spell"] == "Bendición"
+
+
 # --- Fase F: WebSocket — identidad, roles, visibilidad ----------------
 
 def _reg():

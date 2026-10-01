@@ -135,8 +135,10 @@ cd frontend && npm install && npm run dev
 - **Reglas en ops de jugador**: en `combat.attack` el payload del
   jugador NO declara `damage_type` ni `mode` (se eliminan en
   `_player_combat_op` — declararlos era vuln/resist/adv a voluntad).
-- `inventory.transfer` es **no-reversible** (sin `inverse`): el undo
-  de una sola mitad duplicaba objetos — pendiente undo compuesto.
+- `inventory.transfer` guarda dos ops (`<id>:out`/`<id>:in`) con
+  inversa por ficha; `operations.undo` detecta el par y revierte
+  AMBAS mitades en una sola transacción (`_undo_transfer`) — si una
+  mitad falla, el undo entero aborta (nunca un transfer a medias).
 - Auth: PBKDF2-SHA256 600k iteraciones con migración perezosa de los
   hashes a 100k al primer login; `secrets.compare_digest`; throttle
   por usuario normalizado + por IP; `DND_ALLOW_REGISTRATION=0`

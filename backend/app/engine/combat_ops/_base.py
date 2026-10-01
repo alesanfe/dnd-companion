@@ -116,6 +116,26 @@ def _sync_character(c: Combatant, ctx) -> None:
                          " combate — reintenta")
 
 
+def _load_char(ctx, c: Combatant):
+    """Ficha vinculada al combatiente-PJ, o None (monstruos/tokens
+    sueltos). Punto único de lectura — _spend_heroic, concentración,
+    shove_grapple la usan."""
+    if c.kind != "character" or not c.ref_id:
+        return None
+    try:
+        conn = ctx.state_db()
+    except AttributeError:
+        return None
+    if conn is None:
+        return None
+    row = conn.execute("SELECT data FROM characters WHERE id = ?",
+                       (c.ref_id,)).fetchone()
+    if row is None:
+        return None
+    from ...domain.character import Character
+    return Character(**json.loads(row["data"]))
+
+
 def _spend_heroic(ctx, c: Combatant) -> bool:
     """Gasta la inspiración heroica de la ficha vinculada (2024).
     True si se gastó; False si el combatiente no es ficha o no la

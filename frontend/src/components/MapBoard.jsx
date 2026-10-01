@@ -474,9 +474,12 @@ export default function MapBoard({ campaign, size = CELL,
       setZoneLog(tf('map.atkResult', {
         atk: atk.name, tgt: target.name, opt: opt.label,
         hit: ev.payload?.total ?? '?', ac: '·',
-        res: ev.payload?.hits
+        res: (ev.payload?.hits
           ? `−${ev.payload?.damage ?? '?'} PG`
-          : t('map.atkMiss') }))
+          : t('map.atkMiss')) +
+          (ev.payload?.mastery ? ` ⚒${ev.payload.mastery}` : '') +
+          (ev.payload?.topple_save?.prone ? ' → prone' : '') +
+          (ev.payload?.push_ft ? ` → ${ev.payload.push_ft}ft` : '')}))
       return
     }
     const ac = await _targetAc(target)

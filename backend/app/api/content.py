@@ -253,7 +253,8 @@ def command_search(q: str = Query(..., min_length=2),
             terms.append(tok)
 
     sql = ("SELECT e.id, e.entity_type, e.name, e.ruleset, e.data, "
-           "e.source_id FROM content_entities e WHERE 1=1")
+           "e.source_id, e.is_redistributable "
+           "FROM content_entities e WHERE 1=1")
     params: list = []
     if entity_type:
         sql += " AND e.entity_type = ?"
@@ -292,6 +293,7 @@ def command_search(q: str = Query(..., min_length=2),
             "id": row["id"], "entity_type": row["entity_type"],
             "name": row["name"], "ruleset": row["ruleset"],
             "source_id": row["source_id"],
+            "is_redistributable": bool(row["is_redistributable"]),
             "summary": _summarize(data),
         })
         if len(results) >= limit:

@@ -4,7 +4,7 @@ import MapBoard from '../MapBoard.jsx'
     en vez de ocupar siempre la pantalla de la mesa. */
 export default function DmMapa({ c }) {
   const { dmTab, campaign, entities, partyChars, ping,
-          ordered, activeIdx, combat } = c
+          ordered, activeIdx, combat, playerView } = c
   if (!campaign || dmTab !== 'mapa') return null
   // entities = todas las entidades de campaña → pins enlazables;
   // partyChars → tokens vinculados a ficha (PG en vivo + nombre)
@@ -18,6 +18,7 @@ export default function DmMapa({ c }) {
   const active = ordered?.[activeIdx]
   return <MapBoard campaign={campaign} worldEntities={entities || []}
                    chars={partyChars || []} ping={ping}
+                   readOnly={playerView}
                    activeRef={active?.ref_id} activeName={active?.name}
                    turnOrder={turnOrder}
                    combatants={combat?.combat?.combatants || []}

@@ -24,6 +24,32 @@ de mesa.
 <p><sub>Ficha · Magia · Tracker de iniciativa · Mapa VTT —
 interfaz en español (la app también va en inglés)</sub></p>
 
+<details>
+<summary>Más capturas — lista de fichas, acciones, inventario,
+paleta ⌘K, compendio, campaña, DM, móvil</summary>
+
+| Lista de fichas | Acciones + dados |
+|---|---|
+| ![Lista de personajes con HP, nivel, ruleset y favoritos](docs/assets/character-list.png) | ![Pestaña Acciones: ataques del inventario, dados libres y log](docs/assets/character-actions.png) |
+
+| Inventario | Paleta de comandos |
+|---|---|
+| ![Inventario con mochila, equipar, atacar y monedas](docs/assets/character-inventory.png) | ![Paleta ⌘K con resultados del compendio sobre la ficha](docs/assets/command-palette.png) |
+
+| Compendio | Entidad (spell) |
+|---|---|
+| ![Buscador de reglas con resultados multi-edición y fuente](docs/assets/compendium.png) | ![Detalle de conjuro SRD con chips de nivel/escuela/alcance y diff entre ediciones](docs/assets/content-entity.png) |
+
+| Mesa DM — Sesión | Mapa — vista jugador |
+|---|---|
+| ![Tablero del DM en pestaña Sesión: campaña, sesiones, chat y petición de tirada](docs/assets/dm-board.png) | ![El mismo mapa en Vista jugador: la niebla se vuelve opaca](docs/assets/dm-map-player.png) |
+
+| Móvil (PWA) | Asistente de creación |
+|---|---|
+| ![Ficha en móvil 390px: pestañas desplazables y nav inferior](docs/assets/sheet-mobile.png) | ![Wizard de personaje: concepto, clase, origen, stats, revisión](docs/assets/wizard.png) |
+
+</details>
+
 ## Estado
 
 > [!IMPORTANT]

@@ -267,10 +267,12 @@ export const api = {
         `?item_name=${encodeURIComponent(itemName)}&mode=${mode}` +
         (targetAc ? `&target_ac=${targetAc}` : ''), { method: 'POST' }),
   characterRoll: (characterId, expression, rollType = 'check',
-                  useInspiration = false, secret = false) =>
+                  useInspiration = false, secret = false,
+                  heroic = false) =>
     req(`/api/operations/character/${characterId}/roll` +
         `?expression=${encodeURIComponent(expression)}&roll_type=${rollType}` +
-        `&use_inspiration=${useInspiration}&secret=${secret}`,
+        `&use_inspiration=${useInspiration}&secret=${secret}` +
+        `&heroic_reroll=${heroic}`,
         { method: 'POST' }),
   roll: (expression) =>
     req('/api/dice/roll', {

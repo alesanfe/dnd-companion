@@ -67,11 +67,15 @@ class OpContext:
 async def character_roll(character_id: str, expression: str = "1d20",
                          roll_type: str = "check",
                          use_inspiration: bool = False,
+                         heroic_reroll: bool = False,
                          secret: bool = False,
                          user: dict | None = Depends(optional_user)):
     """Tirada a través del motor de efectos: ventaja/desventaja y mods
     declarativos (efectos pasivos o before_roll) + reglas de condición.
-    roll_type: attack|check|save|damage|save:dex|skill:x."""
+    roll_type: attack|check|save|damage|save:dex|skill:x.
+    heroic_reroll (SÓLO 2024): gasta la inspiración heróica — se repite
+    el peor dado retenido y el total usa el resultado nuevo (SRD 5.2:
+    no es ventaja; la repetición es obligatoria una vez gastada)."""
     conn = state_db()
     row = conn.execute(
         "SELECT data, campaign_id FROM characters WHERE id = ?",
@@ -89,6 +93,17 @@ async def character_roll(character_id: str, expression: str = "1d20",
     applied: list[str] = []
     expr, fail = _augment_expr(char, expr, roll_type,
                                use_inspiration, applied)
+    if heroic_reroll:
+        ruleset = getattr(char.ruleset, "value", char.ruleset)
+        if ruleset != "dnd5e-2024":
+            raise HTTPException(
+                400, "la inspiración heroica solo existe en reglas 2024"
+                     " (en 2014 es ventaja antes de tirar)")
+        if not char.inspiration:
+            raise HTTPException(400, "sin inspiración heroica")
+        if use_inspiration:
+            raise HTTPException(400, "inspiración: o ventaja (2014) "
+                                     "o reroll heroico (2024), no ambas")
     if fail:
         return {"expression": expr, "rolls": [], "kept": [], "total": 0,
                 "auto_fail": True, "effects_applied": applied}
@@ -99,6 +114,21 @@ async def character_roll(character_id: str, expression: str = "1d20",
     result = {"expression": r.expression, "rolls": r.rolls,
               "kept": r.kept, "total": r.total, "auto_fail": False,
               "effects_applied": applied}
+    if heroic_reroll and r.kept:
+        # repite el peor dado retenido con el mismo número de caras —
+        # en 2024 hay que quedarse el resultado nuevo aunque sea peor
+        sides_m = re.search(r"d(\d+)", r.expression)
+        sides = int(sides_m.group(1)) if sides_m else 20
+        worst = min(r.kept)
+        fresh = dice_roll(f"1d{sides}").kept[0]
+        # solo se sustituye UNA aparición del peor dado
+        kept = list(r.kept)
+        kept[kept.index(worst)] = fresh
+        result["kept"] = kept
+        result["total"] = r.total - worst + fresh
+        result["heroic_reroll"] = {"replaced": worst, "new": fresh}
+        result["effects_applied"] = applied + [
+            f"inspiración heroica: {worst} → {fresh} (2024)"]
     # si el PJ está en campaña, la tirada se anuncia a la sala WS
     if row["campaign_id"]:
         await _broadcast_roll(conn, row["campaign_id"], character_id,

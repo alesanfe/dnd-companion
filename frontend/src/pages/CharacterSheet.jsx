@@ -271,15 +271,22 @@ export default function CharacterSheet() {
     e.preventDefault()
     // tirada a través del motor de efectos: aplica ventaja/desventaja y
     // mods declarativos activos sobre el personaje
-    // inspiración: se gasta en la PRÓXIMA tirada de d20 (SRD) —
-    // antes doRoll nunca la usaba ni la consumía
-    const useInsp = !!d.inspiration && rollType !== 'damage'
+    // inspiración: 2014 = ventaja en la próxima tirada; 2024 =
+    // inspiración heroica (reroll post-hoc, el dado nuevo manda)
+    const is2024 = char.ruleset === 'dnd5e-2024' ||
+                   d.ruleset === 'dnd5e-2024'
+    const useInsp = !!d.inspiration && !is2024 && rollType !== 'damage'
+    const heroic = !!d.inspiration && is2024 && rollType !== 'damage'
     try {
-      const r = await api.characterRoll(id, expr, rollType, useInsp)
+      const r = await api.characterRoll(id, expr, rollType, useInsp,
+                                        false, heroic)
       const fx = (r.effects_applied || []).length
         ? ` [${r.effects_applied.join(', ')}]` : ''
-      setRollLog((l) => [`${r.expression} → ${r.kept.join('+')} = ${r.total}${fx}`, ...l].slice(0, 10))
-      if (useInsp)
+      const rr = r.heroic_reroll
+        ? ` ${t('sheet.heroicTag')}${r.heroic_reroll.replaced}→${r.heroic_reroll.new}`
+        : ''
+      setRollLog((l) => [`${r.expression} → ${r.kept.join('+')} = ${r.total}${fx}${rr}`, ...l].slice(0, 10))
+      if (useInsp || heroic)
         await op('character.inspiration.set', { value: false })
     } catch (e) { setErr(e.message) }
   }

@@ -2397,6 +2397,44 @@ def test_exhaustion_level_6_kills():
         assert "muerto" in c.conditions
 
 
+def test_heroic_reroll_2024_replaces_worst_kept():
+    """Inspiración heroica (2024): repite el peor dado retenido y el
+    total usa el resultado nuevo — no es ventaja previa como en 2014."""
+    cid = client.post("/api/characters",
+                      json={"name": "H", "ruleset": "dnd5e-2024"}
+                      ).json()["id"]
+    r = _op(cid, _version(cid), "character.inspiration.set",
+            {"value": True})
+    assert r.status_code == 200
+    r = client.post(f"/api/operations/character/{cid}/roll"
+                    "?expression=1d20&heroic_reroll=true")
+    assert r.status_code == 200
+    j = r.json()
+    assert j["heroic_reroll"]["new"] == j["kept"][0]
+    assert 1 <= j["heroic_reroll"]["new"] <= 20
+
+
+def test_heroic_reroll_2014_rejected():
+    """En 2014 la inspiración es ventaja ANTES de tirar — el reroll
+    heroico no existe: heroic_reroll debe dar 400."""
+    cid = _mkchar()
+    _op(cid, _version(cid), "character.inspiration.set",
+        {"value": True})
+    r = client.post(f"/api/operations/character/{cid}/roll"
+                    "?expression=1d20&heroic_reroll=true")
+    assert r.status_code == 400
+
+
+def test_heroic_reroll_requires_inspiration():
+    """2024 sin inspiración → 400 (no regala el reroll)."""
+    cid = client.post("/api/characters",
+                      json={"name": "H2", "ruleset": "dnd5e-2024"}
+                      ).json()["id"]
+    r = client.post(f"/api/operations/character/{cid}/roll"
+                    "?expression=1d20&heroic_reroll=true")
+    assert r.status_code == 400
+
+
 # --- Fase F: WebSocket — identidad, roles, visibilidad ----------------
 
 def _reg():

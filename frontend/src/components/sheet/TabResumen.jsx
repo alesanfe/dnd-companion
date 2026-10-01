@@ -31,8 +31,15 @@ export default function TabResumen({ c }) {
         ? <span className="chip">✦ {t('sheet.inspiration')}
             <button aria-label={t('sheet.inspSpendAria')} onClick={async () => {
               try {
-                const r = await api.characterRoll(id, expr, rollType, true)
-                setRollLog((l) => [`${r.expression} → ${r.kept.join('+')} = ${r.total} [${t('sheet.inspiration')}]`, ...l].slice(0, 10))
+                // 2024 = reroll heroico post-tirada; 2014 = ventaja
+                const heroic = (c.char.ruleset === 'dnd5e-2024' ||
+                                c.d.ruleset === 'dnd5e-2024')
+                const r = await api.characterRoll(
+                  id, expr, rollType, !heroic, false, heroic)
+                const tag = heroic
+                  ? ` [${t('sheet.heroicTag')}${r.heroic_reroll?.replaced}→${r.heroic_reroll?.new}]`
+                  : ` [${t('sheet.inspiration')}]`
+                setRollLog((l) => [`${r.expression} → ${r.kept.join('+')} = ${r.total}${tag}`, ...l].slice(0, 10))
                 await op('character.inspiration.set', { value: false })
               } catch (e) { setNotice(e.message) }
             }}>{t('common.use').toLowerCase()}</button>

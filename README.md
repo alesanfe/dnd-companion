@@ -1,141 +1,198 @@
 # D&D Companion
 
-Plataforma **offline-first** para hoja de personaje, automatización transparente de
-reglas y dirección de campañas de D&D, con soporte paralelo para reglas 2014
-(`dnd5e-2014`) y revisadas (`dnd5e-2024`), contenido con procedencia verificable
-y herramientas colaborativas de mesa.
+Plataforma **offline-first** para hoja de personaje, automatización
+transparente de reglas y dirección de campañas de D&D, con soporte
+paralelo para reglas 2014 (`dnd5e-2014`) y revisadas (`dnd5e-2024`),
+contenido con procedencia verificable y herramientas colaborativas
+de mesa.
 
-## Estructura
+[Arquitectura](docs/ARCHITECTURE.md) ·
+[Guía para agentes](AGENTS.md)
 
-```
-dnd-companion/
-├── backend/         # FastAPI — API REST + WebSocket, motor de efectos
-├── frontend/        # React + Vite PWA — hoja de personaje, mesa del DM
-├── data-pipeline/   # Importers: fuentes JSON -> content DB (SQLite+FTS5)
-├── docs/            # Arquitectura y decisiones de diseño
-└── data/            # Bases de datos generadas (gitignored)
-```
+## Estado
 
-## Principios de diseño
+> [!IMPORTANT]
+> Desarrollo activo, pre-1.0: la API y el formato de las operaciones
+> pueden cambiar entre commits. Suite actual: 299 tests de backend
+> + 18 de frontend, en verde.
 
-1. **Datos de reglas separados del estado de partida.** El contenido (hechizos,
-   monstruos, clases) vive en una content-DB de solo lectura; el estado
-   (personajes, campañas, combates) en otra.
-2. **Motor declarativo de efectos.** Nada de `if clase == "barbarian"` en el
-   código: condiciones, rasgos, dotes y objetos se modelan como `Effect`
-   con triggers y operaciones declarativas. Ver `backend/app/engine/`.
-3. **Procedencia verificable.** Cada pieza de contenido registra fuente,
-   licencia y si es redistribuible. Solo se distribuye contenido CC-BY-4.0
-   (SRD). Las importaciones privadas las gestiona el usuario y quedan aisladas.
-4. **Sincronización por operaciones.** Cada cambio es una operación con id,
-   versión de entidad e idempotencia — reversible y auditable.
-5. **Offline-first.** La ficha funciona sin conexión (IndexedDB) y sincroniza
-   al reconectar.
+## Qué es
+
+D&D Companion resuelve tres problemas de la mesa digital:
+
+- **La ficha y el combate están sincronizados de verdad** — daño,
+  curación, salvaciones de muerte y condiciones fluyen en ambos
+  sentidos entre la hoja del jugador y el tracker del DM dentro de
+  la misma transacción.
+- **Las reglas no están quemadas en código** — condiciones, rasgos,
+  dotes y objetos son `Effect` declarativos con triggers; el motor
+  explica qué aplicó y por qué. Las diferencias 2014/2024
+  (agotamiento, inspiración heroica, weapon mastery, sorpresa,
+  unarmed strike) se resuelven por `ruleset`.
+- **Todo el contenido tiene procedencia** — cada entidad registra
+  fuente, licencia y si es redistribuible; solo el SRD CC-BY-4.0 se
+  distribuye con el proyecto.
 
 ## Funcionalidad actual
 
-**Ficha de personaje** — HP/temp, dados de golpe, descansos, espacios de
-conjuro, recursos, condiciones, inventario, monedas (pp/gp/ep/sp/cp con
-conversión), XP, inspiración, concentración, sintonía (máx 3), diario,
+**Ficha de personaje** — HP/temp, dados de golpe, descansos,
+espacios de conjuro, recursos, condiciones, inventario, monedas con
+conversión, XP, inspiración, concentración, sintonía, diario,
 export/import JSON, subida de nivel multiclase.
 
-**Automatización de reglas** — motor de efectos declarativo (triggers +
-operaciones, explicables), tiradas con ventaja/desventaja por condiciones y
-efectos, mods automáticos por `check:X`/`save:X`/`skill:X`, ataque
-arma-completo (impacto+daño), lanzamiento de conjuros con validación de
-nivel y concentración, stats derivadas (CA por armadura equipada, iniciativa,
-percepción pasiva, CD/ataque de conjuro, XP para próximo nivel).
+**Reglas 2024 efectivas en el motor** — agotamiento −2×nivel a d20
+(+ velocidad y muerte a 6), inspiración heroica como reroll
+post-tirada (incl. salvaciones de muerte), weapon mastery con las
+9 propiedades del SRD 5.2, sorpresa = desventaja en iniciativa,
+unarmed strike como salvación vs CD. 2014 conserva su mecánica.
 
-**Combate** — iniciativa (manual o tirada por servidor), HP sincronizado
-con la ficha, condiciones, salvaciones de muerte (pifia/crítico SRD),
-añadir grupo/monstruos del bestiario, escenas → combate con un clic.
+**Combate** — iniciativa (manual o tirada por servidor), HP
+sincronizado con la ficha, condiciones con duración en rondas,
+salvaciones de muerte (pifia/crítico), ataque token→token con CA
+resuelta en el servidor, empujón/agarrón, daño de zona con
+salvación por token, escenas → combate con un clic.
 
-**Campaña** — entidades con visibilidad por rol (public/dm/known_to),
-revelación selectiva, relaciones, cronología, sesiones con escenas
-ordenadas, tiendas con stock (compra atómica + refund al deshacer),
-miembros por invitación, feed de eventos, export de backup, tiradas
-de jugadores retransmitidas por WS.
+**Campaña** — entidades con visibilidad por rol (public/dm/
+known_to), revelación selectiva, relaciones, cronología, sesiones
+con escenas ordenadas, tiendas con stock (compra atómica + refund
+al deshacer), miembros por invitación, feed de eventos, tiradas
+retransmitidas por WebSocket, chat de voz WebRTC.
 
-**Contenido** — SRD 2014 + 2024 (species/subspecies/poisons/weapon-mastery),
-buscador FTS con comandos (`level:3 cr:1..5 ruleset:2024`), comparador de
-ediciones, homebrew aislado, paquetes declarativos (manifest sin código
-ejecutable), asistente de reglas con citas exactas.
+**Contenido** — SRD 2014 + 2024, buscador FTS con comandos
+(`level:3 cr:1..5 ruleset:2024`), comparador de ediciones, homebrew
+aislado, paquetes declarativos, asistente de reglas con citas.
 
-**Auth** — cuentas locales + tokens Bearer, enforcement de visibilidad por
-rol (owner/co_dm/player), modo anónimo local preservado.
+**Offline-first** — la ficha funciona sin conexión (IndexedDB),
+las operaciones se encolan y se reenvían al reconectar; el badge
+muestra lo pendiente.
 
-**Accesibilidad** — temas oscuro/claro/sepia/alto contraste, escala de
-texto, reducción de movimiento, modo mesa, indicador online/cola offline,
-objetivos táctiles ≥44px, PWA instalable.
+**Auth y privacidad** — cuentas locales + Bearer, roles
+owner/co_dm/player/spectator, visibilidad `dm` filtrada en el
+servidor, fichas personales con `player_id`.
 
-## Quickstart
+**Accesibilidad** — temas oscuro/claro/sepia/alto contraste,
+escala de texto, reducción de movimiento, objetivos táctiles ≥44px,
+PWA instalable, i18n es/en.
+
+## Inicio rápido
+
+### Requisitos
+
+- Python 3.11+
+- Node.js 20+
+- Git
+- Docker (solo para el despliegue empaquetado)
+
+### Opción A — Docker Compose (recomendada)
 
 ```bash
-# Content DB — fuentes disponibles:
+git clone https://github.com/alesanfe/dnd-companion.git
+cd dnd-companion
+docker compose up --build
+```
+
+Abre http://localhost:5173 — el front (nginx) sirve la PWA y
+proxifica `/api` y `/ws` al backend. Verificación:
+`curl http://localhost:5173/api/health` debe devolver
+`{"status": "ok"}`.
+
+### Opción B — desarrollo
+
+```bash
+# Contenido (content DB)
 cd data-pipeline
 pip install -e .
-
-# SRD oficial 5e-bits (CC-BY-4.0, redistribuible)
 python -m pipeline.cli import-srd --edition 2014
 python -m pipeline.cli import-srd --edition 2024
 
-# Open5e API v1: documentos OGL/CC — Tome of Beasts 1-3 (+2023),
-# Creature Codex, Deep Magic, Vault of Magic, Menagerie, Black Flag,
-# Tal'Dorei, Tome of Heroes, A5E… (~5.600 entidades)
-python -m pipeline.cli import-open5e --document tob   # o sin --document: todo
-
-# Open5e API v2: schema relacional más rico — srd-2024 (SRD 5.2
-# completo: 331 monstruos, 339 conjuros, 2.319 objetos mágicos),
-# Adventurer's Guide, Warlock Zine, Spells That Don't Suck…
-python -m pipeline.cli import-open5e --api v2 --document srd-2024
-
-# Foundry dnd5e packs (SRD 5.1/5.2 modelado para VTT, CC-BY-4.0)
-#   git clone https://github.com/foundryvtt/dnd5e
-python -m pipeline.cli import-foundry --path dnd5e/packs/_source
-
-# cocoajamworld/srd-5.2.1 (SRD 5.2 estructurado, CC-BY-4.0)
-python -m pipeline.cli import-file --path monsters.json \
-    --key monsters --source-id srd521 --license CC-BY-4.0 \
-    --type monster --ruleset dnd5e-2024 --redistributable
-
-# 5etools — TODO el catálogo WotC pero NON-FREE: solo local, nunca
-# se redistribuye (is_redistributable=False en toda la fuente)
-#   git clone https://github.com/5etools-mirror-3/5etools-src
-python -m pipeline.cli import-5etools --path 5etools-src/data
-
-# TheGiddyLimit/homebrew — ~95.000 entidades de homebrew comunitario
-# (mismo formato 5etools; derechos de cada autor — solo local)
-#   git clone https://github.com/TheGiddyLimit/homebrew data/hb
-python -m pipeline.cli import-5etools --path data/hb \
-    --source-id 5etools-homebrew \
-    --license "community homebrew (rights belong to authors)"
-
-# TheGiddyLimit/unearthed-arcana — playtests UA de WotC (non-free)
-python -m pipeline.cli import-5etools --path data/ua \
-    --source-id 5etools-ua --license "WotC UA playtest (non-free)"
-
-# codexMUNDI — PHB/DMG/MM/Volo/XGtE/SCAG/MTF transcritos (non-free).
-# Usa el mismo formato de claves 5etools: mismo importador.
-#   git clone https://github.com/MasterGrimoire/codexMUNDI
-python -m pipeline.cli import-5etools --path codexMUNDI \
-    --source-id codexmundi --license "non-free (WotC books)"
-
-# nick-aschenbach/dnd-data — ~26k entidades (monstruos, items,
-# conjuros, especies, clases, trasfondos; scrape D&D Beyond → non-free)
-python -m pipeline.cli import-dnddata
-
-# JSON privado/homebrew
-python -m pipeline.cli import-file --path <json> --license <lic> --type <tipo>
-
-# Backend
+# Backend (:8000)
 cd ../backend
 pip install -e .[dev]
 uvicorn app.main:app --reload
 
-# Frontend
+# Frontend (:5173) — en otra terminal
 cd ../frontend
 npm install
 npm run dev
 ```
 
-Ver `docs/ARCHITECTURE.md` para el diseño completo.
+### Verificación
+
+```bash
+curl http://localhost:8000/api/health   # → {"status": "ok"}
+```
+
+`npm run dev` sirve la app en http://localhost:5173.
+
+## Fuentes de contenido
+
+El pipeline importa catálogos a la content DB (SQLite + FTS5),
+cada uno con su `source_id`, licencia y flag de redistribución:
+
+| Fuente | Comando | Licencia |
+|---|---|---|
+| 5e-bits SRD 2014/2024 | `import-srd --edition 2014\|2024` | CC-BY-4.0 |
+| Open5e v1 (ToB, CC, DMag…) | `import-open5e --document <slug>` | OGL/CC |
+| Open5e v2 (SRD 5.2 completo) | `import-open5e --api v2 --document srd-2024` | CC-BY-4.0 |
+| Foundry dnd5e packs | `import-foundry --path <packs/_source>` | CC-BY-4.0 |
+| JSON propio | `import-file --path <json> --license <lic> --type <tipo>` | la que declares |
+| 5etools / homebrew / UA / dnd-data | `import-5etools` / `import-dnddata` | **NON-FREE — solo local** |
+
+Las fuentes non-free nunca se redistribuyen: quedan en la DB local
+del usuario con `is_redistributable = false`.
+
+## Arquitectura
+
+```text
+dnd-companion/
+├── backend/         # FastAPI — REST + WebSocket, motor de efectos
+│   └── app/engine/  # ops/ (ficha) y combat_ops/ (tracker)
+├── frontend/        # React + Vite PWA — hoja, mesa del DM, mapa VTT
+├── data-pipeline/   # Importers → content DB (SQLite + FTS5)
+├── docs/            # Arquitectura y decisiones de diseño
+└── data/            # DBs generadas (gitignored)
+```
+
+Principios (detalle en `AGENTS.md`):
+
+1. **Dos DBs**: contenido de solo lectura aparte del estado de
+   partida.
+2. **Motor declarativo**: nada de `if clase == "barbarian"` —
+   `Effect` con triggers y operaciones.
+3. **Operaciones idempotentes y reversibles**: cada cambio lleva
+   `operation_id` + `entity_version` (optimistic locking) e inversa;
+   el historial es auditable y deshacible (incl. undo compuesto de
+   `inventory.transfer`).
+4. **Eventos pequeños y tipados** por WS — nunca la ficha completa.
+5. **Offline-first**: cola IndexedDB + reenvío al reconectar.
+
+## Pruebas
+
+```bash
+pytest backend/tests            # 299 tests
+cd frontend && npm test         # 18 tests (Vitest)
+npm run build                   # build + PWA
+```
+
+## Limitaciones conocidas
+
+- El Bearer token del WebSocket viaja en `?token=` — aceptable en
+  LAN/local; si se expone a internet debe migrarse a
+  `Sec-WebSocket-Protocol` (ver AGENTS.md).
+- `cleave`/`nick` (weapon mastery) solo se anotan en el log — el
+  encadenamiento del segundo ataque lo dirige el DM.
+- Sin licencia de código publicada todavía; el contenido SRD es
+  CC-BY-4.0.
+
+## Documentación
+
+- [AGENTS.md](AGENTS.md) — reglas del proyecto, modelo de acceso,
+  contratos de sincronización ficha↔combate↔mapa.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — diseño completo.
+
+## Contribución y soporte
+
+El flujo de cambio pasa por operaciones auditables — las reglas
+inviolables (seguridad, autorización, procedencia) están en
+AGENTS.md. Para informar de un problema o proponer una función,
+abre una issue en el repositorio.

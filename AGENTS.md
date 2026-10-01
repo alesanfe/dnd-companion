@@ -71,10 +71,13 @@ cd frontend && npm install && npm run dev
 - Ops `entity_kind=combat` = DM-only (REST y WS); `character` = miembro
   y, si la ficha tiene `player_id`, solo su dueño (o el DM) la muta.
   Excepciones del jugador sobre SU combatiente-PJ:
-  `combatant.death_save_roll` (y su undo) y `combat.attack` (ataque
+  `combatant.death_save_roll` (y su undo), `combat.attack` (ataque
   desde el mapa: el servidor resuelve impacto vs CA del objetivo sin
   exponerla y aplica el daño — `attacker_combatant_id` debe ser el
-  combatiente-PJ del jugador).
+  combatiente-PJ del jugador) y `combat.shove_grapple` (empujón/
+  agarrón — unarmed 2024 = salvación FUE/DES del objetivo vs
+  8+FUE+prof; 2014 = contestada Atletismo; misma guardia de
+  atacante).
 - **Fichas sin campaña con `player_id`** (`_personal_ownership`):
   cuando hay usuarios registrados solo las muta su dueño — el guard
   de campaña no aplica porque `entity_camp` es None. En WS solo

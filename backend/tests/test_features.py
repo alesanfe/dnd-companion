@@ -204,6 +204,17 @@ def test_command_search_spell_level():
 
 
 @needs_content
+def test_command_search_exact_name_first():
+    """El FTS indexa el cuerpo completo ('fireball' aparece en el
+    texto de ~1580 entidades); el ORDER BY alfabético enterraba el
+    resultado exacto — el match por nombre debe ir primero."""
+    r = client.get("/api/content/command?q=/spell fireball")
+    names = [x["name"].lower() for x in r.json()["results"]]
+    assert names[0] == "fireball"
+    assert all("fireball" in n or "fire" in n for n in names[:3])
+
+
+@needs_content
 def test_command_search_monster_cr_range():
     r = client.get(
         "/api/content/command?q=/monster cr:1..2 type:undead")

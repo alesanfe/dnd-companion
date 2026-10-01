@@ -269,7 +269,18 @@ def command_search(q: str = Query(..., min_length=2),
         sql += (" AND e.id IN (SELECT entity_id FROM content_fts "
                 "WHERE content_fts MATCH ?)")
         params.append(fts)
-    sql += " ORDER BY e.name LIMIT ?"
+    term = " ".join(terms).strip().lower()
+    if term:
+        # FTS indexa también el cuerpo — "fireball" sale en 1580
+        # entidades; el match exacto/prefijo de nombre debe ir primero
+        # (antes el ORDER BY name enterraba "Fireball" bajo
+        # "Absorbing Field" que solo la menciona)
+        sql += (" ORDER BY CASE WHEN lower(e.name) = ? THEN 0"
+                " WHEN lower(e.name) LIKE ? THEN 1 ELSE 2 END, e.name"
+                " LIMIT ?")
+        params += [term, term + "%"]
+    else:
+        sql += " ORDER BY e.name LIMIT ?"
     params.append(limit * 4)                 # margen para filtrado Python
 
     results = []

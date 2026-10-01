@@ -462,6 +462,9 @@ section[id] { scroll-margin-top: calc(var(--nav-h) + 0.8rem); }
   scrollbar-width: thin;
 }
 .tabs button {
+  /* flex-shrink por defecto los aplastaba a ~44px y el texto nowrap
+     se derramaba sobre la pestaña vecina en pantallas estrechas */
+  flex-shrink: 0;
   background: transparent;
   border: none;
   border-bottom: 3px solid transparent;

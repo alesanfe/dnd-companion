@@ -7,12 +7,22 @@ from pathlib import Path
 from .. import config
 
 _STATE_SCHEMA = Path(__file__).parent / "state_schema.sql"
+_CONTENT_SCHEMA = Path(__file__).parent / "content_schema.sql"
 _SCHEMA_VERSION = 2
 
 
 def content_db() -> sqlite3.Connection:
+    # bootstrap: en Docker (/data vacío) la DB no existía y cada
+    # query moría con 'no such table' — se crea el schema vacío y el
+    # contenido queda por importar (respuestas vacías, no errores)
+    config.CONTENT_DB.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(config.CONTENT_DB))
     conn.row_factory = sqlite3.Row
+    if conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE name = "
+            "'content_entities'").fetchone() is None:
+        conn.executescript(
+            _CONTENT_SCHEMA.read_text(encoding="utf-8"))
     return conn
 
 

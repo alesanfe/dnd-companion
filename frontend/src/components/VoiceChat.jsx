@@ -11,6 +11,7 @@ export default function VoiceChat({ sock, me, presence, rtcMsg }) {
   const [muted, setMuted] = useState(false)
   const [err, setErr] = useState(null)
   const peers = useRef({})   // uid → RTCPeerConnection
+  const pendingIce = useRef({}) // uid → ICE candidates en espera
   const local = useRef(null) // MediaStream del mic
   const audios = useRef({})  // uid → Audio
 
@@ -20,8 +21,22 @@ export default function VoiceChat({ sock, me, presence, rtcMsg }) {
       s.send(JSON.stringify({ type: 'rtc.signal', to, data }))
   }
 
+  const dropPeer = (uid) => {
+    peers.current[uid]?.close()
+    delete peers.current[uid]
+    delete pendingIce.current[uid]
+    const a = audios.current[uid]
+    if (a) { a.srcObject = null; delete audios.current[uid] }
+  }
+
   const pc = (uid) => {
-    if (peers.current[uid]) return peers.current[uid]
+    const old = peers.current[uid]
+    // rejoin: el otro lado conservaba el pc CERRADO de la sesión
+    // previa y las nuevas ofertas rebotaban en un objeto muerto —
+    // se recrea si ya no sirve
+    if (old && old.connectionState !== 'closed'
+        && old.connectionState !== 'failed') return old
+    if (old) dropPeer(uid)
     const p = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
     })
@@ -39,6 +54,12 @@ export default function VoiceChat({ sock, me, presence, rtcMsg }) {
         a.srcObject = e.streams[0]
         audios.current[uid] = a
       }
+    }
+    // conexión muerta sin cierre limpio (peer colgado de red) —
+    // el ghost peer quedaba hablando al vacío en la lista
+    p.onconnectionstatechange = () => {
+      if (p.connectionState === 'closed'
+          || p.connectionState === 'failed') dropPeer(uid)
     }
     peers.current[uid] = p
     return p
@@ -72,8 +93,7 @@ export default function VoiceChat({ sock, me, presence, rtcMsg }) {
   }
 
   const leave = () => {
-    for (const p of Object.values(peers.current)) p.close()
-    peers.current = {}; audios.current = {}
+    for (const uid of Object.keys(peers.current)) dropPeer(uid)
     local.current?.getTracks().forEach((tr) => tr.stop())
     local.current = null
     setJoined(false)
@@ -97,22 +117,36 @@ export default function VoiceChat({ sock, me, presence, rtcMsg }) {
       try {
         if (d.kind === 'sdp') {
           await p.setRemoteDescription(d.sdp)
+          // candidatos que llegaron antes de la descripción remota
+          for (const c of pendingIce.current[uid] || [])
+            await p.addIceCandidate(c)
+          pendingIce.current[uid] = []
           if (d.sdp.type === 'offer') {
             await p.setLocalDescription(await p.createAnswer())
             send(uid, { kind: 'sdp', sdp: p.localDescription })
           }
         } else if (d.kind === 'ice' && d.candidate) {
-          await p.addIceCandidate(d.candidate)
+          // sin remoteDescription addIceCandidate lanza — se perdía
+          // el candidato y la llamada nunca conectaba en algunas redes
+          if (p.remoteDescription)
+            await p.addIceCandidate(d.candidate)
+          else
+            (pendingIce.current[uid] ??= []).push(d.candidate)
         }
       } catch { /* señal fuera de orden — WebRTC lo tolera */ }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rtcMsg, joined])
 
-  // alguien se unió después → yo ofrezco si mi uid es menor
+  // alguien se unió después → yo ofrezco si mi uid es menor;
+  // quien ya NO está en presence → su peer se cierra (ghost peer:
+  // el audio y la conexión sobrevivían a la salida del usuario)
   useEffect(() => {
     if (!joined || !me) return
-    for (const u of otherUids(presence)) {
+    const live = new Set(otherUids(presence))
+    for (const u of Object.keys(peers.current))
+      if (!live.has(u)) dropPeer(u)
+    for (const u of live) {
       if (me < u && !peers.current[u]) offer(u)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

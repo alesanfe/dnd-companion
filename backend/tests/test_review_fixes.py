@@ -1995,8 +1995,9 @@ def test_campaignless_combat_cannot_touch_foreign_char():
 
 
 def test_transfer_undo_disabled_and_personal_char_guard():
-    """Las dos mitades del transfer son no-reversibles (el undo de
-    una duplicaba objetos) y una ficha personal ajena no se vacía."""
+    """El undo de transfer es COMPUESTO (revierte ambas fichas en una
+    txn — la mitad suelta duplicaba objetos) y una ficha personal
+    ajena no se vacía."""
     owner = _auth_headers(f"to{uuid.uuid4().hex[:8]}")
     stranger = _auth_headers(f"ts{uuid.uuid4().hex[:8]}")
     uid = client.get("/api/auth/me", headers=owner).json()["user_id"]
@@ -2030,8 +2031,19 @@ def test_transfer_undo_disabled_and_personal_char_guard():
         "to_character": b, "item_id": "poc", "quantity": 1},
         headers=owner)
     assert r.status_code == 200
+    # el undo compuesto revierte las DOS mitades en una txn
     assert client.post("/api/operations/undo/tx-audit:out",
-                       headers=owner).status_code == 404
+                       headers=owner).status_code == 200
+    inv_a = client.get(f"/api/characters/{a}", headers=owner
+                       ).json()["data"]["inventory"]
+    inv_b = client.get(f"/api/characters/{b}", headers=owner
+                       ).json()["data"]["inventory"]
+    assert next(i for i in inv_a
+                if i["name"] == "Poción")["quantity"] == 2
+    assert not [i for i in inv_b if i["name"] == "Poción"]
+    # y un segundo undo es 409, no un segundo traspaso
+    assert client.post("/api/operations/undo/tx-audit:out",
+                       headers=owner).status_code == 409
 
 
 def test_register_trims_username_and_blocks_short():

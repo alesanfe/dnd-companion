@@ -97,10 +97,20 @@ async def transfer(body: TransferIn,
 
         now = datetime.now(timezone.utc).isoformat()
         moved, dst_item_id = _move_item(src, dst, item, qty)
-        # SIN inversa: undo opera una sola entidad y revertir solo una
-        # mitad del transfer DUPLICABA los objetos (origen recuperaba
-        # y destino conservaba). No-reversible hasta un undo compuesto
-        inverses = {src_row["id"]: None, dst_row["id"]: None}
+        # inversas reales por mitad — el undo compuesto (operations.undo
+        # detecta el par ':out'/':in') revierte AMBAS fichas en una txn;
+        # revertir solo una duplicaba los objetos
+        inverses = {
+            src_row["id"]: json.dumps({
+                # add con el id original → se fusiona con el stack
+                # restante o recrea el objeto íntegro
+                "operation_type": "character.inventory.add",
+                "payload": {**item.model_dump(mode="json"),
+                            "id": item.id, "quantity": qty}}),
+            dst_row["id"]: json.dumps({
+                "operation_type": "character.inventory.remove",
+                "payload": {"item_id": dst_item_id, "quantity": qty}}),
+        }
 
         out_events = []
         for row, char in ((src_row, src), (dst_row, dst)):

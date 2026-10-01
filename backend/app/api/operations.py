@@ -887,6 +887,38 @@ async def undo(operation_id: str,
     op_row = conn.execute(
         "SELECT * FROM operations WHERE operation_id = ?",
         (operation_id,)).fetchone()
+
+    # transfer compuesto: ':out'/':in' revierten LAS DOS fichas en una
+    # sola transacción — deshacer una mitad duplicaba los objetos
+    if operation_id.endswith((":out", ":in")) \
+            and op_row["operation_type"] == "inventory.transfer":
+        sib_id = operation_id.rsplit(":", 1)[0] + (
+            ":in" if operation_id.endswith(":out") else ":out")
+        cur2 = conn.execute(
+            "UPDATE operations SET status = ? WHERE operation_id = ? "
+            "AND status = ? AND inverse IS NOT NULL",
+            (OperationStatus.UNDOING.value, sib_id,
+             OperationStatus.SYNCED.value))
+        conn.commit()
+        if cur2.rowcount == 0:
+            # liberar la primera reserva — el par no es deshacible
+            conn.execute(
+                "UPDATE operations SET status = ? WHERE operation_id = ?",
+                (OperationStatus.SYNCED.value, operation_id))
+            conn.commit()
+            sib = conn.execute(
+                "SELECT status FROM operations WHERE operation_id = ?",
+                (sib_id,)).fetchone()
+            if sib and sib["status"] in (OperationStatus.UNDONE.value,
+                                        OperationStatus.UNDOING.value):
+                raise HTTPException(409, "operation already undone")
+            raise HTTPException(
+                404, "transfer pair not found or not reversible")
+        sib_row = conn.execute(
+            "SELECT * FROM operations WHERE operation_id = ?",
+            (sib_id,)).fetchone()
+        return await _undo_transfer(conn, op_row, sib_row, user)
+
     inv = json.loads(op_row["inverse"])
     entity_kind = "combat" if conn.execute(
         "SELECT 1 FROM combats WHERE id = ?",
@@ -920,6 +952,101 @@ async def undo(operation_id: str,
         (OperationStatus.UNDONE.value, operation_id))
     conn.commit()
     return result
+
+
+async def _undo_transfer(conn, op_row, sib_row, user):
+    """Revierte las DOS mitades de un inventory.transfer en una sola
+    transacción. Cada inversa corre con su guardia de versión; si una
+    mitad falla (el objeto ya se movió/gastó) todo el undo aborta —
+    nunca queda una transferencia revertida a medias."""
+    uid = (user or {}).get("user_id")
+    ctx = OpContext(conn)
+    now = datetime.now(timezone.utc).isoformat()
+    out_events = []
+    done = []
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        for op in (op_row, sib_row):
+            crow = conn.execute(
+                "SELECT * FROM characters WHERE id = ?",
+                (op["entity_id"],)).fetchone()
+            if crow is None:
+                raise HTTPException(404, "character not found")
+            # mismos guards que el transfer original: miembro de la
+            # campaña; ficha personal solo su dueño
+            camp = crow["campaign_id"]
+            if camp and _has_owner(conn, camp) and member_role(
+                    camp, uid) not in _DM_ROLES + ("player", "guest"):
+                raise HTTPException(403, "sin permiso en esta campaña")
+            if not camp and crow["player_id"] \
+                    and crow["player_id"] != uid and conn.execute(
+                        "SELECT 1 FROM users LIMIT 1").fetchone():
+                raise HTTPException(403, "la ficha es de otro usuario")
+            char = Character(**json.loads(crow["data"]))
+            inv = json.loads(op["inverse"])
+            sub_inv, evs = apply_operation(
+                char, inv["operation_type"],
+                {**inv["payload"], "_undoes": op["operation_id"]}, ctx)
+            cur = conn.execute(
+                "UPDATE characters SET data=?, version=?, updated_at=?"
+                " WHERE id=? AND version=?",
+                (json.dumps(char.model_dump()), crow["version"] + 1,
+                 now, crow["id"], crow["version"]))
+            if cur.rowcount == 0:
+                raise HTTPException(409, "version conflict")
+            # la reversión queda auditada como op propia (no reversible:
+            # rehacer el transfer es otra transferencia, no un undo)
+            _store_op(conn, OperationIn(
+                operation_id=uuid.uuid4().hex,
+                entity_id=crow["id"], entity_version=crow["version"],
+                client_id="undo", user_id=uid or "local",
+                entity_kind="character",
+                operation_type=inv["operation_type"],
+                payload={**inv["payload"],
+                         "_undoes": op["operation_id"]}),
+                crow["version"] + 1, OperationStatus.SYNCED, sub_inv)
+            for ev in evs:
+                event = Event(
+                    event_id=uuid.uuid4().hex,
+                    type=EventType(ev["type"]),
+                    campaign_id=camp or "",
+                    aggregate_id=crow["id"],
+                    aggregate_version=crow["version"] + 1,
+                    actor_id=uid or "local",
+                    occurred_at=datetime.now(timezone.utc),
+                    payload=ev["payload"])
+                conn.execute(
+                    """INSERT INTO events
+                       (event_id, campaign_id, aggregate_id,
+                        aggregate_version, actor_id, occurred_at,
+                        type, payload)
+                       VALUES (?,?,?,?,?,?,?,?)""",
+                    (event.event_id, event.campaign_id,
+                     event.aggregate_id, event.aggregate_version,
+                     event.actor_id, event.occurred_at.isoformat(),
+                     event.type.value, json.dumps(event.payload)))
+                out_events.append(event)
+            done.append(op["operation_id"])
+        conn.execute(
+            "UPDATE operations SET status = ? WHERE operation_id "
+            "IN (?, ?)",
+            (OperationStatus.UNDONE.value,
+             op_row["operation_id"], sib_row["operation_id"]))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        # liberar ambas reservas — el undo falló y queda reintentable
+        conn.execute(
+            "UPDATE operations SET status = ? WHERE operation_id "
+            "IN (?, ?) AND status = ?",
+            (OperationStatus.SYNCED.value, op_row["operation_id"],
+             sib_row["operation_id"], OperationStatus.UNDOING.value))
+        conn.commit()
+        raise
+    for ev in out_events:
+        if ev.campaign_id:
+            await manager.broadcast(ev.campaign_id, ev)
+    return {"undone": done}
 
 
 def _current_version(conn, entity_id: str, kind: str = "character") -> int:

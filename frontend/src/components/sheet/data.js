@@ -101,3 +101,12 @@ export const COND_RULES = {
   agarrada: 'Velocidad 0',
   dead: 'Muerto', muerto: 'Muerto', muerta: 'Muerto',
 }
+
+// orden y etiquetas de las pestañas de la ficha — compartido por la
+// página (ruta /character/:id/:tab) y la cabecera (nav + HUD)
+export const SHEET_TABS = [
+  ['resumen', 'Resumen', '✦'], ['acciones', 'Acciones', '⚔'],
+  ['stats', 'Características', '🛡'], ['magia', 'Magia', '✨'],
+  ['inventario', 'Inventario', '🎒'], ['rasgos', 'Rasgos', '📜'],
+  ['historia', 'Historia', '✎'], ['actividad', 'Actividad', '🕓'],
+]

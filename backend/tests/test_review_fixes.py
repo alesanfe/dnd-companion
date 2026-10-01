@@ -2140,7 +2140,8 @@ def test_combatant_add_character_uses_dex_and_live_hp(monkeypatch):
     class _R:
         total = 10
         rolls = [10]
-    monkeypatch.setattr(co, "roll", lambda _e: _R())
+    for _m in (co.vitals, co.rolls, co.roster, co.turns):
+        monkeypatch.setattr(_m, "roll", lambda _e: _R())
     conn = state_db()
     ctx = OpContext(conn)
     ch = Character(name="Dex",

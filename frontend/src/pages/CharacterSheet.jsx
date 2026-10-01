@@ -3,7 +3,12 @@ import { useParams, useSearchParams }
   from 'react-router-dom'
 import { api } from '../api.js'
 import { useT } from '../i18n.jsx'
-import { STATS, SKILL_ES, COND_RULES } from '../components/sheet/data.js'
+import { STATS, SKILL_ES, COND_RULES, SHEET_TABS }
+  from '../components/sheet/data.js'
+import SheetIdentity from '../components/sheet/SheetIdentity.jsx'
+import SheetToolbar from '../components/sheet/SheetToolbar.jsx'
+import SheetLevelUp from '../components/sheet/SheetLevelUp.jsx'
+import SheetHead from '../components/sheet/SheetHead.jsx'
 import TabResumen from '../components/sheet/TabResumen.jsx'
 import TabAcciones from '../components/sheet/TabAcciones.jsx'
 import TabStats from '../components/sheet/TabStats.jsx'
@@ -12,26 +17,10 @@ import TabInventario from '../components/sheet/TabInventario.jsx'
 import TabRasgos from '../components/sheet/TabRasgos.jsx'
 import TabHistoria from '../components/sheet/TabHistoria.jsx'
 import TabActividad from '../components/sheet/TabActividad.jsx'
-import { useEntityNames, SpellPicker }
-  from '../components/sheet/pickers.jsx'
+import { useEntityNames } from '../components/sheet/pickers.jsx'
 import { CastPanel } from '../components/sheet/panels.jsx'
-import { SheetTour, IdentityEditor, NextLevelFeatures,
-         useCampaignSocket }
+import { SheetTour, useCampaignSocket }
   from '../components/sheet/sheetParts.jsx'
-
-const SHEET_TABS = [
-  ['resumen', 'Resumen', '✦'], ['acciones', 'Acciones', '⚔'],
-  ['stats', 'Características', '🛡'], ['magia', 'Magia', '✨'],
-  ['inventario', 'Inventario', '🎒'], ['rasgos', 'Rasgos', '📜'],
-  ['historia', 'Historia', '✎'], ['actividad', 'Actividad', '🕓'],
-]
-
-/* color de avatar determinista a partir del nombre */
-const avatarHue = (name = '') => {
-  let h = 0
-  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360
-  return h
-}
 
 export default function CharacterSheet() {
   const { id, tab: routeTab } = useParams()
@@ -380,135 +369,24 @@ export default function CharacterSheet() {
 
   return (
     <main className={`wide${focus ? ' concentration' : ''}`}>
-      <div className="identity">
-        <button className="avatar" aria-label={t('sheet.portraitAria')}
-                title={t('sheet.portraitHint')}
-                onClick={() => fileRef.current?.click()}
-                onContextMenu={(e) => {
-                  e.preventDefault()
-                  localStorage.removeItem(`dnd-portrait-${id}`)
-                  setPortrait(null)
-                  op('character.narrative.set',
-                     { field: 'portrait_url', value: null })
-                }}
-                style={portrait
-                  ? { backgroundImage: `url(${portrait})` }
-                  : { background:
-                      `hsl(${avatarHue(
-                        d.classes?.[0]?.class_id || char.name)
-                      } 45% 42%)` }}>
-          {!portrait && (char.name || '?')[0].toUpperCase()}
-        </button>
-        <input ref={fileRef} type="file" accept="image/*" hidden
-               onChange={onPortrait} />
-        <div className="identity-txt">
-          <h1>{char.name}
-            <span className="muted" style={{ fontSize: '0.9rem' }}>
-              {' '}{t('sheet.level')} {totalLevel}
-            </span>
-          </h1>
-          {(classLine || speciesName || bgName) && (
-            <p className="identity-sub">
-              {classLine && <span className="cls">{classLine}</span>}
-              {[speciesName, bgName, d.alignment,
-                d.player_name && `${t('sheet.playerTag')}: ${d.player_name}`]
-                .filter(Boolean)
-                .map((s, i) => <span key={i}>
-                  {classLine || i > 0 ? ' · ' : ''}{s}</span>)}
-            </p>)}
-          {/* editor de identidad — campos de cabecera de la hoja */}
-          <IdentityEditor d={d} name={char.name} op={op} />
-        </div>
-      </div>
+      <SheetIdentity char={char} d={d} portrait={portrait}
+                     classLine={classLine} speciesName={speciesName}
+                     bgName={bgName} totalLevel={totalLevel}
+                     fileRef={fileRef} onPortrait={onPortrait}
+                     setPortrait={setPortrait} t={t} op={op} />
       {/* recorrido de primera visita — una vez, salta con Saltar */}
       <SheetTour step={tourStep} onStep={setTourStep} />
-      <div className="toolbar">
-        <button className={focus ? 'ghost' : 'primary'}
-                aria-pressed={focus}
-                onClick={() => {
-              if (!focus && hud.size <= 1)
-                // modo partida entra con el preset de combate —
-                // HUD personalizable si el usuario lo cambió antes
-                setHud(new Set(['resumen', 'acciones', 'magia']))
-              setFocus(!focus)
-            }}>
-          {focus ? `⏻ ${t('sheet.focusOff')}` : `⚔ ${t('sheet.focus')}`}
-        </button>
-        {d.classes?.length > 0 && (
-          <button aria-expanded={lvlPanel}
-                  onClick={() => setLvlPanel(!lvlPanel)}>
-            {t('sheet.levelup')} ▾
-          </button>
-        )}
-        <span className="tsep" />
-        <button className="ghost" onClick={async () => {
-          try {
-            const h = await api.opHistory(id)
-            const last = (h.operations || []).find((o) => o.reversible)
-            if (last) { await api.undoOp(last.operation_id); load() }
-          } catch (e) { setErr(e.message) }
-        }}>{t('sheet.undo')}</button>
-        <button className="ghost" onClick={async () => {
-          try {
-            const h = await api.opHistory(id)
-            setHistory(history ? null : h.operations)
-          } catch (e) { setErr(e.message) }
-        }}>{t('sheet.history.btn')}</button>
-        <button className="ghost" onClick={async () => {
-          try {
-            const ex = await api.exportCharacter(id)
-            const blob = new Blob([JSON.stringify(ex, null, 2)],
-                                  { type: 'application/json' })
-            const a = document.createElement('a')
-            a.href = URL.createObjectURL(blob)
-            a.download = `${char.name}.json`
-            a.click()
-          } catch (e) { setErr(e.message) }
-        }}>{t('sheet.export')}</button>
-        {/* el navegador nombra el PDF con document.title — fijarlo
-            al nombre del PJ durante la impresión */}
-        <button className="ghost" onClick={() => {
-          const prev = document.title
-          document.title = char.name || prev
-          window.print()
-          document.title = prev
-        }}>
-          🖨 {t('sheet.print')}</button>
-        {char.campaign_id && (
-          <button className="ghost" aria-pressed={notify}
-                  title={t('sheet.notifyHint')}
-                  onClick={toggleNotify}>
-            {notify ? '🔔' : '🔕'}</button>)}
-      </div>
+      <SheetToolbar char={char} focus={focus} hudSize={hud.size}
+                    setHud={setHud} setFocus={setFocus}
+                    lvlPanel={lvlPanel} setLvlPanel={setLvlPanel}
+                    history={history} setHistory={setHistory}
+                    notify={notify} toggleNotify={toggleNotify}
+                    setErr={setErr} load={load} t={t} />
       {/* subida de nivel: clase existente o multiclase nueva */}
       {lvlPanel && (
-        <section className="card" role="dialog"
-                 aria-label={t('sheet.levelup')}>
-          <h2>{t('sheet.levelup')}</h2>
-          {(d.classes || []).map((cl) => (
-            <div key={cl.class_id} className="row">
-              <span style={{ flex: 1 }}>
-                {entName(cl.class_id)}
-                {cl.subclass_id && ` (${entName(cl.subclass_id)})`}
-                {' — '}{t('sheet.lvlShort')}{cl.level}</span>
-              <button className="primary" onClick={() => {
-                setLvlPanel(false)
-                op('character.level_up',
-                   { class_id: cl.class_id, hp_mode: 'fixed' })
-              }}>{tf('sheet.levelTo', { n: cl.level + 1 })}</button>
-              <NextLevelFeatures classId={cl.class_id}
-                                 level={cl.level + 1} />
-            </div>))}
-          <p className="muted" style={{ marginBottom: 0 }}>
-            {t('sheet.multiclassHint')}</p>
-          <SpellPicker entityType="class" verb={t('sheet.addLv1')}
-            placeholder={t('sheet.searchClass')}
-            onPick={(cid) => {
-              setLvlPanel(false)
-              op('character.level_up',
-                 { class_id: cid, hp_mode: 'fixed' })
-            }} />
-        </section>)}
+        <SheetLevelUp classes={d.classes} entName={entName}
+                      op={op} setLvlPanel={setLvlPanel}
+                      t={t} tf={tf} />)}
       {err && (
         <p className="error" role="alert">
           {err}
@@ -566,99 +444,10 @@ export default function CharacterSheet() {
       )}
 
       {/* vitales siempre a mano: cabecera pegajosa sobre las pestañas */}
-      <div className="sticky-head">
-        <div className="vital">
-          <span className={`vstat hp${hp.max && hp.current / hp.max <= 0.5
-                ? ' low' : ''}`}
-                role="img"
-                aria-label={tf('sheet.hpAria',
-                               { cur: hp.current, max: hp.max })}>
-            <i>PG</i>
-            <b>{hp.current}/{hp.max}{hp.temp > 0 && `+${hp.temp}`}</b>
-          </span>
-          {derived && <>
-            <span className="vstat"
-                  title={`CA = ${derived.armor_class.breakdown
-                    .map(([n, v]) => `${n} ${v > 0 ? '+' : ''}${v}`)
-                    .join(' ')}`}>
-              <i>CA</i><b>{derived.armor_class.total}</b></span>
-            <button className="vstat act"
-                    title={tf('sheet.initTitle', {
-                      mod: `${derived.initiative >= 0 ? '+' : ''}${
-                        derived.initiative}`})}
-                    aria-label={tf('sheet.initAria', {
-                      mod: `${derived.initiative >= 0 ? '+' : ''}${
-                        derived.initiative}`})}
-                    onClick={() => rollInit('')}
-                    onContextMenu={(e) => {
-              e.preventDefault()
-              rollInit(e.shiftKey ? 'dis' : 'adv')
-            }}><i>Init</i><b>{derived.initiative >= 0 ? '+' : ''}
-              {derived.initiative}</b></button>
-            <span className="vstat"
-                  title={t('sheet.percTitle')}>
-              <i>Perc</i><b>{derived.passive_perception}</b></span>
-            <span className="vstat" title={t('sheet.profTitle')}>
-              <i>Prof</i><b>+{derived.proficiency_bonus}</b></span>
-            <span className="vstat"
-                  title={tf('sheet.speedTitle', { spd: d.speed ?? 30 }) +
-                    Object.entries(d.speeds || {})
-                      .map(([k, v]) => ` · ${
-                        t('sheet.speedName.' + k) !==
-                          'sheet.speedName.' + k
-                          ? t('sheet.speedName.' + k) : k} ${v}`)
-                      .join('') + t('sheet.speedTitleEnd')}>
-              <i>Vel</i><b>{d.speed ?? 30}<small> ft</small>
-                {(d.speeds?.fly || d.speeds?.swim) && (
-                  <small style={{ fontWeight: 'normal' }}>
-                    {d.speeds.fly ? ' ✈' : ''}
-                    {d.speeds.swim ? ' ≈' : ''}</small>)}</b></span>
-          </>}
-          <button className={`vstat act${d.inspiration ? ' on' : ''}`}
-                  aria-pressed={!!d.inspiration}
-                  title={d.inspiration ? t('sheet.inspSpend')
-                                       : t('sheet.inspGain')}
-                  onClick={() => op('character.inspiration.set',
-                                    { value: !d.inspiration })}>
-            <i>Insp</i><b>✦</b></button>
-          {d.concentrating_on &&
-            <span className="chip">⭑ {d.concentrating_on}</span>}
-          {(d.conditions || []).map((cname) =>
-            <span key={cname} className="chip">{cname}
-              {d.condition_stacks?.[cname] > 0 &&
-                ` ×${d.condition_stacks[cname]}`}</span>)}
-        </div>
-        {focus && (
-          <div className="row" style={{ flexWrap: 'wrap' }}>
-            {[['combat', ['resumen', 'acciones', 'magia']],
-              ['explore', ['resumen', 'stats', 'inventario']],
-              ['social', ['resumen', 'rasgos', 'historia']],
-              ['all', SHEET_TABS.map(([k]) => k)]]
-              .map(([p, groups]) => (
-              <button key={p} className="ghost" style={{ fontSize: '.85em' }}
-                      onClick={() => setHud(new Set(groups))}>
-                {t('hud.' + p)}</button>))}
-            <span className="muted">·</span>
-            {SHEET_TABS.map(([k, label]) => (
-                <label key={k} className="muted"
-                       style={{ fontSize: '.85em' }}>
-                  <input type="checkbox" checked={hud.has(k)}
-                    onChange={(e) => setHud((prev) => {
-                      const nx = new Set(prev)
-                      e.target.checked ? nx.add(k) : nx.delete(k)
-                      return nx
-                    })} />
-                  {tr('tab.' + k, label)}</label>))}
-          </div>)}
-        {!focus && (
-          <nav className="tabs" role="tablist" aria-label={t('sheet.tabsAria')}>
-            {SHEET_TABS.map(([k, label, icon]) => (
-                <button key={k} role="tab" aria-selected={tab === k}
-                        onClick={() => setTab(k)}>
-                  <span className="ti" aria-hidden="true">{icon}</span>
-                  {tr('tab.' + k, label)}</button>))}
-          </nav>)}
-      </div>
+      <SheetHead hp={hp} derived={derived} d={d}
+                   rollInit={rollInit} op={op} focus={focus}
+                   hud={hud} setHud={setHud} tab={tab}
+                   setTab={setTab} t={t} tf={tf} tr={tr} />
 
       <TabResumen c={ctx} />
       <TabActividad c={ctx} />

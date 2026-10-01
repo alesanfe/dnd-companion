@@ -151,7 +151,10 @@ def test_death_save_roll_nat20_revives_and_clears_dead(monkeypatch):
     class _R:
         total = 20
 
-    monkeypatch.setattr(co, "roll", lambda _expr: _R())
+    # el handler que tira puede vivir en cualquier submódulo del
+    # paquete combat_ops — patchear donde se usa
+    for _m in (co.vitals, co.rolls, co.roster, co.turns):
+        monkeypatch.setattr(_m, "roll", lambda _expr: _R())
     cm = Combat(combatants=[
         Combatant(id="c", kind="character", name="Pj", initiative=10,
                   hp_current=0, hp_max=10,
@@ -232,7 +235,10 @@ def test_death_save_roll_nat20_revives_and_clears_dead(monkeypatch):
     class _R:
         total = 20
 
-    monkeypatch.setattr(co, "roll", lambda _expr: _R())
+    # el handler que tira puede vivir en cualquier submódulo del
+    # paquete combat_ops — patchear donde se usa
+    for _m in (co.vitals, co.rolls, co.roster, co.turns):
+        monkeypatch.setattr(_m, "roll", lambda _expr: _R())
     cm = Combat(combatants=[
         Combatant(id="c", kind="character", name="Pj", initiative=10,
                   hp_current=0, hp_max=10,
@@ -272,7 +278,8 @@ def _atk_ctx(monkeypatch, roll_seq):
             self.rolls = rs
             self.total = sum(rs)
 
-    monkeypatch.setattr(co, "roll", lambda _e: _R(next(seq)))
+    for _m in (co.vitals, co.rolls, co.roster, co.turns):
+        monkeypatch.setattr(_m, "roll", lambda _e: _R(next(seq)))
     conn = state_db()
     ctx = OpContext(conn)
     return conn, ctx

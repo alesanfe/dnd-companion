@@ -8,8 +8,9 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api import (
-    auth, campaigns, campaigns_map, characters, combat, content, dice,
-    encounters, inventory, operations, packages, push, rules,
+    auth, campaigns, campaigns_entities, campaigns_map,
+    campaigns_party, campaigns_sessions, characters, combat, content,
+    dice, encounters, inventory, operations, packages, push, rules,
 )
 from .api.operations import OperationIn, apply_to_store, \
     _entity_campaign
@@ -49,6 +50,9 @@ app.include_router(content.router)
 app.include_router(characters.router)
 app.include_router(campaigns.router)
 app.include_router(campaigns_map.router)
+app.include_router(campaigns_entities.router)
+app.include_router(campaigns_sessions.router)
+app.include_router(campaigns_party.router)
 app.include_router(operations.router)
 app.include_router(combat.router)
 app.include_router(encounters.router)

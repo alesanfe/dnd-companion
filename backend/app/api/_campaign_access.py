@@ -64,6 +64,29 @@ def _ev_visible(row, uid: str | None, is_dm: bool) -> bool:
     return is_dm or not _ev_is_dm(row) or _ev_for_uid(row, uid)
 
 
+async def _notify_reveal(conn, campaign_id: str, entity_id: str,
+                         name: str) -> None:
+    """Persiste + broadcast del evento entity.revealed — usado por
+    reveal manual y por reveal_condition auto al activar sesión."""
+    from ..domain.events import Event, EventType
+    ev = Event(event_id=uuid.uuid4().hex,
+               type=EventType.ENTITY_REVEALED,
+               campaign_id=campaign_id, aggregate_id=entity_id,
+               aggregate_version=0, actor_id="dm",
+               occurred_at=datetime.now(timezone.utc),
+               payload={"name": name})
+    conn.execute(
+        """INSERT INTO events
+           (event_id, campaign_id, aggregate_id, aggregate_version,
+            actor_id, occurred_at, type, payload)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (ev.event_id, campaign_id, entity_id, 0, "dm",
+         ev.occurred_at.isoformat(), ev.type.value,
+         json.dumps(ev.payload)))
+    conn.commit()
+    await manager.broadcast(campaign_id, ev)
+
+
 async def _notify_entity(campaign_id: str, entity_id: str,
                          changed: list[str], visibility: str,
                          kind: str = "", name: str = "") -> None:

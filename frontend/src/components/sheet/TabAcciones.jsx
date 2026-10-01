@@ -4,7 +4,7 @@ import { api } from '../../api.js'
 
 /** Pestaña Acciones: acciones agrupadas, efectos activos y dados. */
 export default function TabAcciones({ c }) {
-  const { id, d, op, t, tf, focus, hud, tab,
+  const { id, char, d, op, t, tf, focus, hud, tab,
           actions, setActions, expr, setExpr, rollType, setRollType,
           doRoll, rollLog, setRollLog, setNotice } = c
   const show = (g) => focus ? hud.has(g) : tab === g
@@ -47,11 +47,18 @@ export default function TabAcciones({ c }) {
                         aria-label={tf('acc.attackWith', { name: label })}
                         onClick={async () => {
                   try {
-                    const r = await api.characterAttack(id, label)
+                    // maestría 2024: el arma la declara, el motor la
+                    // aplica (flex/graze) o la anota (cleave/nick)
+                    const heroic = char.ruleset === 'dnd5e-2024' ||
+                                   d.ruleset === 'dnd5e-2024'
+                    const r = await api.characterAttack(
+                      id, label, 'normal', null,
+                      heroic && !!a.mastery)
                     setRollLog((l) => [
                       `${label}: ${t('acc.hit')} ${r.hit.total}` +
                       (r.damage ? ` · ${t('acc.dmg')} ${
-                        r.damage.total}` : ''),
+                        r.damage.total}` : '') +
+                      (r.mastery ? ` ⚒${r.mastery}` : ''),
                       ...l].slice(0, 10))
                   } catch (e) { setNotice(e.message) }
                 }}>⚔</button>)}
@@ -64,6 +71,9 @@ export default function TabAcciones({ c }) {
                 }}>✦</button>)}
               <span className="action-name">{label}</span>
               {a.hit && <span className="muted"> {a.hit} · {a.damage}</span>}
+              {a.mastery && (
+                <span className="chip" title={t('acc.mastery')}>
+                  ⚒{a.mastery}</span>)}
               <button className="ghost" style={{ minHeight: 28 }}
                       title={t('acc.pinTitle')}
                       aria-label={tf('acc.pinAria', { name: a.name })}

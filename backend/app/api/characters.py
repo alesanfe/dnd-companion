@@ -526,11 +526,16 @@ def _weapon_actions(char, groups, str_mod, dex_mod) -> None:
         props = [p.get("index") for p in w.get("properties", [])]
         mod = dex_mod if "finesse" in props else str_mod
         dmg = (w.get("damage") or {}).get("damage_dice", "1d4")
+        from ..engine.ops import _weapon_mastery
         groups["action"].append({
             "name": f"Ataque: {item.name}",
             "source": item.source_id,
             "hit": f"+{char.proficiency_bonus + mod}",
             "damage": f"{dmg}{mod:+d}",
+            # maestría 2024 del arma (sap/vex/…) — el cliente la
+            # muestra y la activa con use_mastery en /attack
+            **({"mastery": _weapon_mastery(w)} if _weapon_mastery(w)
+               else {}),
         })
 
 

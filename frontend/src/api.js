@@ -262,9 +262,10 @@ export const api = {
     req(`/api/campaigns/${campaignId}/scenes/${sceneId}/start`,
         { method: 'POST' }),
   characterAttack: (characterId, itemName, mode = 'normal',
-                    targetAc = null) =>
+                    targetAc = null, useMastery = false) =>
     req(`/api/operations/character/${characterId}/attack` +
         `?item_name=${encodeURIComponent(itemName)}&mode=${mode}` +
+        `&use_mastery=${useMastery}` +
         (targetAc ? `&target_ac=${targetAc}` : ''), { method: 'POST' }),
   characterRoll: (characterId, expression, rollType = 'check',
                   useInspiration = false, secret = false,

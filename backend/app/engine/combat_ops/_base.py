@@ -116,6 +116,41 @@ def _sync_character(c: Combatant, ctx) -> None:
                          " combate — reintenta")
 
 
+def _spend_heroic(ctx, c: Combatant) -> bool:
+    """Gasta la inspiración heroica de la ficha vinculada (2024).
+    True si se gastó; False si el combatiente no es ficha o no la
+    tiene. Mismo patrón que _sync_character (guardia de versión);
+    el consumo queda fuera de la inversa del combate — como los
+    triggers de la ficha (_char_trigger)."""
+    if c.kind != "character" or not c.ref_id:
+        return False
+    try:
+        conn = ctx.state_db()
+    except AttributeError:
+        return False
+    if conn is None:
+        return False
+    row = conn.execute("SELECT data, version FROM characters"
+                       " WHERE id = ?", (c.ref_id,)).fetchone()
+    if row is None:
+        return False
+    from ...domain.character import Character
+    ch = Character(**json.loads(row["data"]))
+    if not ch.inspiration:
+        return False
+    ch.inspiration = False
+    cur = conn.execute(
+        "UPDATE characters SET data = ?, version = ?, updated_at = ?"
+        " WHERE id = ? AND version = ?",
+        (ch.model_dump_json(), row["version"] + 1,
+         datetime.now(timezone.utc).isoformat(),
+         c.ref_id, row["version"]))
+    if cur.rowcount == 0:
+        raise ValueError("la ficha vinculada cambió durante la op de"
+                         " combate — reintenta")
+    return True
+
+
 def _char_trigger(ctx, c: Combatant, trigger, extra: dict | None = None):
     """Dispara los Effect de la ficha vinculada con este trigger y
     persiste (recursos/condiciones mutados por _trigger_op).

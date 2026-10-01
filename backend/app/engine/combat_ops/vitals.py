@@ -11,7 +11,7 @@ from ...domain.effects import Trigger
 from ...rules import rules
 from ..dice import roll
 from ._base import (
-    COMBAT_HANDLERS, op, _apply_dmg, _char_ref, _char_trigger, _char_typed_amount, _find, _hp_inverse, _sync_character, _typed_amount, op
+    COMBAT_HANDLERS, op, _apply_dmg, _char_ref, _char_trigger, _char_typed_amount, _find, _hp_inverse, _spend_heroic, _sync_character, _typed_amount, op
 )
 
 @op("combatant.damage")
@@ -101,14 +101,20 @@ def combatant_death_save_roll(combat: Combat, p: dict, ctx):
                        "death_saves": dict(c.death_saves),
                        "hp": c.hp_current,
                        "conditions": list(c.conditions)}}
+    heroic = bool(p.get("heroic"))
+    if heroic:
+        if combat.ruleset != "dnd5e-2024":
+            raise ValueError("la inspiración heroica es una regla 2024")
+        if not _spend_heroic(ctx, c):
+            raise ValueError("sin inspiración heroica")
     r = roll("1d20")
+    if heroic:
+        # 2024: repetición obligatoria — manda el segundo resultado
+        r = roll("1d20")
     outcome = None
     if r.total == 20:                     # pifia natural inversa: revive
         c.hp_current = 1
         c.death_saves = {"success": 0, "fail": 0}
-        # levanta también el estado — como hp.heal y la save de la hoja
-        c.conditions = [x for x in c.conditions
-                        if x.lower() not in ("muerto", "dead", "estable")]
         # levanta también el estado — como hp.heal y la save de la hoja
         c.conditions = [x for x in c.conditions
                         if x.lower() not in ("muerto", "dead", "estable")]
@@ -132,7 +138,9 @@ def combatant_death_save_roll(combat: Combat, p: dict, ctx):
     _sync_character(c, ctx)
     return inv, [{"type": "character.hp.changed",
                   "payload": {"combatant": c.name, "death_save_roll": r.total,
-                              "outcome": outcome, **_char_ref(c)}}]
+                              "outcome": outcome,
+                              **({"heroic": True} if heroic else {}),
+                              **_char_ref(c)}}]
 
 
 @op("combatant.death_save.set")

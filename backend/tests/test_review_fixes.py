@@ -2435,6 +2435,40 @@ def test_heroic_reroll_requires_inspiration():
     assert r.status_code == 400
 
 
+def test_heroic_death_save_consumes_inspiration():
+    """2024: la inspiración heroica repite la death save — la op la
+    consume (y la restaura el undo)."""
+    cid = client.post("/api/characters",
+                      json={"name": "DS", "ruleset": "dnd5e-2024"}
+                      ).json()["id"]
+    _op(cid, _version(cid), "character.inspiration.set",
+        {"value": True})
+    # a 0 PG para poder salvar
+    _op(cid, _version(cid), "character.hp.set", {"current": 0})
+    r = _op(cid, _version(cid), "character.death_save",
+            {"roll": 15, "heroic": True})
+    assert r.status_code == 200, r.text
+    d = client.get(f"/api/characters/{cid}").json()["data"]
+    assert d["inspiration"] is False
+    assert d["death_saves"]["success"] == 1
+    # sin inspiración ya no vuelve a ofrecerse
+    _op(cid, _version(cid), "character.hp.set", {"current": 0})
+    r = _op(cid, _version(cid), "character.death_save",
+            {"roll": 15, "heroic": True})
+    assert r.status_code == 400 or "error" in r.json()
+
+
+def test_heroic_death_save_2014_rejected():
+    """En 2014 la inspiración no cubre death saves."""
+    cid = _mkchar()
+    _op(cid, _version(cid), "character.inspiration.set",
+        {"value": True})
+    _op(cid, _version(cid), "character.hp.set", {"current": 0})
+    r = _op(cid, _version(cid), "character.death_save",
+            {"roll": 15, "heroic": True})
+    assert r.status_code == 400 or "error" in r.json()
+
+
 # --- Maestría de arma 2024 en combat.attack -----------------------------
 
 def _mastery_setup():

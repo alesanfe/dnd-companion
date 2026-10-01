@@ -66,6 +66,15 @@ def death_save(char: Character, p: dict, ctx):
         raise ValueError("el personaje no está a 0 PG")
     inv = _set_inverse(char)
     cs = rules()["combat"]
+    # 2024: la inspiración heroica repite el dado (el cliente ya hizo
+    # el reroll y manda el resultado nuevo); aquí solo se consume —
+    # va tras el snapshot de _set_inverse: el undo la restaura
+    if p.get("heroic"):
+        if getattr(char.ruleset, "value", char.ruleset) != "dnd5e-2024":
+            raise ValueError("la inspiración heroica es una regla 2024")
+        if not char.inspiration:
+            raise ValueError("sin inspiración heroica")
+        char.inspiration = False
     d20 = int(p["roll"])
     result = None
     if d20 >= cs["death_save_crit_success"]:

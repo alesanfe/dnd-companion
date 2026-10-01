@@ -117,6 +117,20 @@ export default function TabResumen({ c }) {
                 await op('character.death_save', { roll: r.total })
               } catch (e) { setNotice(e.message) }
             }}>{t('sheet.rollSave')}</button>
+            {/* 2024: la inspiración heroica repite la death save —
+                el dado nuevo manda y gasta la inspiración */}
+            {d.inspiration && (char.ruleset === 'dnd5e-2024' ||
+                               d.ruleset === 'dnd5e-2024') && (
+              <button className="ghost" title={t('sheet.heroicDsTitle')}
+                      onClick={async () => {
+                try {
+                  const r = await api.roll('1d20')   // el reroll manda
+                  await op('character.death_save',
+                           { roll: r.total, heroic: true })
+                  setNotice(
+                    `${t('sheet.heroicTag')}1d20 → ${r.total}`)
+                } catch (e) { setNotice(e.message) }
+              }}>🔄 {t('sheet.heroicTag').trim()}</button>)}
           </div>
         </div>)}
       <div className="hp-bar" role="img"

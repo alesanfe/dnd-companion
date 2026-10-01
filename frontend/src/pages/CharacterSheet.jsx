@@ -306,15 +306,15 @@ export default function CharacterSheet() {
   const slots = d.spell_slots || {}
 
   const rollInit = async (mode = '') => {
-    // check:dex → el backend suma el mod DES y aplica condiciones
-    // (agotamiento da desventaja en pruebas); el resto del bono de
-    // iniciativa derivado (efectos) va como mod fijo
+    // 'initiative' → el backend suma el mod DES y aplica condiciones
+    // (sorprendido 2024 = desventaja; agotamiento da penalizador); el
+    // resto del bono de iniciativa derivado (efectos) va como mod fijo
     const dexMod = Math.floor(((d.abilities?.dexterity ?? 10) - 10) / 2)
     const extra = (derived?.initiative ?? dexMod) - dexMod
     try {
       const r = await api.characterRoll(
         id, `1d20${mode}${extra ? `${extra >= 0 ? '+' : ''}${extra}` : ''}`,
-        'check:dex')
+        'initiative')
       setRollLog((l) => [
       `${t('sheet.initiative')}${mode === 'adv' ? ` ${t('sheet.advTag')}`
                 : mode === 'dis' ? ` ${t('sheet.disTag')}` : ''}: ${

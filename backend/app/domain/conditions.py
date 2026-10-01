@@ -44,6 +44,8 @@ def mods_for(conditions: list[str], roll_type: str,
     is2024 = ruleset == "dnd5e-2024"
     for cond in conditions or []:
         c = canon(cond)
+        if c == "surprised" and not is2024:
+            continue                # 2014: sorpresa ≠ desventaja init
         level = _exhaustion_level(c, stacks)
         rule = dict(CONDITION_ROLLS.get(c, {}))
         if level and is2024:

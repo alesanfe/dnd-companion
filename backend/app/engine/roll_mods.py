@@ -38,6 +38,12 @@ def _auto_modifier(char: Character, roll_type: str,
     extra = 0
     base_type, _, detail = roll_type.partition(":")
     detail = detail.strip().lower()
+    if base_type == "initiative":
+        # la iniciativa es una prueba de DES — sorprendido (2024) da
+        # desventaja via mods_for, NO via la tabla de check:dex
+        extra += char.abilities.modifier("dex")
+        applied.append(f"dex: {char.abilities.modifier('dex'):+d}")
+        return extra
     if base_type in ("check", "save") and detail:
         extra += char.abilities.modifier(detail)
         applied.append(f"{detail}: {char.abilities.modifier(detail):+d}")

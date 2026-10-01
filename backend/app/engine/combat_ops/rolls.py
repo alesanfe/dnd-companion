@@ -36,10 +36,16 @@ def combatant_initiative_roll(combat: Combat, p: dict, ctx):
     inv = {"operation_type": "combatant.initiative",
            "payload": {"combatant_id": c.id, "value": c.initiative}}
     mod = (dex - 10) // 2
-    c.initiative = roll("1d20").total + mod
+    from ...domain.conditions import mods_for
+    adv, dis, _fail, notes = mods_for(c.conditions, "initiative",
+                                      ruleset=combat.ruleset)
+    r = roll("1d20adv" if adv and not dis else
+             "1d20dis" if dis and not adv else "1d20")
+    c.initiative = r.total + mod
     return inv, [{"type": "combat.turn.advanced",
                   "payload": {"initiative_rolled": c.name,
-                              "value": c.initiative}}]
+                              "value": c.initiative,
+                              **({"notes": notes} if notes else {})}}]
 
 
 @op("combatant.initiative")

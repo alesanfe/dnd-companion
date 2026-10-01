@@ -2469,6 +2469,37 @@ def test_heroic_death_save_2014_rejected():
     assert r.status_code == 400 or "error" in r.json()
 
 
+def test_surprised_2024_initiative_disadvantage():
+    """Sorprendido (2024): desventaja en la iniciativa — 2 dados,
+    se queda el menor. En 2014 no es regla."""
+    from app.domain.conditions import mods_for
+    a, d, _, _ = mods_for(["surprised"], "initiative",
+                          ruleset="dnd5e-2024")
+    assert d is True
+    a, d, _, _ = mods_for(["surprised"], "initiative",
+                          ruleset="dnd5e-2014")
+    assert d is False
+    # solo iniciativa: una prueba de dex normal no lleva desventaja
+    a, d, _, _ = mods_for(["surprised"], "check:dex",
+                          ruleset="dnd5e-2024")
+    assert d is False
+
+
+def test_roll_initiative_type_adds_dex():
+    """roll_type=initiative suma DES como una prueba de destreza y
+    admite sorprendido."""
+    from app.api.operations import _augment_expr
+    c = Character(name="t")
+    c.abilities = c.abilities.model_copy(
+        update={"dexterity": 16})
+    expr, _ = _augment_expr(c, "1d20", "initiative", False, [])
+    assert "+3" in expr
+    c.conditions = ["sorprendido"]
+    c.ruleset = "dnd5e-2024"
+    expr, _ = _augment_expr(c, "1d20", "initiative", False, [])
+    assert "dis" in expr
+
+
 # --- Maestría de arma 2024 en combat.attack -----------------------------
 
 def _mastery_setup():

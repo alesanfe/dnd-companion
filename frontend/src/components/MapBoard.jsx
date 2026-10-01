@@ -374,6 +374,8 @@ export default function MapBoard({ campaign, size = CELL,
      ft.' / 'range 20/60 ft.'). null = no pudo determinarse → se
      permite el ataque sin chequeo. */
   const _optRange = async (opt) => {
+    if (['grapple', 'shove', 'shove_push'].includes(opt.kind))
+      return { normal: 5, long: 5 }          // cuerpo a cuerpo
     if (opt.kind === 'cbt') {
       const text = opt.text || ''
       const mR = text.match(/reach\s*(\d+)\s*ft/i)
@@ -416,6 +418,15 @@ export default function MapBoard({ campaign, size = CELL,
                            kind: 'cbt', action_index: i2,
                            text: a.text }))
     }
+    /* unarmed strike (2024): empujón/agarrón — el servidor resuelve
+       la CD (o la contestada 2014) según el ruleset del combate;
+       cualquier combatiente puede intentarlo */
+    if (combat && _combatantOf(tk)) {
+      opts = [...opts,
+              { label: t('map.optGrapple'), kind: 'grapple' },
+              { label: t('map.optShove'),   kind: 'shove' },
+              { label: t('map.optPush'),    kind: 'shove_push' }]
+    }
     if (!opts.length) { setZoneLog(`⚠ ${tk.name}: ${t('map.atkNone')}`); return }
     setAtkFrom(tk); setAtkOpts(opts); setAtkIdx(0)
   }
@@ -450,6 +461,40 @@ export default function MapBoard({ campaign, size = CELL,
       setZoneLog(tf('map.atkOutOfRange',
         { atk: atk.name, dist: distFt.toFixed(0),
           range: rng.long })); return
+    }
+    /* empujón/agarrón: una sola op auditable (el servidor decide
+       save-vs-CD 2024 o contestada 2014); mismo camino para DM y
+       jugador — combat.shove_grapple está en las excepciones */
+    if (['grapple', 'shove', 'shove_push'].includes(opt.kind)) {
+      if (!combat) return
+      const atkCb = _combatantOf(atk)
+      const tgtCb = _combatantOf(target)
+      if (!atkCb || !tgtCb) {
+        setZoneLog(t('map.atkNoTarget')); return }
+      const r = await api.applyOp(
+        { id: combat.id, version: cver() }, 'combat.shove_grapple',
+        { attacker_combatant_id: atkCb.id,
+          target_combatant_id: tgtCb.id,
+          kind: opt.kind === 'grapple' ? 'grapple' : 'shove',
+          ...(opt.kind === 'shove_push' ? { push: true } : {}) },
+        'combat').catch((e) => {
+        setZoneLog(`⚠ ${e.message}`); return null })
+      if (!r) return
+      combatVerRef.current = r.version
+      const ev = (r.events || []).find(
+        (e) => e.type === 'dice.roll.created') || {}
+      const pl = ev.payload || {}
+      setZoneLog(`${atk.name} → ${target.name}: ${opt.label} ` +
+        (pl.hits
+          ? (pl.push_ft
+            ? `→ ${pl.push_ft}ft`
+            : opt.kind === 'grapple' ? t('map.sgGrappled')
+                                     : t('map.sgProne'))
+          : t('map.sgResisted')) +
+        (pl.dc ? ` (CD ${pl.dc})` : '') +
+        (pl.save ? ` ${String(pl.save).toUpperCase()} ` +
+                  `${pl.save_total}` : ''))
+      return
     }
     const mode = rng && distFt > rng.normal ? 'dis' : 'normal'
     /* jugador: resolución server-side — combat.attack compara contra

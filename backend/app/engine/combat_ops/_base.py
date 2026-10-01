@@ -288,7 +288,7 @@ def _weapon_attack(char, item_name: str, ctx):
     dtype = (((w.get("damage") or {}).get("damage_type") or {})
              .get("index") or w.get("dmgType") or None)
     return (item, mod, char.proficiency_bonus + mod,
-            _item_damage(w) or "1d4", dtype)
+            _item_damage(w) or "1d4", dtype, w)
 
 
 def _double_dice(expr: str) -> str:

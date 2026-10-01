@@ -126,6 +126,19 @@ def combatant_action_roll(combat: Combat, p: dict, ctx):
     pen = pen_for(c.conditions, None, combat.ruleset)
     if pen:
         notes.append(f"agotamiento: -{pen} (2024)")
+    # marcadores de maestría 2024 también en el stat block del monstruo
+    markers = ("vex" in c.conditions) or ("sap" in c.conditions)
+    inv = ({"operation_type": "combat.state.restore",
+            "payload": {"data": combat.model_dump()}}
+           if markers else {"operation_type": "noop", "payload": {}})
+    if "vex" in c.conditions:
+        adv = True
+        c.conditions.remove("vex")
+        notes.append("vex → ventaja (maestría)")
+    if "sap" in c.conditions:
+        dis = True
+        c.conditions.remove("sap")
+        notes.append("sap → desventaja (maestría)")
     # mode del cliente: el mapa pide desventaja cuando el objetivo
     # queda más allá del alcance normal del arma a distancia
     mode = str(p.get("mode", "normal"))
@@ -157,7 +170,7 @@ def combatant_action_roll(combat: Combat, p: dict, ctx):
         ev["payload"].update(recharge_roll=rr.total,
                              recharge_needed=threshold,
                              recharges=rr.total >= threshold)
-    return {"operation_type": "noop", "payload": {}}, [ev]
+    return inv, [ev]
 
 
 @op("combatant.check")
@@ -218,7 +231,7 @@ def combat_attack(combat: Combat, p: dict, ctx):
         raise ValueError("ficha del atacante no encontrada")
     from ...domain.character import Character
     char = Character(**json.loads(row["data"]))
-    item, mod, hit_bonus, dmg_dice, dtype = _weapon_attack(
+    item, mod, hit_bonus, dmg_dice, dtype, wpn = _weapon_attack(
         char, str(p.get("item_name", "")), ctx)
     dtype = (p.get("damage_type") or dtype or "")
     # mismas reglas de condición que /character/attack + modo manual.
@@ -238,6 +251,28 @@ def combat_attack(combat: Combat, p: dict, ctx):
         adv = True
     elif mode == "dis":
         dis = True
+    # maestría de arma (2024): el arma declara su propiedad y los
+    # marcadores 'vex' (ventaja) / 'sap' (desventaja) de impactos
+    # previos se consumen aquí. Solo en combates con reglas 2024;
+    # use_mastery=false lo desactiva por si el PJ no es competente.
+    use_mastery = bool(p.get(
+        "use_mastery", combat.ruleset == "dnd5e-2024"))
+    from ..ops import _item_versatile, _weapon_mastery
+    mastery = _weapon_mastery(wpn) if use_mastery else None
+    # snapshot completo cuando hay marcadores/maestría que tocar:
+    # hp.set solo restaura las condiciones del OBJETIVO, no las del
+    # atacante ('vex'/'sap' consumidos)
+    needs_full_inv = mastery is not None or \
+        "vex" in atk.conditions or "sap" in atk.conditions
+    before = combat.model_dump() if needs_full_inv else None
+    if "vex" in atk.conditions:
+        adv = True
+        atk.conditions.remove("vex")
+        notes.append("vex → ventaja (maestría)")
+    if "sap" in atk.conditions:
+        dis = True
+        atk.conditions.remove("sap")
+        notes.append("sap → desventaja (maestría)")
     hit = roll("1d20adv" if adv and not dis else
                "1d20dis" if dis and not adv else "1d20")
     hit_total = hit.total + hit_bonus
@@ -255,11 +290,59 @@ def combat_attack(combat: Combat, p: dict, ctx):
         "roll": hit.total, "total": hit_total, "hits": hits,
         **({"crit": True} if crit else {}),
         **({"notes": notes} if notes else {})}}
+    if mastery:
+        ev["payload"]["mastery"] = mastery
+    full_inv = ({"operation_type": "combat.state.restore",
+                 "payload": {"data": before}} if before else None)
     if not hits:
-        return {"operation_type": "noop", "payload": {}}, [ev]
+        # graze (2024): en fallo inflige daño = mod de característica
+        if mastery == "gra":
+            graze = max(0, mod)
+            if graze:
+                dmg_payload = _apply_dmg(tgt, graze, "graze")
+                ev["payload"]["damage"] = graze
+                _sync_character(tgt, ctx)
+                return full_inv or _hp_inverse(tgt), [
+                    ev, {"type": "character.hp.changed",
+                         "payload": dmg_payload}]
+        return (full_inv or
+                {"operation_type": "noop", "payload": {}}, [ev])
+    # efecto de maestría sobre el impacto — lo automático lo aplica el
+    # motor; las cadenas de ataques extra (cleave/nick) solo se anotan
+    if mastery == "flex":
+        dmg_dice = _item_versatile(wpn) or dmg_dice
+    elif mastery == "vex":
+        if "vex" not in atk.conditions:
+            atk.conditions.append("vex")
+    elif mastery == "sap":
+        if "sap" not in tgt.conditions:
+            tgt.conditions.append("sap")
+    elif mastery == "slow":
+        if "slow" not in tgt.conditions:
+            tgt.conditions.append("slow")
+    elif mastery == "push":
+        ev["payload"]["push_ft"] = 10    # el DM mueve el token
+    elif mastery == "topple":
+        con = ((tgt.stat_block or {}).get("abilities") or {}) \
+            .get("con") or (tgt.stat_block or {}).get(
+                "constitution") or 10
+        con_mod = ((tgt.stat_block or {}).get("saves") or {}) \
+            .get("con", (con - 10) // 2)
+        dc = 8 + char.proficiency_bonus + mod
+        sv = roll("1d20")
+        ev["payload"]["topple_save"] = {
+            "roll": sv.total + con_mod, "dc": dc,
+            "prone": sv.total + con_mod < dc}
+        if sv.total + con_mod < dc:
+            tgt.conditions.append("prone")
+    elif mastery in ("cleave", "nick"):
+        ev["payload"]["mastery_note"] = (
+            "cleave: ataque extra a un 2º objetivo a 5 ft" if
+            mastery == "cleave" else
+            "nick: ataque ligero extra sin gastar acción adicional")
     expr = _double_dice(dmg_dice) if crit else dmg_dice
     dmg_total = roll(f"{expr}{mod:+d}").total
-    inv = _hp_inverse(tgt)
+    inv = full_inv or _hp_inverse(tgt)
     amount, note = _typed_amount(tgt, dmg_total, dtype.strip().lower())
     dmg_payload = _apply_dmg(tgt, amount, note)
     ev["payload"]["damage"] = amount

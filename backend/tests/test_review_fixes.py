@@ -2435,6 +2435,150 @@ def test_heroic_reroll_requires_inspiration():
     assert r.status_code == 400
 
 
+# --- Maestría de arma 2024 en combat.attack -----------------------------
+
+def _mastery_setup():
+    """Combate 2024 local: PJ con arma source_id + orco AC 1
+    (impacto asegurado). Devuelve (cop, comb_id, atk_id, tgt_id)."""
+    cid = client.post("/api/characters",
+                      json={"name": "W", "ruleset": "dnd5e-2024"}
+                      ).json()["id"]
+    comb = client.post("/api/combat",
+                       json={"name": "M", "ruleset": "dnd5e-2024"}
+                       ).json()
+
+    def cop(otype, payload):
+        cur = client.get(f"/api/combat/{comb['id']}").json()["version"]
+        return client.post("/api/operations", json={
+            "operation_id": uuid.uuid4().hex, "entity_id": comb["id"],
+            "entity_version": cur, "client_id": "c", "user_id": "u",
+            "entity_kind": "combat", "operation_type": otype,
+            "payload": payload})
+
+    assert cop("combatant.add", {"kind": "character", "name": "W",
+                                 "ref_id": cid}).status_code == 200
+    assert cop("combatant.add", {"kind": "monster", "name": "orco",
+                                 "hp_max": 15,
+                                 "stat_block": {"ac": 1, "hp": 15}}
+               ).status_code == 200
+    cs = client.get(f"/api/combat/{comb['id']}").json()["combat"][
+        "combatants"]
+    return (cop, comb["id"],
+            next(c["id"] for c in cs if c["kind"] == "character"),
+            next(c["id"] for c in cs if c["kind"] == "monster"), cid)
+
+
+def _give(cid, name, source_id):
+    v = _version(cid)
+    r = _op(cid, v, "character.inventory.add",
+            {"name": name, "source_id": source_id})
+    assert r.status_code == 200, r.text
+
+
+def test_combat_attack_mastery_sap_marks_target():
+    """Sap (longsword 2024): el impacto marca 'sap' en el objetivo."""
+    from app.db.connections import content_db
+    if not content_db().execute(
+            "SELECT 1 FROM content_entities"
+            " WHERE id='srd-2024:longsword'").fetchone():
+        pytest.skip("content DB sin srd-2024:longsword")
+    cop, comb, atk, tgt, cid = _mastery_setup()
+    _give(cid, "Longsword", "srd-2024:longsword")
+    r = cop("combat.attack", {"attacker_combatant_id": atk,
+                              "target_combatant_id": tgt,
+                              "item_name": "Longsword"})
+    assert r.status_code == 200, r.text
+    cs = client.get(f"/api/combat/{comb}").json()["combat"]["combatants"]
+    assert "sap" in next(c for c in cs if c["id"] == tgt)["conditions"]
+
+
+def test_combat_attack_mastery_consumes_vex():
+    """Vex: el marcador da ventaja en el siguiente ataque y se
+    consume — visible como nota en el evento."""
+    from app.db.connections import content_db
+    if not content_db().execute(
+            "SELECT 1 FROM content_entities"
+            " WHERE id='srd-2024:rapier'").fetchone():
+        pytest.skip("content DB sin srd-2024:rapier")
+    cop, comb, atk, tgt, cid = _mastery_setup()
+    _give(cid, "Rapier", "srd-2024:rapier")
+    r = cop("combat.attack", {"attacker_combatant_id": atk,
+                              "target_combatant_id": tgt,
+                              "item_name": "Rapier"})
+    assert r.status_code == 200
+    cs = client.get(f"/api/combat/{comb}").json()["combat"]["combatants"]
+    # el atacante gana el marcador vex
+    assert "vex" in next(c for c in cs if c["id"] == atk)["conditions"]
+    # el segundo ataque lo consume → ventaja
+    r2 = cop("combat.attack", {"attacker_combatant_id": atk,
+                               "target_combatant_id": tgt,
+                               "item_name": "Rapier"})
+    assert r2.status_code == 200
+    cs = client.get(f"/api/combat/{comb}").json()["combat"]["combatants"]
+    assert "vex" in next(c for c in cs if c["id"] == atk)["conditions"]
+    # se consume y se vuelve a ganar por el segundo impacto
+
+
+def test_combat_attack_mastery_topple_prone():
+    """Topple (quarterstaff): salvación CON fallada del objetivo lo
+    deja 'prone'. Con CON 10 y DC 8+prof+mod el resultado depende del
+    d20 — se acepta que el save exista en el evento."""
+    from app.db.connections import content_db
+    if not content_db().execute(
+            "SELECT 1 FROM content_entities"
+            " WHERE id='srd-2024:quarterstaff'").fetchone():
+        pytest.skip("content DB sin srd-2024:quarterstaff")
+    cop, comb, atk, tgt, cid = _mastery_setup()
+    _give(cid, "Quarterstaff", "srd-2024:quarterstaff")
+    r = cop("combat.attack", {"attacker_combatant_id": atk,
+                              "target_combatant_id": tgt,
+                              "item_name": "Quarterstaff"})
+    assert r.status_code == 200
+    sv = next(e for e in r.json()["events"]
+              if e["type"] == "dice.roll.created")["payload"][
+                  "topple_save"]
+    assert sv["dc"] == 8 + 2 + 0     # prof 2 + mod FUE 0 (PJ a 10s)
+
+
+def test_combat_attack_mastery_off_in_2014():
+    """En un combate 2014 el arma no aplica maestría."""
+    from app.db.connections import content_db
+    if not content_db().execute(
+            "SELECT 1 FROM content_entities"
+            " WHERE id='srd-2024:longsword'").fetchone():
+        pytest.skip("content DB sin srd-2024:longsword")
+    cid = client.post("/api/characters",
+                      json={"name": "W", "ruleset": "dnd5e-2024"}
+                      ).json()["id"]
+    _give(cid, "Longsword", "srd-2024:longsword")
+    comb = client.post("/api/combat", json={"name": "M"}).json()
+
+    def cop(otype, payload):
+        cur = client.get(f"/api/combat/{comb['id']}").json()["version"]
+        return client.post("/api/operations", json={
+            "operation_id": uuid.uuid4().hex, "entity_id": comb["id"],
+            "entity_version": cur, "client_id": "c", "user_id": "u",
+            "entity_kind": "combat", "operation_type": otype,
+            "payload": payload})
+
+    cop("combatant.add", {"kind": "character", "name": "W",
+                          "ref_id": cid})
+    cop("combatant.add", {"kind": "monster", "name": "orco",
+                          "hp_max": 15, "stat_block": {"ac": 1}})
+    cs = client.get(f"/api/combat/{comb['id']}").json()["combat"][
+        "combatants"]
+    atk = next(c["id"] for c in cs if c["kind"] == "character")
+    tgt = next(c["id"] for c in cs if c["kind"] == "monster")
+    r = cop("combat.attack", {"attacker_combatant_id": atk,
+                              "target_combatant_id": tgt,
+                              "item_name": "Longsword"})
+    assert r.status_code == 200
+    cs = client.get(f"/api/combat/{comb['id']}").json()["combat"][
+        "combatants"]
+    assert "sap" not in next(c for c in cs
+                             if c["id"] == tgt)["conditions"]
+
+
 # --- Fase F: WebSocket — identidad, roles, visibilidad ----------------
 
 def _reg():

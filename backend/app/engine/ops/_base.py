@@ -318,6 +318,30 @@ def _is_finesse(w: dict) -> bool:
         str(w.get("weapon_range", "")).lower()
 
 
+def _weapon_mastery(w: dict) -> str | None:
+    """Índice de maestría del arma 2024 ('sap', 'topple'…) o None.
+    Multi-schema: dict {index|name} (5e-bits/Open5e v2) o string."""
+    m = w.get("mastery")
+    if isinstance(m, dict):
+        m = m.get("index") or m.get("name")
+    return str(m).lower().strip() if m else None
+
+
+def _item_versatile(w: dict) -> str | None:
+    """Dado versátil (a dos manos) — 'damage.versatile_dice' (5e-bits)
+    o 'dmg2' (5etools)."""
+    dmg = w.get("damage")
+    if isinstance(dmg, dict) and dmg.get("versatile_dice"):
+        return str(dmg["versatile_dice"])
+    return str(w["dmg2"]) if w.get("dmg2") else None
+
+
+# Las maestrías 2024 que no son un efecto inmediato (cleave, nick =
+# cadenas de ataques extra) solo se anotan en el evento — el DM
+# encadena la segunda tirada a mano; sap/vex/topple/… mutan
+# condiciones en combat_ops.rolls.combat_attack
+
+
 def _item_weight(sp: dict) -> float:
     """Peso en libras desde datos de entidad: 'weight' numérico
     (5e-bits/Open5e) o texto '6 lb.' (5etools properties)."""

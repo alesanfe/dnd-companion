@@ -41,6 +41,18 @@ cd frontend && npm install && npm run dev
   — leerlas vía `app.rules.rules()`; nunca duplicarlas en código.
 - `ruleset` interno: `dnd5e-2014` | `dnd5e-2024` | `mixed`. Etiquetas tipo
   "5e"/"5.5e" solo en UI.
+- Diferencias 2024 efectivas en el motor: agotamiento (-2×nivel a d20,
+  -5ft×nivel de velocidad, muerte a 6) vía `domain/conditions.py`
+  (ruleset-aware); inspiración heroica = reroll post-tirada del peor
+  dado retenido (`/character/{id}/roll?heroic_reroll`, solo 2024;
+  en 2014 es ventaja previa vía `use_inspiration`); maestría de arma
+  — el arma 2024 declara `mastery.index` y `combat.attack` lo aplica
+  automáticamente (`use_mastery=false` lo desactiva): sap/slow marcan
+  al objetivo, vex marca al atacante (ambos consumibles en el próximo
+  ataque, también en `combatant.action.roll`), topple=save CON→prone,
+  graze=daño=mod en fallo, flex=dado versátil, push/evento de 10ft,
+  cleave/nick solo se anotan (cadena manual). `character.attack`
+  acepta `use_mastery` (solo flex/graze + nota — no hay objetivo).
 - Todo cambio de estado = operación con `operation_id` + `entity_version`
   (idempotencia, optimistic locking, reversible).
 - Eventos WebSocket pequeños y tipados (`character.hp.changed`, etc.), nunca

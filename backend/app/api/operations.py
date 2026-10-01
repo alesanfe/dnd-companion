@@ -172,13 +172,18 @@ async def _broadcast_roll(conn, campaign_id: str, character_id: str,
 def character_attack(character_id: str, item_name: str,
                      mode: str = "normal",
                      target_ac: int | None = None,
+                     use_mastery: bool = False,
                      user: dict | None = Depends(optional_user)):
     """Ataque completo con un arma del inventario: tirada de impacto
     (d20 + mod + prof, con condiciones/efectos) + tirada de daño.
 
     mode: normal|adv|dis — ventaja/desventaja explícita del jugador;
     las condiciones mecánicas del personaje se aplican encima.
-    target_ac: si se informa, el resultado indica impacto/fallo."""
+    target_ac: si se informa, el resultado indica impacto/fallo.
+    use_mastery (2024): aplica la maestría declarada por el arma —
+    sin objetivo en el tracker solo resuelve lo mecánico (flex sube
+    el dado versátil; graze inflige daño = mod en fallo); sap/vex/
+    topple… se anotan para que el DM las aplique con combat.attack."""
     conn = state_db()
     row = conn.execute(
         "SELECT data, campaign_id FROM characters WHERE id = ?",
@@ -193,7 +198,13 @@ def character_attack(character_id: str, item_name: str,
                  if i.name.lower() == item_name.lower()), None)
     if item is None:
         raise HTTPException(404, "arma no en inventario")
-    mod, hit_bonus, dmg_dice = _weapon_stats(char, item)
+    mod, hit_bonus, dmg_dice, wpn = _weapon_stats(char, item)
+    from ..engine.ops import _item_versatile, _weapon_mastery
+    ruleset = getattr(char.ruleset, "value", char.ruleset)
+    mastery = (_weapon_mastery(wpn)
+               if use_mastery and ruleset == "dnd5e-2024" else None)
+    if mastery == "flex":
+        dmg_dice = _item_versatile(wpn) or dmg_dice
 
     # condiciones: la mecánica es idéntica a /roll
     c_adv, c_dis, fail, c_notes = _condition_mods(char, "attack")
@@ -212,6 +223,7 @@ def character_attack(character_id: str, item_name: str,
     result = {"weapon": item.name,
               "auto_fail": fail,
               "notes": c_notes,
+              **({"mastery": mastery} if mastery else {}),
               "hit": {"rolls": hit.rolls, "total": hit.total,
                       "bonus": hit_bonus,
                       "mode": suffix or "normal"},
@@ -220,12 +232,17 @@ def character_attack(character_id: str, item_name: str,
     if target_ac is not None and not fail:
         result["hit"]["hits"] = hit.total >= target_ac
         result["hit"]["target_ac"] = target_ac
+        if not result["hit"]["hits"] and mastery == "gra":
+            # graze (2024): el fallo aún inflige el mod de daño
+            result["damage"] = {"expression": str(mod),
+                                "rolls": [], "total": max(0, mod),
+                                "graze": True}
     return result
 
 
 def _weapon_stats(char, item):
-    """(mod de característica, bonificador de impacto, dados de daño)
-    del arma — finesse/ranged → DES, el resto → FUE."""
+    """(mod de característica, bonificador de impacto, dados de daño,
+    data del arma) — finesse/ranged → DES, el resto → FUE."""
     from ..engine.ops import _is_finesse, _item_damage
     w = {}
     if item.source_id:
@@ -237,7 +254,7 @@ def _weapon_stats(char, item):
         "dex" if _is_finesse(w) else "str")
     # multi-schema: dmg1 (5etools), damage como str (codexMUNDI)…
     return (mod, char.proficiency_bonus + mod,
-            _item_damage(w) or "1d4")
+            _item_damage(w) or "1d4", w)
 
 
 _MODELS = {"character": Character, "combat": Combat}

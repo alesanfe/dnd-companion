@@ -9,6 +9,21 @@ de mesa.
 [Arquitectura](docs/ARCHITECTURE.md) ·
 [Guía para agentes](AGENTS.md)
 
+## Capturas
+
+<table>
+<tr>
+  <td><img src="docs/assets/character-sheet.png" alt="Ficha de personaje 2024: cabecera con clase y nivel, chips de PG, CA, iniciativa, velocidad, inspiración y condición envenenado; pestañas de Resumen, Acciones, Magia e Inventario; XP, puntos de golpe, descansos y condiciones" width="420"></td>
+  <td><img src="docs/assets/character-spells.png" alt="Pestaña de magia de una maga 2014: espacios de conjuro por nivel con círculos gastados, conjuros conocidos con botón Lanzar y chip de concentración activa" width="420"></td>
+</tr>
+<tr>
+  <td><img src="docs/assets/dm-combat.png" alt="Mesa del DM en la pestaña Combate: tracker de iniciativa con barras de PG por combatiente, condiciones con duración, calculadora de dificultad de encuentro y búsqueda de monstruos" width="420"></td>
+  <td><img src="docs/assets/dm-map.png" alt="Mapa táctico del VTT: cuadrícula con tokens de personajes y orcos, barras de PG sobre cada token, anillo de turno activo, cinta de iniciativa y pin de escena" width="420"></td>
+</tr>
+</table>
+<p><sub>Ficha · Magia · Tracker de iniciativa · Mapa VTT —
+interfaz en español (la app también va en inglés)</sub></p>
+
 ## Estado
 
 > [!IMPORTANT]

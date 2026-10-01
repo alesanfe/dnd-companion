@@ -262,8 +262,18 @@ def condition_apply(char: Character, p: dict, ctx):
                 char.condition_stacks.get(cond, 0) + delta
     if rounds:
         char.condition_durations[cond] = rounds
+    # agotamiento nivel 6 = muerte (2014 y 2024 comparten el umbral;
+    # sólo cambia la mecánica de penalización)
+    from ..domain.conditions import canon
+    lvl = char.condition_stacks.get(cond, 0)
+    died = canon(cond) == "exhaustion" \
+        and lvl >= rules()["combat"]["exhaustion_death_level"]
+    if died and "muerto" not in char.conditions \
+            and "dead" not in char.conditions:
+        char.conditions.append("muerto")
     return inv, [{"type": "character.condition.applied",
                   "payload": {"condition": cond, "rounds": rounds,
+                              **({"died": True} if died else {}),
                               "stacks":
                               char.condition_stacks.get(cond, 0)}}]
 

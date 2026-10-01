@@ -2367,3 +2367,30 @@ def test_turn_triggers_fire_on_linked_char():
                        ).fetchone()
     assert Character(**json.loads(row["data"])
                      ).resources[0].current == 1              # +1 ki
+
+
+# --- Fase E de la auditoría: ruleset 2024 efectivo --------------------
+
+def test_exhaustion_2024_penalty_not_disadvantage():
+    """2024: agotamiento = -2×nivel fijo a d20, sin desventaja; en
+    2014 el nivel 3+ da desventaja en ataque/salvación."""
+    from app.domain.conditions import mods_for, pen_for
+    conds, stacks = ["exhaustion"], {"exhaustion": 3}
+    # 2014: desventaja en check + (nivel 3) attack/save
+    a, d, f, _ = mods_for(conds, "attack", stacks, "dnd5e-2014")
+    assert d is True
+    assert pen_for(conds, stacks, "dnd5e-2014") == 0
+    # 2024: -6 fijo, sin desventaja
+    a, d, f, notes = mods_for(conds, "attack", stacks, "dnd5e-2024")
+    assert d is False and "-6" in str(notes)
+    assert pen_for(conds, stacks, "dnd5e-2024") == 6
+
+
+def test_exhaustion_level_6_kills():
+    """Nivel 6 de agotamiento añade 'muerto' en ambas ediciones."""
+    for rs in ("dnd5e-2014", "dnd5e-2024"):
+        c = Character(name="t", ruleset=rs)
+        apply_operation(c, "character.condition.apply",
+                        {"condition": "exhaustion", "stacks": 6},
+                        _Ctx())
+        assert "muerto" in c.conditions

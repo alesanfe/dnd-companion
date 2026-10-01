@@ -658,8 +658,14 @@ def combatant_save(combat: Combat, p: dict, ctx):
              "int": "intelligence", "wis": "wisdom", "cha": "charisma"
              }.get(ability, ability), 10)
         total_mod = (score - 10) // 2
-    from ..domain.conditions import mods_for
-    adv, dis, fail, notes = mods_for(c.conditions, f"save:{ability}")
+    from ..domain.conditions import mods_for, pen_for
+    adv, dis, fail, notes = mods_for(c.conditions, f"save:{ability}",
+                                     ruleset=combat.ruleset)
+    # 2024: agotamiento = -2×nivel fijo (no desventaja)
+    pen = pen_for(c.conditions, None, combat.ruleset)
+    if pen:
+        notes.append(f"agotamiento: -{pen} (2024)")
+        total_mod -= pen
     if fail:
         return {"operation_type": "noop", "payload": {}}, [
             {"type": "dice.roll.created",
@@ -692,7 +698,7 @@ def combatant_action_roll(combat: Combat, p: dict, ctx):
     ambos. Acciones de salvación emiten la CD detectada."""
     import re
     c = _find(combat, p["combatant_id"])
-    from ..domain.conditions import is_incapacitated, mods_for
+    from ..domain.conditions import is_incapacitated, mods_for, pen_for
     incap = is_incapacitated(c.conditions)
     if incap:
         raise ValueError(f"{c.name} está incapacitado ({incap})")
@@ -707,7 +713,11 @@ def combatant_action_roll(combat: Combat, p: dict, ctx):
     m_dc = re.search(r"DC\s*(\d+)", text, re.IGNORECASE)
     m_dmg = re.search(r"(\d+d\d+(?:\s*[+-]\s*\d+)?)", text)
 
-    adv, dis, _fail, notes = mods_for(c.conditions, "attack")
+    adv, dis, _fail, notes = mods_for(c.conditions, "attack",
+                                      ruleset=combat.ruleset)
+    pen = pen_for(c.conditions, None, combat.ruleset)
+    if pen:
+        notes.append(f"agotamiento: -{pen} (2024)")
     # mode del cliente: el mapa pide desventaja cuando el objetivo
     # queda más allá del alcance normal del arma a distancia
     mode = str(p.get("mode", "normal"))
@@ -719,7 +729,7 @@ def combatant_action_roll(combat: Combat, p: dict, ctx):
         "combatant": c.name, "action": action.get("name", "?"),
         **({"notes": notes} if notes else {})}}
     if m_hit:
-        mod = int(m_hit.group(1))
+        mod = int(m_hit.group(1)) - pen
         r = roll("1d20adv" if adv and not dis else
                  "1d20dis" if dis and not adv else "1d20")
         ev["payload"].update(
@@ -759,8 +769,13 @@ def combatant_check(combat: Combat, p: dict, ctx):
         ability = SKILL_ABILITY.get(skill, "int")
         total_mod = (block.get("abilities") or {}).get(ability, 10)
         total_mod = (total_mod - 10) // 2
-    from ..domain.conditions import mods_for
-    adv, dis, _fail, notes = mods_for(c.conditions, "check")
+    from ..domain.conditions import mods_for, pen_for
+    adv, dis, _fail, notes = mods_for(c.conditions, "check",
+                                      ruleset=combat.ruleset)
+    pen = pen_for(c.conditions, None, combat.ruleset)
+    if pen:
+        notes.append(f"agotamiento: -{pen} (2024)")
+        total_mod -= pen
     r = roll("1d20adv" if adv and not dis else
              "1d20dis" if dis and not adv else "1d20")
     return {"operation_type": "noop", "payload": {}}, [
@@ -825,7 +840,7 @@ def combat_attack(combat: Combat, p: dict, ctx):
         raise ValueError("el atacante no puede ser su objetivo")
     if atk.kind != "character" or not atk.ref_id:
         raise ValueError("combat.attack lo ejecuta un personaje")
-    from ..domain.conditions import is_incapacitated, mods_for
+    from ..domain.conditions import is_incapacitated, mods_for, pen_for
     incap = is_incapacitated(atk.conditions)
     if incap:
         raise ValueError(f"{atk.name} está incapacitado ({incap})")
@@ -839,8 +854,18 @@ def combat_attack(combat: Combat, p: dict, ctx):
     item, mod, hit_bonus, dmg_dice, dtype = _weapon_attack(
         char, str(p.get("item_name", "")), ctx)
     dtype = (p.get("damage_type") or dtype or "")
-    # mismas reglas de condición que /character/attack + modo manual
-    adv, dis, fail, notes = mods_for(atk.conditions, "attack")
+    # mismas reglas de condición que /character/attack + modo manual.
+    # El agotamiento y las condiciones de la HOJA viven en la ficha —
+    # el combatiente solo espeja las vitales, así que se unen ambas
+    all_conds = list(set(atk.conditions) | set(char.conditions))
+    char_rs = getattr(char.ruleset, "value", char.ruleset)
+    adv, dis, fail, notes = mods_for(all_conds, "attack",
+                                     char.condition_stacks,
+                                     char_rs)
+    pen = pen_for(all_conds, char.condition_stacks, char_rs)
+    if pen:
+        notes.append(f"agotamiento: -{pen} (2024)")
+        hit_bonus -= pen
     mode = str(p.get("mode", "normal"))
     if mode == "adv":
         adv = True

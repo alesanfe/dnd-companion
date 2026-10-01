@@ -111,6 +111,9 @@
     "attunement_max": 3,
     "concentration_dc_floor": 10,
     "spell_dc_base": 8,
-    "passive_score_base": 10
+    "passive_score_base": 10,
+    "exhaustion_death_level": 6,
+    "exhaustion_penalty_per_level_2024": 2,
+    "exhaustion_speed_penalty_2024": 5
   }
 }

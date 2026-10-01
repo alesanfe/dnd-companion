@@ -114,7 +114,17 @@ def _condition_mods(char: Character, roll_type: str):
     """Deriva ventaja/desventaja/autofallo desde char.conditions,
     leyendo el nivel de agotamiento de condition_stacks."""
     return _condition_mods_raw(char.conditions, roll_type,
-                               char.condition_stacks)
+                               char.condition_stacks,
+                               getattr(char.ruleset, "value",
+                                       char.ruleset))
+
+
+def _exhaustion_pen(char: Character) -> int:
+    """Penalizador -2×nivel a d20 del agotamiento 2024 (en 2014 la
+    mecánica es ventaja/desventaja y va por mods_for)."""
+    from ..domain.conditions import pen_for
+    return pen_for(char.conditions, char.condition_stacks,
+                   getattr(char.ruleset, "value", char.ruleset))
 
 
 def _norm(s: str) -> str:
@@ -192,6 +202,10 @@ def _augment_expr(char, expr: str, roll_type: str,
             expr = _insert_keep(expr, "adv")
         elif dis and not adv:
             expr = _insert_keep(expr, "dis")
+    pen = _exhaustion_pen(char)          # 2024: -2×nivel a d20 tests
+    if pen and "d20" in expr:
+        extra_mod -= pen
+        applied.append(f"agotamiento: -{pen} (2024)")
     if extra_mod:
         expr += f"{extra_mod:+d}"
     return expr, False

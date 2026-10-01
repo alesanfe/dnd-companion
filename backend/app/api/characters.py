@@ -727,8 +727,22 @@ _EXHAUSTION = [                        # niveles 1-6, acumulativos
 
 
 def _exhaustion(char) -> list[str]:
+    """Notas de agotamiento por edición: 2014 = tabla escalonada;
+    2024 = -2×nivel a d20 y -5 pies×nivel de velocidad (nivel 6 =
+    muerte en ambas)."""
     lvl = (char.condition_stacks.get("exhaustion")
            or char.condition_stacks.get("agotamiento") or 0)
+    if not lvl:
+        return []
+    if getattr(char.ruleset, "value", char.ruleset) == "dnd5e-2024":
+        from ..rules import rules
+        cs = rules()["combat"]
+        if lvl >= cs["exhaustion_death_level"]:
+            return ["muerte"]
+        return [f"-{lvl * cs['exhaustion_penalty_per_level_2024']} "
+                "a tiradas de d20",
+                f"-{lvl * cs['exhaustion_speed_penalty_2024']} ft. "
+                "de velocidad"]
     return _EXHAUSTION[:min(lvl, 6)]
 
 

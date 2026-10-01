@@ -181,18 +181,26 @@ npm run build                   # build + PWA
   `Sec-WebSocket-Protocol` (ver AGENTS.md).
 - `cleave`/`nick` (weapon mastery) solo se anotan en el log — el
   encadenamiento del segundo ataque lo dirige el DM.
-- Sin licencia de código publicada todavía; el contenido SRD es
-  CC-BY-4.0.
 
 ## Documentación
 
 - [AGENTS.md](AGENTS.md) — reglas del proyecto, modelo de acceso,
   contratos de sincronización ficha↔combate↔mapa.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — diseño completo.
+- [CHANGELOG.md](CHANGELOG.md) — historial de cambios.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — proceso y reglas de cambio.
+- [SECURITY.md](SECURITY.md) — reporte privado de vulnerabilidades
+  y modelo de seguridad.
 
 ## Contribución y soporte
 
-El flujo de cambio pasa por operaciones auditables — las reglas
-inviolables (seguridad, autorización, procedencia) están en
-AGENTS.md. Para informar de un problema o proponer una función,
-abre una issue en el repositorio.
+Lee [CONTRIBUTING.md](CONTRIBUTING.md) antes de abrir una issue o
+enviar un cambio — resume el proceso; las reglas inviolables están
+en AGENTS.md. Las vulnerabilidades se reportan en privado según
+[SECURITY.md](SECURITY.md).
+
+## Licencia
+
+El código se distribuye bajo licencia [MIT](LICENSE). El contenido
+del SRD es CC-BY-4.0 de sus autores originales; el contenido no
+libre (5etools, homebrew, UA) nunca entra al repositorio.

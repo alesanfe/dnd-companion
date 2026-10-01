@@ -213,6 +213,112 @@ def combatant_check(combat: Combat, p: dict, ctx):
                      **({"notes": notes} if notes else {})}}]
 
 
+@op("combat.shove_grapple")
+def combat_shove_grapple(combat: Combat, p: dict, ctx):
+    """Unarmed strike 2024 — empujón/agarrón: el objetivo hace
+    salvación FUE **o** DES (su elección, payload `save`) vs CD
+    8 + mod FUE del atacante + prof. En 2014 la misma op resuelve
+    la prueba contestada de Atletismo (o Acrobatismo del objetivo).
+    kind=shove → 'prone' (o nota de empuje con push_ft);
+    kind=grapple → 'grappled' + velocidad 0 la maneja la tabla."""
+    atk = _find(combat, p["attacker_combatant_id"])
+    tgt = _find(combat, p["target_combatant_id"])
+    kind = str(p.get("kind", "shove")).lower()
+    if kind not in ("shove", "grapple"):
+        raise ValueError("kind: shove|grapple")
+    if atk.id == tgt.id:
+        raise ValueError("el atacante no puede ser su objetivo")
+    from ...domain.conditions import is_incapacitated
+    incap = is_incapacitated(atk.conditions)
+    if incap:
+        raise ValueError(f"{atk.name} está incapacitado ({incap})")
+
+    def _mod(c, ability):
+        block = c.stat_block or {}
+        score = (block.get("abilities") or {}).get(ability)
+        if score is None:
+            score = block.get({"str": "strength", "dex": "dexterity",
+                               "con": "constitution", "int": "intelligence",
+                               "wis": "wisdom", "cha": "charisma"
+                               }.get(ability), 10)
+        return (score - 10) // 2
+
+    def _sheet(c):
+        """Ficha vinculada (mod FUE + prof) o None."""
+        if c.kind != "character" or not c.ref_id:
+            return None
+        try:
+            row = ctx.state_db().execute(
+                "SELECT data FROM characters WHERE id = ?",
+                (c.ref_id,)).fetchone()
+        except AttributeError:
+            return None
+        if row is None:
+            return None
+        from ...domain.character import Character
+        return Character(**json.loads(row["data"]))
+
+    inv = {"operation_type": "combat.state.restore",
+           "payload": {"data": combat.model_dump()}}
+    atk_char = _sheet(atk)
+    ev = {"type": "dice.roll.created", "payload": {
+        "combatant": atk.name, "attack": kind, "target": tgt.name}}
+
+    if combat.ruleset == "dnd5e-2024":
+        # CD fija 8 + FUE + prof del atacante; el objetivo elige FUE o
+        # DES (p['save'], default str)
+        str_mod = atk_char.abilities.modifier("str") if atk_char \
+            else _mod(atk, "str")
+        prof = atk_char.proficiency_bonus if atk_char else 2
+        dc = 8 + str_mod + prof
+        save_ab = str(p.get("save", "str")).lower()
+        if save_ab not in ("str", "dex"):
+            save_ab = "str"
+        tgt_mod = ((tgt.stat_block or {}).get("saves") or {}) \
+            .get(save_ab, _mod(tgt, save_ab))
+        sv = roll("1d20")
+        total = sv.total + tgt_mod
+        ev["payload"].update(save=save_ab, save_roll=sv.total,
+                             save_total=total, dc=dc,
+                             resisted=total >= dc)
+        success = total < dc
+    else:
+        # 2014: Atletismo del atacante vs Atletismo/Acrobatismo del
+        # objetivo — elige la mejor
+        atk_skill = _mod(atk, "str")
+        if atk_char:
+            a = atk_char.abilities.modifier("str")
+            if "athletics" in {s.lower() for s in
+                               atk_char.skill_proficiencies}:
+                a += atk_char.proficiency_bonus
+            atk_skill = a
+        tgt_best = max(_mod(tgt, "str"), _mod(tgt, "dex"))
+        skills = (tgt.stat_block or {}).get("skills") or {}
+        for sk in ("athletics", "acrobatics"):
+            if sk in skills:
+                tgt_best = max(tgt_best, int(skills[sk]))
+        ra, rt = roll("1d20"), roll("1d20")
+        ev["payload"].update(atk_roll=ra.total + atk_skill,
+                             tgt_roll=rt.total + tgt_best)
+        success = ra.total + atk_skill > rt.total + tgt_best
+
+    if not success:
+        ev["payload"]["resisted"] = True
+        ev["payload"]["hits"] = False
+        return inv, [ev]
+    ev["payload"]["hits"] = True
+    if kind == "grapple":
+        if "grappled" not in tgt.conditions:
+            tgt.conditions.append("grappled")
+    else:
+        if p.get("push"):
+            ev["payload"]["push_ft"] = 5
+        elif "prone" not in tgt.conditions:
+            tgt.conditions.append("prone")
+    _sync_character(tgt, ctx)
+    return inv, [ev]
+
+
 @op("combat.attack")
 def combat_attack(combat: Combat, p: dict, ctx):
     """Un PJ ataca a otro combatiente: el servidor tira impacto con el

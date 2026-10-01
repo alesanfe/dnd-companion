@@ -2644,6 +2644,53 @@ def test_combat_attack_mastery_off_in_2014():
                              if c["id"] == tgt)["conditions"]
 
 
+def test_shove_grapple_2024_and_2014():
+    """2024: el objetivo salva FUE/DES vs CD 8+FUE+prof del atacante —
+    el resultado aplica prone/grappled. 2014: prueba contestada."""
+    cop, comb, atk, tgt, cid = _mastery_setup()   # combate 2024
+    r = cop("combat.shove_grapple", {
+        "attacker_combatant_id": atk, "target_combatant_id": tgt,
+        "kind": "grapple", "save": "str"})
+    assert r.status_code == 200, r.text
+    ev = next(e for e in r.json()["events"]
+              if e["type"] == "dice.roll.created")["payload"]
+    assert ev["dc"] == 8 + 0 + 2                   # FUE 10, prof 2
+    cs = client.get(f"/api/combat/{comb}").json()["combat"]["combatants"]
+    tgt_c = next(c for c in cs if c["id"] == tgt)
+    assert ("grappled" in tgt_c["conditions"]) == ev["hits"]
+
+    # 2014: contestada — no hay CD, hay dos tiradas
+    comb14 = client.post("/api/combat", json={"name": "C14"}).json()
+
+    def cop14(otype, payload):
+        cur = client.get(
+            f"/api/combat/{comb14['id']}").json()["version"]
+        return client.post("/api/operations", json={
+            "operation_id": uuid.uuid4().hex, "entity_id": comb14["id"],
+            "entity_version": cur, "client_id": "c", "user_id": "u",
+            "entity_kind": "combat", "operation_type": otype,
+            "payload": payload})
+
+    cop14("combatant.add", {"kind": "monster", "name": "a",
+                            "hp_max": 10,
+                            "stat_block": {"ac": 10, "hp": 10,
+                                           "abilities": {"str": 14}}})
+    cop14("combatant.add", {"kind": "monster", "name": "b",
+                            "hp_max": 10,
+                            "stat_block": {"ac": 10, "hp": 10}})
+    cs = client.get(f"/api/combat/{comb14['id']}").json()["combat"][
+        "combatants"]
+    a_id = next(c["id"] for c in cs if c["name"] == "a")
+    b_id = next(c["id"] for c in cs if c["name"] == "b")
+    r = cop14("combat.shove_grapple", {
+        "attacker_combatant_id": a_id, "target_combatant_id": b_id,
+        "kind": "shove"})
+    assert r.status_code == 200
+    ev = next(e for e in r.json()["events"]
+              if e["type"] == "dice.roll.created")["payload"]
+    assert "atk_roll" in ev and "tgt_roll" in ev   # contestada
+
+
 # --- Fase F: WebSocket — identidad, roles, visibilidad ----------------
 
 def _reg():

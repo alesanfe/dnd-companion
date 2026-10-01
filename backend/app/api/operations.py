@@ -542,7 +542,10 @@ def _player_combat_op(conn, op: OperationIn,
     combatientes cuyo personaje tiene su player_id o que el DM le
     delegó."""
     uid = (user or {}).get("user_id")
-    if op.operation_type == "combat.attack":
+    if op.operation_type in ("combat.attack", "combat.shove_grapple"):
+        # shove_grapple es un ataque sin arma: misma excepción — el
+        # jugador solo lo ejecuta con SU combatiente-PJ; el payload no
+        # puede elegir reglas (la CD/salvación la calcula el servidor)
         if _is_own_char_combatant(
                 conn, op.entity_id,
                 (op.payload or {}).get("attacker_combatant_id"), uid):

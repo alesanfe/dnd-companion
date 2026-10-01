@@ -2394,3 +2394,117 @@ def test_exhaustion_level_6_kills():
                         {"condition": "exhaustion", "stacks": 6},
                         _Ctx())
         assert "muerto" in c.conditions
+
+
+# --- Fase F: WebSocket — identidad, roles, visibilidad ----------------
+
+def _reg():
+    r = client.post("/api/auth/register", json={
+        "username": f"w{uuid.uuid4().hex[:8]}",
+        "password": "pw123456"})
+    return r.json()
+
+
+def _presence(ws):
+    """Primera trama de la sala = campaign.presence (broadcast del
+    propio join)."""
+    msg = json.loads(ws.receive_text())
+    while msg["type"] != "campaign.presence":
+        msg = json.loads(ws.receive_text())
+    return msg
+
+
+def test_ws_spoofed_user_id_is_spectator():
+    """?user_id=<uid del owner> sin token NO hereda su rol — la
+    identidad suelta en una campaña con dueño queda como espectador
+    (solo lectura): ni chat ni operaciones."""
+    rr = _reg()
+    owner_uid = rr["user_id"]
+    owner = {"Authorization": f"Bearer {rr['token']}"}
+    camp = client.post("/api/campaigns", json={"name": "WS"},
+                       headers=owner).json()
+    with client.websocket_connect(
+            f"/ws/campaign/{camp['id']}?user_id={owner_uid}") as ws:
+        _presence(ws)
+        ws.send_text(json.dumps({"type": "chat", "text": "hola",
+                                 "from": "DM"}))      # firma falsa
+        msg = json.loads(ws.receive_text())
+        assert msg["type"] == "error" and "solo lectura" in msg["detail"]
+        ws.send_text(json.dumps({"type": "operation", "operation": {
+            "operation_id": uuid.uuid4().hex, "entity_id": "x",
+            "entity_version": 1, "entity_kind": "character",
+            "operation_type": "character.hp.damage", "payload": {}}}))
+        msg = json.loads(ws.receive_text())
+        assert msg["type"] == "error" and "solo lectura" in msg["detail"]
+    # con el token real SÍ resuelve al owner
+    with client.websocket_connect(
+            f"/ws/campaign/{camp['id']}?token={rr['token']}") as ws:
+        pres = _presence(ws)
+        mine = [m for m in pres["payload"]["members"]
+                if m.get("uid") == owner_uid]
+        assert mine and mine[0]["role"] in ("owner", "dm")
+
+
+def test_ws_dm_visibility_not_leaked_to_player():
+    """La tirada secreta del DM (visibility=dm) no se entrega al
+    socket de un miembro que no es DM."""
+    rr, pr = _reg(), _reg()
+    owner = {"Authorization": f"Bearer {rr['token']}"}
+    camp = client.post("/api/campaigns", json={"name": "WS2"},
+                       headers=owner).json()
+    # el segundo usuario entra como player por invite
+    client.post("/api/campaigns/join",
+                json={"invite_code": camp["invite_code"]},
+                headers={"Authorization": f"Bearer {pr['token']}"})
+    cid = _mkchar("Sec")
+    client.patch(f"/api/characters/{cid}",
+                 json={"campaign_id": camp["id"]}, headers=owner)
+    with client.websocket_connect(
+            f"/ws/campaign/{camp['id']}?token={pr['token']}") as pws:
+        _presence(pws)
+        with client.websocket_connect(
+                f"/ws/campaign/{camp['id']}?token={rr['token']}") as ows:
+            _presence(ows)
+            r = client.post(
+                f"/api/operations/character/{cid}/roll",
+                params={"expression": "1d20", "secret": "true"},
+                headers=owner)
+            assert r.status_code == 200
+            # el socket del DM recibe el evento secreto (el Event va
+            # serializado directo — type = 'dice.roll.created')
+            msg = json.loads(ows.receive_text())
+            while msg["type"] == "campaign.presence":
+                msg = json.loads(ows.receive_text())
+            assert msg["type"] == "dice.roll.created"
+            assert msg["payload"].get("visibility") == "dm"
+            # el del jugador NO lo ve: ping/pong marca el límite —
+            # la cola del socket es FIFO, un evento filtrado habría
+            # llegado antes que el pong
+            pws.send_text(json.dumps({"type": "ping"}))
+            msg = json.loads(pws.receive_text())
+            while msg["type"] == "campaign.presence":
+                msg = json.loads(pws.receive_text())
+            assert msg["type"] == "pong"    # sin event.visibility=dm
+
+
+def test_op_version_conflict_under_threads():
+    """Dos ops con la misma entity_version en hilos concurrentes:
+    exactamente una aplica; la otra recibe 409 (optimistic lock)."""
+    import threading
+    cid = _mkchar("Race")
+    results = []
+
+    def go(n):
+        r = _op(cid, 1, "character.hp.damage", {"amount": n})
+        results.append(r.status_code)
+
+    threads = [threading.Thread(target=go, args=(i,))
+               for i in (3, 4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert sorted(results) == [200, 409]
+    data = client.get(f"/api/characters/{cid}").json()["data"]
+    # solo una op aplicó: 8-3=5 ó 8-4=4 — nunca ambas ni ninguna
+    assert data["hp"]["current"] in (4, 5)

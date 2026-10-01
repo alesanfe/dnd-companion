@@ -1,5 +1,17 @@
 /* Geometría pura del mapa — extraída para tests unitarios. */
 
+// distancia en pies entre el centro de dos celdas
+export const cellDist = (x1, y1, x2, y2, ft) =>
+  Math.hypot(x2 - x1, y2 - y1) * ft
+
+// constantes del grid compartidas por MapBoard y sus subpiezas
+export const CELL = 44
+export const MARK_COLORS = ['#27ae60', '#2980b9', '#c0392b', '#f39c12',
+                            '#8e44ad', '#7f8c8d']
+export const MAP_DEFAULTS = { cols: 16, rows: 10, cell_ft: 5,
+                              tokens: [], fog: [], marks: {},
+                              pins: [], walls: [] }
+
 // segmento (p→q) cruza segmento (a→b)? test de orientación estándar
 const _cross = (o, a, b) =>
   (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])

@@ -1,19 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api.js'
-import { blockedByWall, inCone } from '../mapMath.js'
+import { blockedByWall, cellDist, inCone, CELL, MARK_COLORS,
+         MAP_DEFAULTS } from '../mapMath.js'
 import { useT } from '../i18n.jsx'
 import WikiText from './WikiText.jsx'
 import { MapToken, MapPin, InitiativeRibbon } from './MapPieces.jsx'
 
-const CELL = 44
-const MARK_COLORS = ['#27ae60', '#2980b9', '#c0392b', '#f39c12',
-                     '#8e44ad', '#7f8c8d']
-const DEFAULTS = { cols: 16, rows: 10, cell_ft: 5, tokens: [],
-                   fog: [], marks: {}, pins: [], walls: [] }
-
-// distancia en pies entre el centro de dos celdas
-const cellDist = (x1, y1, x2, y2, ft) =>
-  Math.hypot(x2 - x1, y2 - y1) * ft
+const DEFAULTS = MAP_DEFAULTS
 
 /**
  * @typedef {Object} MapTokenData

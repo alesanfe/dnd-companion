@@ -6,6 +6,7 @@ import { conflictedOps, deadOps, dropOp, markOp,
 import { clearAuth, currentUser, getPrefs, setAuth, setPref }
   from '../session.js'
 import { useT } from '../i18n.jsx'
+import { clearMetrics, snapshot } from '../metrics.js'
 
 /** Ajustes consolidados: cuenta, apariencia, accesibilidad y
     estado de sincronización — antes repartidos en el header. */
@@ -143,6 +144,8 @@ export default function Settings() {
 
       <PushCard user={user} />
       <PackagesCard />
+      <MetricsCard />
+      <ShortcutsCard />
     </main>
   )
 }
@@ -281,6 +284,81 @@ function PackagesCard() {
       {pkgs?.length === 0 && <p className="muted">{t('pkg.empty')}</p>}
       <p className="muted" style={{ fontSize: '.8rem' }}>
         {t('pkg.hint')}</p>
+    </section>
+  )
+}
+
+/** Uso local — métricas que el checklist de UX pedía (finalización,
+    errores, latencia) recogidas sin salir del dispositivo:
+    localStorage 'dc.metrics', sin telemetría externa. */
+function MetricsCard() {
+  const { t } = useT()
+  const [m, setM] = useState(snapshot)
+  const pages = Object.entries(m.pages).sort((a, b) => b[1] - a[1])
+  const tasks = Object.entries(m.tasks)
+  const opsTotal = (m.ops.ok || 0) + (m.ops.error || 0) + (m.ops.queued || 0)
+  return (
+    <section className="card">
+      <h2>{t('metrics.title')}</h2>
+      <p className="muted" style={{ fontSize: '.85rem' }}>
+        {t('metrics.hint')}</p>
+      {opsTotal === 0 && tasks.length === 0 && pages.length <= 1 ? (
+        <p className="muted">{t('metrics.empty')}</p>
+      ) : (<>
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <span className="chip">{t('metrics.ops')}: {opsTotal}
+            {m.ops.error ? ` · ${m.ops.error} ${t('metrics.errors')}` : ''}
+            {m.ops.queued ? ` · ${m.ops.queued} ${t('metrics.queued')}` : ''}</span>
+          {tasks.map(([k, v]) => (
+            <span key={k} className="chip">{k}: {v.ok}
+              {v.fail ? ` · ${v.fail} ${t('metrics.errors')}` : ''}</span>))}
+        </div>
+        {m.opTypes.length > 0 && (
+          <ul style={{ margin: '.4rem 0', paddingLeft: '1.2rem' }}>
+            {m.opTypes.slice(0, 8).map((o) => (
+              <li key={o.type} className="muted"
+                  style={{ fontSize: '.85rem' }}>
+                {o.type} ×{o.n}{o.avgMs != null && ` · ${o.avgMs}ms`}
+                {o.error > 0 && ` · ${o.error} ${t('metrics.errors')}`}
+              </li>))}
+          </ul>)}
+        {pages.length > 0 && (
+          <p className="muted" style={{ fontSize: '.8rem' }}>
+            {t('metrics.pages')}:{' '}
+            {pages.slice(0, 6).map(([p, n]) =>
+              `${p === '/' ? 'home' : p} ×${n}`).join(' · ')}</p>)}
+      </>)}
+      <button className="ghost" onClick={() => {
+        clearMetrics(); setM(snapshot())
+      }}>{t('metrics.clear')}</button>
+    </section>
+  )
+}
+
+/** Atajos de teclado documentados (checklist UX: los atajos se
+    indican junto a las acciones — aquí vive la referencia completa). */
+function ShortcutsCard() {
+  const { t } = useT()
+  const rows = [
+    [['Ctrl', 'K'], t('keys.palette')],
+    [['Esc'], t('keys.esc')],
+    [['↑', '↓', 'Enter'], t('keys.paletteNav')],
+    [['Tab'], t('keys.tabTrap')],
+    [['Shift', '+', t('keys.click')], t('keys.mapMeasure')],
+  ]
+  return (
+    <section className="card">
+      <h2>{t('keys.title')}</h2>
+      <ul style={{ listStyle: 'none', padding: 0 }}>
+        {rows.map(([keys, label], i) => (
+          <li key={i} className="row" style={{ marginBottom: '.3rem' }}>
+            <span style={{ minWidth: 140 }}>
+              {keys.map((k) => <kbd key={k}>{k}</kbd>)
+                .reduce((a, b) => <>{a}{' '}{b}</>)}
+            </span>
+            <span className="muted">{label}</span>
+          </li>))}
+      </ul>
     </section>
   )
 }

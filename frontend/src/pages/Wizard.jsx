@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import { useT } from '../i18n.jsx'
+import { trackTask } from '../metrics.js'
 
 const ABILITIES = ['str', 'dex', 'con', 'int', 'wis', 'cha']
 const STANDARD_ARRAY = [15, 14, 13, 12, 10, 8]
@@ -102,8 +103,9 @@ export default function Wizard() {
         abilities,
       })
       localStorage.removeItem(DRAFT_KEY)
+      trackTask('wizard', true)
       nav(`/character/${r.id}`)
-    } catch (e) { setErr(e.message); setBusy(false) }
+    } catch (e) { setErr(e.message); setBusy(false); trackTask('wizard', false) }
   }
 
   const sel = (list, value, set) => (

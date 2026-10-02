@@ -1,11 +1,12 @@
-import { NavLink, Routes, Route, useNavigate }
+import { NavLink, Routes, Route, useNavigate, useLocation }
   from 'react-router-dom'
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useState, useEffect } from 'react'
 import Header from './components/Header.jsx'
 import CommandPalette from './components/CommandPalette.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import CharacterList from './pages/CharacterList.jsx'
 import { useT } from './i18n.jsx'
+import { trackPage } from './metrics.js'
 
 // code-splitting: la ficha y las pantallas de DM son la mitad del
 // bundle — se cargan bajo demanda al navegar
@@ -53,6 +54,12 @@ function MobileNav() {
 
 export default function App() {
   const { t } = useT()
+  const loc = useLocation()
+  // métrica local de uso: qué secciones se visitan (nada sale del
+  // dispositivo — se consulta y borra desde Settings)
+  useEffect(() => {
+    trackPage('/' + (loc.pathname.split('/')[1] || ''))
+  }, [loc.pathname])
   return (
     <div className="app">
       <a href="#content" className="skip-link">{t('app.skip')}</a>

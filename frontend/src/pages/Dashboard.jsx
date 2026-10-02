@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../api.js'
 import { currentUser, loadJSON } from '../session.js'
 import { useT } from '../i18n.jsx'
+import { trackTask } from '../metrics.js'
 
 /** Inicio: responde "¿qué quieres hacer ahora?" — continuar donde
     lo dejaste, acciones rápidas, actividad reciente y favoritos. */
@@ -47,7 +48,8 @@ export default function Dashboard() {
     try {
       const r = await api.roll(expr.trim())
       setRollResult(`${r.expression} → ${r.rolls?.join('+') || ''} = ${r.total}`)
-    } catch (e2) { setRollResult(`⚠ ${e2.message}`) }
+      trackTask('roll', true)
+    } catch (e2) { setRollResult(`⚠ ${e2.message}`); trackTask('roll', false) }
   }
 
   const relTime = (ts) => {

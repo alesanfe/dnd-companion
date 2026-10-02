@@ -4,6 +4,7 @@ import { api } from '../api.js'
 import { loadJSON } from '../session.js'
 import { useT, etypeLabel } from '../i18n.jsx'
 import EntityPreview from '../components/EntityPreview.jsx'
+import { trackTask } from '../metrics.js'
 
 /* el excerpt del FTS viene del JSON de la entidad (homebrew
    incluido) — escapar SIEMPRE antes de marcar, o es XSS */
@@ -47,13 +48,14 @@ export default function Search() {
         : await api.search(term0, null, source || null)
       setResults(r.results)
       setParsed(r.parsed || null)
+      trackTask('search', true)
       if (term0.trim()) {                   // historial de consultas
         const rec = loadJSON('dnd-recent-searches', [], sessionStorage)
         sessionStorage.setItem('dnd-recent-searches',
           JSON.stringify([term0.trim(),
             ...rec.filter((x) => x !== term0.trim())].slice(0, 8)))
       }
-    } catch (e2) { setErr(e2.message) }
+    } catch (e2) { setErr(e2.message); trackTask('search', false) }
   }
   const go = (e) => { e?.preventDefault(); doSearch() }
 

@@ -1,5 +1,6 @@
 import { enqueueOp, pendingOps, markOp, pruneOps } from './db.js'
 import { getToken, currentUser } from './session.js'
+import { trackOp } from './metrics.js'
 
 const CLIENT_ID = crypto.randomUUID()
 
@@ -326,10 +327,13 @@ export const api = {
       entity_kind: kind,
       payload,
     }
+    const t0 = performance.now()
     try {
-      return await req('/api/operations', {
+      const r = await req('/api/operations', {
         method: 'POST', body: JSON.stringify(op),
       })
+      trackOp(operationType, performance.now() - t0, 'ok')
+      return r
     } catch (e) {
       // encolar no es solo "sin red": un backend colgado dispara el
       // timeout de 15s (DOMException TimeoutError) y la op se
@@ -339,8 +343,10 @@ export const api = {
         || !navigator.onLine
       if (transient) {
         await enqueueOp({ entity_id: entity.id, payload: op })
+        trackOp(operationType, performance.now() - t0, 'queued')
         return { queued: true, version: entity.version }
       }
+      trackOp(operationType, performance.now() - t0, 'error')
       throw e
     }
   },

@@ -29,6 +29,9 @@ function MobileNav() {
     <nav className="mobile-nav" aria-label={t('nav.create')}>
       <NavLink to="/" end>{t('nav.home')}</NavLink>
       <NavLink to="/characters">{t('nav.sheets')}</NavLink>
+      {/* Campañas también abajo: la nav superior las oculta en móvil
+          y sin este enlace el destino quedaba inalcanzable */}
+      <NavLink to="/campaigns">{t('nav.campaigns')}</NavLink>
       <button className="fab" aria-label={t('nav.create')} aria-expanded={open}
               onClick={() => setOpen(!open)}>+</button>
       <NavLink to="/search">{t('nav.compendium')}</NavLink>

@@ -1102,6 +1102,18 @@ export default function MapBoard({ campaign, size = CELL,
           <span className="muted">
             {tf('map.range',
                 { ft: Math.max(...Object.values(speeds)) })}</span>
+          {/* color del token: sin campo, se asignaba por hue rotativo
+              y no se podía ajustar — swatches fijos rápidos */}
+          <span className="row" style={{ gap: 2, margin: 0 }}>
+            {MARK_COLORS.map((col) => (
+              <button key={col} className="ghost"
+                      aria-label={tf('map.tokColorAria', { color: col })}
+                      style={{ background: col, width: 18, height: 18,
+                               padding: 0, minWidth: 0,
+                               border: sel.color === col
+                                 ? '2px solid #fff' : undefined }}
+                      onClick={() => patchTok({ color: col })} />))}
+          </span>
           {/* retrato del token: URL de imagen renderizada en el
               círculo (vacío = vuelve a iniciales+color) */}
           <button className="ghost" title={t('map.tokImg')}

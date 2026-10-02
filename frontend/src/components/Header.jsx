@@ -68,12 +68,17 @@ export default function Header() {
   return (
     <header className="nav">
       <Link to="/" className="brand">D&D Companion</Link>
-      <NavLink to="/" end>{t('nav.home')}</NavLink>
-      <NavLink to="/characters">{t('nav.sheets')}</NavLink>
-      <NavLink to="/campaigns">{t('nav.campaigns')}</NavLink>
-      <NavLink to="/search">{t('nav.compendium')}</NavLink>
-      <NavLink to="/dm">{t('nav.dm')}</NavLink>
-      <Link to="/new" className="btn-create">+ {t('nav.create')}</Link>
+      {/* en ≤700px la barra inferior cubre estos destinos — ocultos
+          para que el header quede en una sola fila (display:contents
+          = el span no rompe el flex del header) */}
+      <span className="nav-links">
+        <NavLink to="/" end>{t('nav.home')}</NavLink>
+        <NavLink to="/characters">{t('nav.sheets')}</NavLink>
+        <NavLink to="/campaigns">{t('nav.campaigns')}</NavLink>
+        <NavLink to="/search">{t('nav.compendium')}</NavLink>
+        <NavLink to="/dm">{t('nav.dm')}</NavLink>
+        <Link to="/new" className="btn-create">+ {t('nav.create')}</Link>
+      </span>
       <span className="spacer" />
       <Link to="/settings#sync"
             className={`ghost sync ${online ? 'on' : 'off'}`}

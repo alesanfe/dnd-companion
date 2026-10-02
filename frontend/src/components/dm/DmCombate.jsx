@@ -308,8 +308,13 @@ export default function DmCombate({ c }) {
             </p>)}
         </section>
 
+        {/* plegable: el panel fijo de la derecha empujaba el tracker
+            en pantallas medias; details abierto mantiene descubrible */}
         <section className="card" hidden={!show}>
-          <h2>{t('dm.addcombatant')}</h2>
+          <details open>
+            <summary style={{ cursor: 'pointer' }}>
+              <h2 style={{ display: 'inline' }}>{t('dm.addcombatant')}</h2>
+            </summary>
           <form onSubmit={searchMonsters} className="row">
             <input value={query} onChange={(e) => setQuery(e.target.value)}
                    placeholder={t('com.monsterPh')} />
@@ -337,6 +342,7 @@ export default function DmCombate({ c }) {
                       initiative: manual.initiative, kind: 'npc',
                     })}>{t('common.add')}</button>
           </div>
+          </details>
         </section>
 
         <section className="card" hidden={!show}>

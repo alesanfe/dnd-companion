@@ -624,7 +624,9 @@ main.dm { max-width: 1440px; }
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 0.6rem;
 }
-.quick-grid button { width: 100%; }
+/* nowrap: con la grid de 4 columnas "Campaña / mesa" se partía a
+   dos líneas y rompía la fila — los textos son cortos de sobra */
+.quick-grid button { width: 100%; white-space: nowrap; }
 
 /* biblioteca de personajes */
 .char-grid {

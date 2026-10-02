@@ -131,6 +131,7 @@ export default function Wizard() {
         <section className="card">
           <h2>1. {t('wiz.name')} + {t('search.edition')}</h2>
           <input value={name} onChange={(e) => setName(e.target.value)}
+                 aria-label={t('wiz.name')}
                  placeholder={t('wiz.name')} />
           {[
             ['dnd5e-2024', 'wizard.rules.2024'],

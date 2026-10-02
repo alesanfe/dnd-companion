@@ -177,6 +177,7 @@ export default function CharacterList() {
       {err && <p className="error">{t('clist.backendErr')}: {err}</p>}
       <form onSubmit={create} className="row">
         <input value={name} onChange={(e) => setName(e.target.value)}
+               aria-label={t('charlist.new')}
                placeholder={t('charlist.new') + '…'} />
         <button type="submit" disabled={busy}>{t('nav.create')}</button>
         <Link to="/new"><button type="button">Wizard →</button></Link>
@@ -186,7 +187,7 @@ export default function CharacterList() {
              border: '1px solid var(--border)' }}>
           {t('charlist.import')}
           <input type="file" accept=".json" hidden
-                 aria-label="Importar personaje desde JSON"
+                 aria-label={t('charlist.import')}
                  onChange={async (e) => {
                    const f = e.target.files[0]
                    if (!f) return

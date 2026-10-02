@@ -59,6 +59,7 @@ export default function DmSesion({ c }) {
           } finally { setBusy(false) }
         }}>
           <input value={campName} onChange={(e) => setCampName(e.target.value)}
+                 aria-label={t('ses.campNamePh')}
                  placeholder={t('ses.campNamePh')} />
           <button type="submit" disabled={busy}>{t('ses.create')}</button>
         </form>
@@ -165,6 +166,7 @@ export default function DmSesion({ c }) {
         <h2>{t('dm.sessions')}</h2>
         <div className="row">
           <input value={sessTitle} placeholder={t('ses.titlePh')}
+                 aria-label={t('ses.titlePh')}
                  onChange={(e) => setSessTitle(e.target.value)} />
           <button disabled={!sessTitle} onClick={async () => {
             await api.createSession(campaign.id, {
@@ -281,8 +283,10 @@ export default function DmSesion({ c }) {
               <option key={p.id} value={p.id}>{p.name}</option>))}
           </select>
           <input value={rollReq.expression} style={{ maxWidth: 90 }}
+                 aria-label={t('acc.expression')}
                  onChange={(e) => setRollReq({ ...rollReq, expression: e.target.value })} />
           <input value={rollReq.reason} placeholder={t('ses.reasonPh')}
+                 aria-label={t('ses.reasonPh')}
                  onChange={(e) => setRollReq({ ...rollReq, reason: e.target.value })} />
           <button disabled={!rollReq.character_id}
                   onClick={() => api.requestRoll(campaign.id, rollReq)

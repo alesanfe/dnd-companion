@@ -58,13 +58,17 @@ export default function Settings() {
           </div>) : (
           <>
             <div className="row">
-              <input placeholder={t('account.user')} value={creds.u}
-                     onChange={(e) =>
-                       setCreds({ ...creds, u: e.target.value })} />
-              <input placeholder={t('account.pass')} type="password"
-                     value={creds.p}
-                     onChange={(e) =>
-                       setCreds({ ...creds, p: e.target.value })} />
+              <label style={{ flex: 1 }}>{t('account.user')}
+                <input value={creds.u} style={{ width: '100%' }}
+                       onChange={(e) =>
+                         setCreds({ ...creds, u: e.target.value })} />
+              </label>
+              <label style={{ flex: 1 }}>{t('account.pass')}
+                <input type="password" value={creds.p}
+                       style={{ width: '100%' }}
+                       onChange={(e) =>
+                         setCreds({ ...creds, p: e.target.value })} />
+              </label>
             </div>
             <div className="row">
               <button onClick={() => auth(api.login)}>

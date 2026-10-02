@@ -31,15 +31,19 @@ export default function TabInventario({ c }) {
       </div>
       <div className="row">
         <input type="number" min="1" value={amount}
+               aria-label={t('inv.amount')}
                onChange={(e) => setAmount(+e.target.value)} />
-        <select value={coin} onChange={(e) => setCoin(e.target.value)}>
+        <select value={coin} onChange={(e) => setCoin(e.target.value)}
+                aria-label={t('inv.coinAria')}>
           {['pp', 'gp', 'ep', 'sp', 'cp'].map((cc) => <option key={cc}>{cc}</option>)}
         </select>
         <button className="heal" onClick={() => op('character.currency.earn', { [coin]: amount })}>+</button>
         <button className="dmg" onClick={() => op('character.currency.spend', { [coin]: amount })}>-</button>
         <details style={{ position: 'relative' }}>
           <summary className="muted" style={{ cursor: 'pointer' }}
-                   title={t('inv.convertTitle')}>⇄</summary>
+                   title={t('inv.convertTitle')}
+                   aria-label={t('inv.convertTitle')}>
+            ⇄ {t('inv.convert')}</summary>
           <form className="row" onSubmit={(e) => {
             e.preventDefault()
             const f = e.target
@@ -73,6 +77,7 @@ export default function TabInventario({ c }) {
            { name: it.name, source_id: it.id })} />
       <div className="row">
         <input value={newItem} onChange={(e) => setNewItem(e.target.value)}
+               aria-label={t('inv.manualPh')}
                placeholder={t('inv.manualPh')} />
         <button disabled={!newItem.trim()} onClick={() => {
           op('character.inventory.add', { name: newItem.trim() })

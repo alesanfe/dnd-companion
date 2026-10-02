@@ -40,6 +40,7 @@ export function ItemPicker({ onPick }) {
     <div>
       <form onSubmit={go} className="row">
         <input value={q} onChange={(e) => setQ(e.target.value)}
+               aria-label={t('pick.itemPh')}
                placeholder={t('pick.itemPh')} />
         <button type="submit">{t('search.button')}</button>
       </form>
@@ -82,6 +83,7 @@ export function SpellPicker({ onPick, entityType = 'spell',
     <div>
       <form onSubmit={go} className="row">
         <input value={q} onChange={(e) => setQ(e.target.value)}
+               aria-label={placeholder || t('pick.searchPh')}
                placeholder={placeholder || t('pick.searchPh')} />
         <button type="submit">{t('search.button')}</button>
       </form>

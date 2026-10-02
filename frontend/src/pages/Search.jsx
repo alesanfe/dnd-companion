@@ -76,6 +76,7 @@ export default function Search() {
       <h1>{t('search.title')}</h1>
       <form onSubmit={go} className="row">
         <input value={q} onChange={(e) => setQ(e.target.value)}
+               aria-label={t('search.title')}
                placeholder={t('search.placeholder')} autoFocus />
         <select value={type} onChange={(e) => setType(e.target.value)}
                 aria-label={t('search.typeAria')}>
@@ -86,6 +87,11 @@ export default function Search() {
             <option key={t} value={t}>{t}</option>))}
         </select>
         <button type="submit">{t('search.button')}</button>
+        {/* el atajo existe desde la paleta pero nadie lo anunciaba —
+            kbd visible junto al campo que dispara */}
+        <span className="muted" style={{ fontSize: '.8rem',
+                                         alignSelf: 'center' }}>
+          <kbd>Ctrl</kbd>+<kbd>K</kbd> {t('search.kbdHint')}</span>
       </form>
 
       {/* progressive disclosure: edición, fuente y asistente quedan
@@ -350,6 +356,7 @@ function HomebrewForm() {
       </div>
       <textarea value={form.desc} rows={2}
                 placeholder={t('search.hbDescPh')}
+                aria-label={t('search.hbDescPh')}
                 onChange={(e) => setForm(
                   { ...form, desc: e.target.value })} />
       {form.entity_type === 'monster' && (<>

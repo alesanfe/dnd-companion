@@ -224,6 +224,7 @@ export default function CampaignBoard() {
       {!joined && (
         <form onSubmit={join} className="row">
           <input value={code} onChange={(e) => setCode(e.target.value)}
+                 aria-label={t('camp.invite')}
                  placeholder={t('camp.invite')} />
           <button type="submit">{t('camp.join')}</button>
         </form>)}

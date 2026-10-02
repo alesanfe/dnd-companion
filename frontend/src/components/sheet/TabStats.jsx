@@ -232,14 +232,16 @@ export default function TabStats({ c }) {
       {(d.skill_proficiencies?.length > 0 || d.save_proficiencies?.length > 0) && (
         <div className="row" style={{ flexWrap: 'wrap' }}>
           {d.save_proficiencies?.map((s) => (
-            <span key={s} className="chip">save:{s}
+            <span key={s} className="chip">
+              {t('acc.save')} {t(`stat.${s}`)}
               <button aria-label={tf('stats.profRemove', { name: s })}
                       onClick={() =>
                 op('character.proficiency.remove',
                    { kind: 'save', name: s })}>×</button>
             </span>))}
           {d.skill_proficiencies?.map((s) => (
-            <span key={s} className="chip">{s}
+            <span key={s} className="chip">
+              {t(`skill.${s}`) !== `skill.${s}` ? t(`skill.${s}`) : s}
               <button aria-label={tf('stats.profRemove', { name: s })}
                       onClick={() =>
                 op('character.proficiency.remove',

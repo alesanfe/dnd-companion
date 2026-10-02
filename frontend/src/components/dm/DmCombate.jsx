@@ -92,8 +92,10 @@ export default function DmCombate({ c }) {
       <h2>{t('dm.difficulty')}</h2>
       <div className="row">
         <input value={partyLevels} placeholder={t('com.levelsPh')}
+               aria-label={t('com.levelsPh')}
                onChange={(e) => setPartyLevels(e.target.value)} />
         <input value={crs} placeholder={t('com.crsPh')}
+               aria-label={t('com.crsPh')}
                onChange={(e) => setCrs(e.target.value)} />
         <button onClick={async () => {
           const lv = partyLevels.split(',').map((x) => +x.trim()).filter(Boolean)
@@ -182,6 +184,7 @@ export default function DmCombate({ c }) {
           } finally { setCreating(false) }
         }}>
           <input value={combatName} onChange={(e) => setCombatName(e.target.value)}
+                 aria-label={t('com.namePh')}
                  placeholder={t('com.namePh')} />
           <button type="submit" disabled={creating}>{t('com.start')}</button>
         </form>
@@ -259,8 +262,8 @@ export default function DmCombate({ c }) {
               </div>
               <div className="row">
                 <input type="number" min="1" value={areaAmt}
-                       onChange={(e) => setAreaAmt(+e.target.value)}
-                       aria-label={t('com.amount')} />
+                       aria-label={t('com.amount')}
+                       onChange={(e) => setAreaAmt(+e.target.value)} />
                 <select value={areaType}
                         onChange={(e) => setAreaType(e.target.value)}
                         aria-label={t('sheet.dmgType')}>
@@ -317,6 +320,7 @@ export default function DmCombate({ c }) {
             </summary>
           <form onSubmit={searchMonsters} className="row">
             <input value={query} onChange={(e) => setQuery(e.target.value)}
+                   aria-label={t('com.monsterPh')}
                    placeholder={t('com.monsterPh')} />
             <button type="submit">{t('search.button')}</button>
           </form>
@@ -331,10 +335,13 @@ export default function DmCombate({ c }) {
           ))}
           <div className="row">
             <input value={manual.name} placeholder={t('com.npcPh')}
+                   aria-label={t('com.npcPh')}
                    onChange={(e) => setManual({ ...manual, name: e.target.value })} />
             <input type="number" style={{ maxWidth: 70 }} value={manual.hp_max}
+                   aria-label={t('map.hpMaxAria') || 'HP max'}
                    onChange={(e) => setManual({ ...manual, hp_max: +e.target.value })} />
             <input type="number" style={{ maxWidth: 70 }} value={manual.initiative}
+                   aria-label={t('dm.initiative')}
                    onChange={(e) => setManual({ ...manual, initiative: +e.target.value })} />
             <button disabled={!manual.name}
                     onClick={() => cop('combatant.add', {
@@ -392,6 +399,7 @@ export default function DmCombate({ c }) {
               </span>
               <span className="hp">{cb.hp_current}/{cb.hp_max}</span>
               <input type="number" style={{ maxWidth: 70 }}
+                     aria-label={tf('com.dmgAmtAria', { name: cb.name })}
                      value={dmg[cb.id] || ''}
                      onChange={(e) => setDmg({ ...dmg, [cb.id]: +e.target.value })} />
               <button className="dmg" disabled={!dmg[cb.id]}

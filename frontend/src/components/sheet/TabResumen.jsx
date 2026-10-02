@@ -23,6 +23,7 @@ export default function TabResumen({ c }) {
     <div className="row" hidden={!show('resumen')}>
       <span className="muted">XP: {d.xp || 0}</span>
       <input type="number" min="0" style={{ maxWidth: 90 }} value={xpAdd}
+             aria-label={t('sheet.xpAmount')}
              onChange={(e) => setXpAdd(+e.target.value)} />
       <button disabled={!xpAdd} onClick={() => {
         op('character.xp.add', { amount: xpAdd }); setXpAdd(0)
@@ -145,6 +146,7 @@ export default function TabResumen({ c }) {
       </div>
       <div className="row">
         <input type="number" min="1" value={amount}
+               aria-label={t('sheet.dmgAmtAria')}
                onChange={(e) => setAmount(+e.target.value)} />
         <select value={charDmgType}
                 onChange={(e) => setCharDmgType(e.target.value)}
@@ -323,7 +325,8 @@ export default function TabResumen({ c }) {
                 <option key={p[0]} value={i}>{p[0]}</option>))}
             </select>
             <input name="rname" required maxLength={40}
-                   placeholder={t('sheet.trackerPh')} />
+                   placeholder={t('sheet.trackerPh')}
+                   aria-label={t('sheet.trackerPh')} />
             <input name="rmax" type="number" min="1" max="99"
                    required placeholder={t('sheet.uses')}
                    style={{ maxWidth: 70 }} aria-label={t('sheet.maxUses')} />
@@ -385,6 +388,7 @@ export default function TabResumen({ c }) {
     <Section title={t('sheet.conditions')}  hidden={!show('resumen')} extraClass="optional">
       <div className="row">
         <input value={newCond} onChange={(e) => setNewCond(e.target.value)}
+               aria-label={t('sheet.conditions')}
                placeholder={t('sheet.condPh')} list="cond-list" />
         <datalist id="cond-list">
           {condOptions.map((co) => <option key={co} value={co} />)}

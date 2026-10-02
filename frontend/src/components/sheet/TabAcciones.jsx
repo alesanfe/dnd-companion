@@ -104,6 +104,7 @@ export default function TabAcciones({ c }) {
     <Section title={t('sheet.dice')}  hidden={!show('acciones')}>
       <form onSubmit={doRoll} className="row">
         <input value={expr} onChange={(e) => setExpr(e.target.value)}
+               aria-label={t('acc.expression')}
                placeholder="2d6+3, 1d20adv, 4d6kh3" />
         <select value={rollType} onChange={(e) => setRollType(e.target.value)}>
           <option value="check">{t('acc.check')}</option>

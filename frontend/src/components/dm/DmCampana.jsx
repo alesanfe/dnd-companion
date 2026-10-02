@@ -52,22 +52,26 @@ export default function DmCampana({ c }) {
           <option value="note">{t('camp.kind.note')}</option>
         </select>
         <input value={entForm.name} placeholder={t('camp.name')}
+               aria-label={t('camp.name')}
                onChange={(e) => setEntForm({ ...entForm, name: e.target.value })} />
         {/* notas con wiki-links: [[Nombre]] enlaza a otra entidad
             (o al compendio si no existe) — estilo Kanka */}
         <input value={entForm.notes || ''}
                placeholder={t('camp.notesPh')}
+               aria-label={t('camp.notesPh')}
                title={t('camp.wikiHint')} style={{ flex: 1 }}
                onChange={(e) => setEntForm({ ...entForm,
                                              notes: e.target.value })} />
         {entForm.kind === 'scene' && (
           <input value={entForm.monsters}
                  placeholder={t('camp.monstersPh')}
+                 aria-label={t('camp.monstersPh')}
                  onChange={(e) => setEntForm({ ...entForm, monsters: e.target.value })} />
         )}
         {entForm.kind === 'shop' && (
           <input value={entForm.stock || ''} style={{ flex: 1 }}
                  placeholder={t('camp.stockPh')}
+                 aria-label={t('camp.stockPh')}
                  title={t('camp.stockHint')}
                  onChange={(e) => setEntForm({ ...entForm, stock: e.target.value })} />
         )}

@@ -58,6 +58,7 @@ export default function TabHistoria({ c }) {
     <Section title={t('sheet.journal')}  hidden={!show('historia')} extraClass="optional">
       <div className="row">
         <input value={journalEntry} placeholder={t('nar.journalPh')}
+               aria-label={t('nar.journalPh')}
                onChange={(e) => setJournalEntry(e.target.value)} />
         <button disabled={!journalEntry.trim()} onClick={() => {
           op('character.journal.add', { entry: journalEntry.trim() })

@@ -79,13 +79,24 @@ async def campaign_ws(websocket: WebSocket, campaign_id: str,
       ← {"type": "event", "event": {...}}  broadcast a la sala
       ← {"type": "ack", "operation_id", "version"} | {"type": "error", ...}
 
-    Con `?token=` el rol se resuelve por el usuario autenticado — el
+    El Bearer va preferentemente en `Sec-WebSocket-Protocol`
+    (`bearer.<token>`) — en `?token=` queda en logs de proxy y de
+    historial; el query param sigue aceptándose como fallback.
+    Con token el rol se resuelve por el usuario autenticado — el
     parámetro user_id suelto solo vale en modo local (sin cuenta),
     porque es spoofable y daría rol 'dm' a cualquiera."""
+    subproto = websocket.headers.get('sec-websocket-protocol')
+    negotiated = None
+    if subproto and not token:
+        for p in (s.strip() for s in subproto.split(',')):
+            if p.startswith('bearer.'):
+                token = p[len('bearer.'):]
+                negotiated = p
+                break
     role, resolved, name, authed = _ws_identity(
         campaign_id, token, user_id)
     await manager.join(campaign_id, websocket, role=role, name=name,
-                       uid=resolved)
+                       uid=resolved, subprotocol=negotiated)
     # presencia en vivo — estilo Discord: la sala se entera de
     # altas y bajas sin polling
     await _broadcast_presence(campaign_id)

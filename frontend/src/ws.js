@@ -8,14 +8,17 @@ export function campaignSocket(campaignId, { onMessage, onOpen } = {}) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws'
   const uid = currentUser()?.user_id
   const tok = getToken()
+  // Token por Sec-WebSocket-Protocol (bearer.<tok>) — el ?token=
+  // queda en logs de proxy/historial; solo user_id va en la URL
   const url = `${proto}://${location.host}/ws/campaign/${campaignId}` +
-    (tok ? `?token=${encodeURIComponent(tok)}`
-         : uid ? `?user_id=${uid}` : '')
+    (tok ? '' : uid ? `?user_id=${uid}` : '')
+  const protos = tok ? [`bearer.${tok}`] : undefined
   const handle = { socket: null, closed: false }
   let delay = 1000, timer
   const connect = () => {
     if (handle.closed) return
-    const ws = new WebSocket(url)
+    const ws = protos ? new WebSocket(url, protos)
+                      : new WebSocket(url)
     handle.socket = ws
     ws.onopen = () => { delay = 1000; onOpen?.() }
     ws.onmessage = (m) => {

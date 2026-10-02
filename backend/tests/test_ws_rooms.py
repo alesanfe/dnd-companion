@@ -10,7 +10,7 @@ class FakeWS:
     def __init__(self):
         self.sent = []
 
-    async def accept(self):
+    async def accept(self, subprotocol=None):
         pass
 
     async def send_text(self, text):

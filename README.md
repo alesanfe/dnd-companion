@@ -229,9 +229,9 @@ npm run build                   # build + PWA
 
 ## Limitaciones conocidas
 
-- El Bearer token del WebSocket viaja en `?token=` — aceptable en
-  LAN/local; si se expone a internet debe migrarse a
-  `Sec-WebSocket-Protocol` (ver AGENTS.md).
+- El Bearer token del WebSocket viaja en `Sec-WebSocket-Protocol`
+  (`bearer.<token>`); `?token=` queda como fallback pero expone el
+  token en logs de proxy (ver AGENTS.md).
 - `cleave`/`nick` (weapon mastery) solo se anotan en el log — el
   encadenamiento del segundo ataque lo dirige el DM.
 

@@ -558,6 +558,37 @@ def test_personal_char_ws_op_guard():
         assert d.get("type") == "error"
 
 
+def test_ws_token_via_subprotocol():
+    """El Bearer puede viajar en Sec-WebSocket-Protocol (bearer.<tok>)
+    en vez de ?token= — el query param queda en logs de proxy y en
+    el historial; el subprotocolo no. El servidor negocia el
+    protocolo de vuelta para que la conexión sea válida."""
+    owner = _auth_headers(f"sp{uuid.uuid4().hex[:8]}")
+    uid = client.get("/api/auth/me", headers=owner).json()["user_id"]
+    cid = client.post("/api/characters",
+                      json={"name": "spchar", "player_id": uid},
+                      headers=owner).json()["id"]
+    camp = client.post("/api/campaigns", json={"name": "SP"},
+                       headers=owner).json()
+    tok = owner["Authorization"].split(" ", 1)[1]
+    with client.websocket_connect(
+            f"/ws/campaign/{camp['id']}",
+            subprotocols=[f"bearer.{tok}"]) as ws:
+        assert ws.accepted_subprotocol == f"bearer.{tok}"
+        ws.send_json({"type": "operation", "operation": {
+            "operation_id": uuid.uuid4().hex, "entity_id": cid,
+            "entity_version": 1, "client_id": "t",
+            "user_id": "x", "entity_kind": "character",
+            "operation_type": "character.hp.set",
+            "payload": {"current": 7}}})
+        d = {}
+        for _ in range(6):
+            d = ws.receive_json()
+            if d.get("type") in ("error", "ack"):
+                break
+        assert d.get("type") == "ack"
+
+
 def test_auth_throttle_persists_in_db(monkeypatch):
     """El rate-limit vive en state DB (no en memoria): un reinicio
     ya no regala 5 intentos gratis."""
@@ -617,7 +648,7 @@ class _FakeWS:
     def __init__(self):
         self.sent = []
 
-    async def accept(self):
+    async def accept(self, subprotocol=None):
         pass
 
     async def send_text(self, text):

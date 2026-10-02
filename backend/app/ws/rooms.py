@@ -17,8 +17,9 @@ class RoomManager:
 
     async def join(self, campaign_id: str, ws: WebSocket,
                    role: str = 'local', name: str | None = None,
-                   uid: str | None = None) -> None:
-        await ws.accept()
+                   uid: str | None = None,
+                   subprotocol: str | None = None) -> None:
+        await ws.accept(subprotocol=subprotocol)
         self._rooms.setdefault(campaign_id, {})[ws] = (role, name, uid)
 
     def leave(self, campaign_id: str, ws: WebSocket) -> None:

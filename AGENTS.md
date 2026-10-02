@@ -105,9 +105,10 @@ cd frontend && npm install && npm run dev
   chat/typing lo firma el servidor con la identidad del socket.
 - Conflictos de optimistic locking: `POST /api/operations/conflicts/
   {id}/retry|dismiss` — resolución asistida desde Settings.
-- El Bearer token del WS viaja en `?token=` (queda en logs de proxy)
-  — aceptado para deployment local/LAN; si se expone a internet,
-  migrarlo a `Sec-WebSocket-Protocol` o mensaje `auth` inicial.
+- El Bearer token del WS viaja en `Sec-WebSocket-Protocol`
+  (`bearer.<token>`) — el servidor lo negocia de vuelta y lo
+  convierte en identidad. `?token=` sigue aceptándose como fallback
+  para clientes antiguos (queda en logs de proxy).
 - CORS: `DND_CORS_ORIGINS` (lista separada por comas; por defecto
   `http://localhost:5173`). En Docker el front es same-origin vía
   proxy nginx — CORS solo hace falta si el front vive en otro host.

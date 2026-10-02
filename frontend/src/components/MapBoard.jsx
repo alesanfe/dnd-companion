@@ -892,6 +892,7 @@ export default function MapBoard({ campaign, size = CELL,
           </>}
         </>}
         {map && !readOnly && <>
+          <span className="tb-sep" aria-hidden="true" />
           <select value={mode} aria-label={t('map.modeAria')}
                   onChange={(e) => setMode(e.target.value)}>
             <option value="move">{t('map.modeMove')}</option>
@@ -968,6 +969,7 @@ export default function MapBoard({ campaign, size = CELL,
                     title={t('map.zoneDmgTitle')}
                     onClick={dmgZone}>{t('map.zoneDmg')}</button>
           </>)}
+          <span className="tb-sep" aria-hidden="true" />
           <button className="ghost" onClick={addToken}>
             {t('map.addToken')}</button>
           {/* combate → mapa: volcar los combatientes como tokens
@@ -977,6 +979,7 @@ export default function MapBoard({ campaign, size = CELL,
                     aria-label={t('map.syncTokTitle')}
                     onClick={syncCombatants}>
               ⚔ {t('map.syncTok')}</button>)}
+          <span className="tb-sep" aria-hidden="true" />
           <button className="ghost" title={t('map.bgTitle')}
                   aria-label={t('map.bgTitle')}
                   onClick={() => {
@@ -1001,6 +1004,7 @@ export default function MapBoard({ campaign, size = CELL,
                    onBlur={(e) => save({ ...d,
                      cell_ft: Math.max(1, +e.target.value || 5) })} />
           </label>
+          <span className="tb-sep" aria-hidden="true" />
           <button className="ghost" title={t('map.colMinus')}
                   onClick={() => resize('cols', -1)}>−col</button>
           <button className="ghost" title={t('map.colPlus')}
@@ -1014,6 +1018,7 @@ export default function MapBoard({ campaign, size = CELL,
             el paneo con botón central */}
         {map && (
           <span className="row" style={{ gap: 0 }}>
+            <span className="tb-sep" aria-hidden="true" />
             <button className="ghost" aria-label="-"
                     onClick={() => setView((v) => ({
                       ...v, z: Math.max(.35, v.z / 1.25) }))}>−</button>
@@ -1245,7 +1250,8 @@ export default function MapBoard({ campaign, size = CELL,
            }}
            onMouseLeave={onSvgUp}
            style={{ background: '#223', borderRadius: 6,
-                    maxWidth: '100%', touchAction: 'manipulation' }}>
+                    maxWidth: '100%', touchAction: 'manipulation',
+                    display: 'block', margin: '0 auto' }}>
         {/* imagen de fondo opcional (mapa dibujado, estilo VTT) */}
         {d.image_url && (
           <image href={d.image_url} width={W} height={H}

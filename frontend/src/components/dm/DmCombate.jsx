@@ -397,7 +397,10 @@ export default function DmCombate({ c }) {
               <button className="ghost" title={t('com.toMap')}
                       aria-label={tf('com.toMapAria', { name: cb.name })}
                       onClick={() => toMap(cb)}>📍</button>
-              <button onClick={() => cop('combatant.remove', { combatant_id: cb.id })}>×</button>
+              <button className="ghost" title={t('dm.remove')}
+                      aria-label={tf('com.removeAria', { name: cb.name })}
+                      onClick={() => cop('combatant.remove', {
+                        combatant_id: cb.id })}>×</button>
             </div>
           )})}
         </section>

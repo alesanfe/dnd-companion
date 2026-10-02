@@ -905,6 +905,15 @@ main.dm { max-width: 1440px; }
 .combatant .cname { flex: 1; }
 .combatant .hp { font-family: ui-monospace, monospace; }
 
+/* separador vertical en barras de herramientas densas (mapa):
+   agrupa visualmente los controles sin añadir tarjetas */
+.tb-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 0.25rem;
+  background: var(--border);
+}
+
 .purse { flex-wrap: wrap; }
 .coin {
   font-family: ui-monospace, monospace;

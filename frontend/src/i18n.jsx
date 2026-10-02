@@ -105,6 +105,7 @@ es: {
   'dm.allRolls': 'todas','dm.sessions': 'Sesiones y preparación',
   'dm.rollreq': 'Pedir tirada a un jugador',
   'dm.addcombatant': 'Añadir combatiente',
+  'dm.remove': 'Quitar',
   'dm.initiative': 'Iniciativa',
 
   'search.title': 'Buscador de reglas',
@@ -803,6 +804,7 @@ es: {
   'map.clearWalls': 'quitar muros',
   'com.toMap': 'al mapa',
   'com.toMapAria': 'Soltar {name} en el mapa',
+  'com.removeAria': 'Quitar a {name} del combate',
   'map.tokenDelConfirm': '¿Borrar el token "{name}"?',
   'map.canvasAria': 'Mapa táctico',
   'map.hint': 'Clic: seleccionar token → clic en casilla: mover · shift: medir · arrastrar en niebla/zona: pintar área',
@@ -1001,6 +1003,7 @@ en: {
   'dm.allRolls': 'all','dm.sessions': 'Sessions & prep',
   'dm.rollreq': 'Request a roll from a player',
   'dm.addcombatant': 'Add combatant',
+  'dm.remove': 'Remove',
   'dm.initiative': 'Initiative',
 
   'search.title': 'Rules search',
@@ -1699,6 +1702,7 @@ en: {
   'map.clearWalls': 'clear walls',
   'com.toMap': 'to map',
   'com.toMapAria': 'Drop {name} on the map',
+  'com.removeAria': 'Remove {name} from combat',
   'map.tokenDelConfirm': 'Delete token "{name}"?',
   'map.canvasAria': 'Tactical map',
   'map.hint': 'Click: select token → click a cell: move · shift: measure · drag in fog/zone mode: paint area',

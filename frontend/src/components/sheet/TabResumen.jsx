@@ -433,7 +433,7 @@ export default function TabResumen({ c }) {
                     aria-label={tf('sheet.stackAria', { name: co })}
                     onClick={() => op('character.condition.apply',
                                       { condition: co, stacks: 1 })}>
-              ×n</button>)}
+              +n</button>)}
           {d.condition_durations?.[co] != null && (
             <span className="muted" style={{ fontSize: '.8rem' }}>
               ⏳ {d.condition_durations[co]} {t('sheet.rounds')}</span>)}

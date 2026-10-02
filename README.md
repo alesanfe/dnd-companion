@@ -48,7 +48,19 @@ paleta ⌘K, compendio, campaña, DM, móvil</summary>
 |---|---|
 | ![Ficha en móvil 390px: pestañas desplazables y nav inferior](docs/assets/sheet-mobile.png) | ![Wizard de personaje: concepto, clase, origen, stats, revisión](docs/assets/wizard.png) |
 
+| Tema claro | Tema sepia |
+|---|---|
+| ![Ficha en tema claro: misma cabecera y pestañas sobre fondo claro](docs/assets/sheet-light.png) | ![Ficha en tema sepia](docs/assets/sheet-sepia.png) |
+
+| Lectura fácil (dislexia) | Vista de impresión |
+|---|---|
+| ![Ficha con fuente de lectura fácil para dislexia](docs/assets/sheet-dyslexia.png) | ![Hoja imprimible: todas las pestañas desplegadas en media print](docs/assets/sheet-print.png) |
+
 </details>
+
+Las capturas se regeneran con `node tools/screenshots.mjs`
+(precisa Playwright, backend y frontend en marcha; la campaña de
+demo se siembra con `python tools/seed_demo.py`).
 
 ## Estado
 

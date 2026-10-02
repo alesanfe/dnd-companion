@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
 import { loadJSON } from '../session.js'
-import { useT } from '../i18n.jsx'
+import { useT, etypeLabel } from '../i18n.jsx'
 import EntityPreview from '../components/EntityPreview.jsx'
 
 /* el excerpt del FTS viene del JSON de la entidad (homebrew
@@ -178,12 +178,18 @@ export default function Search() {
                     'dnd-search-scroll', String(window.scrollY))}>
               ↗</Link>{' '}
             <span className="muted">
-              {r.entity_type} · {r.ruleset} · {r.source_id}
+              {etypeLabel(t, r.entity_type)} · {r.ruleset} · {r.source_id}
               {!r.is_redistributable && ` · ${t('search.private')}`}
             </span>
             {r.summary && (
               <p className="excerpt">
-                {Object.entries(r.summary).map(([k, v]) => `${k}: ${v}`).join(' · ')}
+                {/* claves snake_case del backend (level, casting_time…)
+                    se traducen via search.field.* — sin clave se deja
+                    el nombre crudo (mejor que inventar traducción) */}
+                {Object.entries(r.summary).map(([k, v]) => {
+                  const lbl = t(`search.field.${k}`)
+                  return `${lbl === `search.field.${k}` ? k : lbl}: ${v}`
+                }).join(' · ')}
               </p>
             )}
             {r.excerpt && <p className="excerpt"

@@ -883,12 +883,12 @@ export default function MapBoard({ campaign, size = CELL,
         </select>
         {!readOnly && <>
           <button className="ghost" onClick={newMap}
-                  title={t('map.newTitle')}>＋</button>
+                  title={t('map.newTitle')}>＋ {t('map.newLbl')}</button>
           {map && <>
             <button className="ghost" onClick={renameMap}
-                    title={t('map.renameTitle')}>✎</button>
+                    title={t('map.renameTitle')}>✎ {t('map.renameLbl')}</button>
             <button className="ghost" onClick={delMap}
-                    title={t('map.delTitle')}>🗑</button>
+                    title={t('map.delTitle')}>🗑 {t('map.delLbl')}</button>
           </>}
         </>}
         {map && !readOnly && <>
@@ -988,14 +988,14 @@ export default function MapBoard({ campaign, size = CELL,
             // '' — no undefined: el PATCH hace merge y un campo
             // undefined no se serializa (no llegaría a borrar)
             save({ ...d, image_url: u.trim() })
-          }}>🖼</button>
+          }}>🖼 {t('map.bgLbl')}</button>
           <button className="ghost" title={t('map.musicTitle')}
                   aria-label={t('map.musicTitle')}
                   onClick={() => {
             const u = prompt(t('map.musicPrompt'), d.music_url || '')
             if (u === null) return
             save({ ...d, music_url: u.trim() })
-          }}>♪</button>
+          }}>♪ {t('map.musicLbl')}</button>
           <label className="muted">{t('map.cellFt')}
             <input type="number" min="1" max="50" defaultValue={d.cell_ft}
                    key={`${map.id}:${d.cell_ft}`}

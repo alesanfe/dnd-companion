@@ -21,19 +21,27 @@ const CLASS_PRIORITY = {
   wizard: ['int', 'dex', 'con', 'wis', 'cha', 'str'],
 }
 
+const DRAFT_KEY = 'dc.wizard-draft'
+
+function loadDraft() {
+  try { return JSON.parse(localStorage.getItem(DRAFT_KEY)) || {} }
+  catch { return {} }
+}
+
 export default function Wizard() {
   const { t, tf } = useT()
   const nav = useNavigate()
-  const [step, setStep] = useState(0)
-  const [name, setName] = useState('')
-  const [ruleset, setRuleset] = useState('dnd5e-2014')
+  const [draft] = useState(loadDraft)
+  const [step, setStep] = useState(draft.step ?? 0)
+  const [name, setName] = useState(draft.name ?? '')
+  const [ruleset, setRuleset] = useState(draft.ruleset ?? 'dnd5e-2014')
   const [classes, setClasses] = useState([])
   const [species, setSpecies] = useState([])
   const [backgrounds, setBackgrounds] = useState([])
-  const [classId, setClassId] = useState('')
-  const [speciesId, setSpeciesId] = useState('')
-  const [backgroundId, setBackgroundId] = useState('')
-  const [abilities, setAbilities] = useState({})
+  const [classId, setClassId] = useState(draft.classId ?? '')
+  const [speciesId, setSpeciesId] = useState(draft.speciesId ?? '')
+  const [backgroundId, setBackgroundId] = useState(draft.backgroundId ?? '')
+  const [abilities, setAbilities] = useState(draft.abilities ?? {})
   const [remaining, setRemaining] = useState([...STANDARD_ARRAY])
   const [err, setErr] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -54,6 +62,19 @@ export default function Wizard() {
     api.contentOptions('background', ruleset, true)
       .then((r) => setBackgrounds(r.options)).catch(() => {})
   }, [ruleset])
+
+  // borrador persistente: salir del wizard o cerrar la pestaña no
+  // debe destruir medio personaje (UX: conservar trabajo en curso)
+  useEffect(() => {
+    const d = { step, name, ruleset, classId, speciesId,
+                backgroundId, abilities }
+    if (!name && !classId && !Object.keys(abilities).length &&
+        step === 0) {
+      localStorage.removeItem(DRAFT_KEY)   // nada empezado
+      return
+    }
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(d))
+  }, [step, name, ruleset, classId, speciesId, backgroundId, abilities])
 
   const assign = (ab, val) => {
     const prev = abilities[ab]
@@ -80,6 +101,7 @@ export default function Wizard() {
         background_id: backgroundId || null,
         abilities,
       })
+      localStorage.removeItem(DRAFT_KEY)
       nav(`/character/${r.id}`)
     } catch (e) { setErr(e.message); setBusy(false) }
   }
@@ -129,6 +151,15 @@ export default function Wizard() {
             </button>))}
           <button className="primary" disabled={!name.trim()}
                   onClick={() => setStep(1)}>{t('wiz.next')}</button>
+          {/* el borrador se restaura solo — botón para empezar de
+              cero sin tener que borrar campo a campo */}
+          {(draft.name || draft.classId || draft.speciesId) && (
+            <button className="ghost" onClick={() => {
+              localStorage.removeItem(DRAFT_KEY)
+              setStep(0); setName(''); setRuleset('dnd5e-2014')
+              setClassId(''); setSpeciesId(''); setBackgroundId('')
+              setAbilities({}); setRemaining([...STANDARD_ARRAY])
+            }}>{t('wiz.startOver')}</button>)}
         </section>
       )}
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
-import { useT } from '../i18n.jsx'
+import { useT, etypeLabel } from '../i18n.jsx'
 
 /** Vista previa compacta de una entidad del compendio — se usa en
     el panel derecho del buscador. El detalle completo sigue en
@@ -34,7 +34,7 @@ export default function EntityPreview({ id }) {
               title={t('common.details')}>↗</Link>
       </div>
       <p className="muted" style={{ marginTop: 0 }}>
-        {ent.entity_type} · {ent.ruleset} · {ent.source_id}
+        {etypeLabel(t, ent.entity_type)} · {ent.ruleset} · {ent.source_id}
         {!ent.is_redistributable && ` · ${t('search.private')}`}
       </p>
 

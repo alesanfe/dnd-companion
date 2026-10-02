@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api } from '../api.js'
 import { loadJSON } from '../session.js'
-import { useT } from '../i18n.jsx'
+import { useT, etypeLabel } from '../i18n.jsx'
 
 /** Copia con fallback: navigator.clipboard no existe en contextos
     no seguros (http:// en LAN) — el botón "copiar" no hacía nada. */
@@ -112,7 +112,7 @@ export default function Entity() {
           </div>
         </div>)}
       <p className="muted">
-        {ent.entity_type} · {ent.ruleset} · {ent.source_id}
+        {etypeLabel(t, ent.entity_type)} · {ent.ruleset} · {ent.source_id}
         {!ent.is_redistributable &&
           <span className="tag-private"> · {t('search.private')}</span>}
       </p>
@@ -128,7 +128,8 @@ export default function Entity() {
                 {rs.replace('dnd5e-', '')}</Link>)))}
           {editions.diff?.length > 0 && (
             <span className="muted" style={{ fontSize: '.8rem' }}>
-              {t('entity.diff')} {editions.diff.join(', ')}</span>)}
+              {t('entity.diff')} {editions.diff.map((k) =>
+                k.replaceAll('_', ' ')).join(', ')}</span>)}
         </div>)}
 
       {block && (

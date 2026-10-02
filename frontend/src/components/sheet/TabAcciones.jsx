@@ -111,12 +111,14 @@ export default function TabAcciones({ c }) {
           <option value="damage">{t('acc.damage')}</option>
           <optgroup label={t('acc.saves')}>
             {['str', 'dex', 'con', 'int', 'wis', 'cha'].map((a) => (
-              <option key={a} value={`save:${a}`}>save:{a}</option>))}
+              <option key={a} value={`save:${a}`}>
+                {t('acc.save')} {t(`stat.${a}`)}</option>))}
           </optgroup>
           <optgroup label={t('acc.skills')}>
-            {['skill:perception', 'skill:stealth', 'skill:athletics',
-              'skill:insight', 'skill:investigation', 'skill:persuasion']
-              .map((s) => <option key={s} value={s}>{s.slice(6)}</option>)}
+            {['perception', 'stealth', 'athletics',
+              'insight', 'investigation', 'persuasion']
+              .map((s) => <option key={s} value={`skill:${s}`}>
+                {t(`skill.${s}`)}</option>)}
           </optgroup>
         </select>
         <button type="submit">{t('sheet.roll')}</button>

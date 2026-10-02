@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
-import { useT } from '../i18n.jsx'
+import { useT, etypeLabel } from '../i18n.jsx'
 
 const DICE_RE = /^\s*\d*d\d+([+\-dkslh!a-z0-9]*)\s*$/i
 
@@ -154,7 +154,7 @@ export default function CommandPalette() {
         if (termRef.current !== term) return   // respuesta obsoleta
         const content = (r.results || []).slice(0, 6).map((x) => ({
           kind: 'content', label: x.name,
-          sub: `${x.entity_type} · ${x.source_id}`,
+          sub: `${etypeLabel(t, x.entity_type)} · ${x.source_id}`,
           run: () => go(`/content/${encodeURIComponent(x.id)}`),
         }))
         setResults((prev) => [

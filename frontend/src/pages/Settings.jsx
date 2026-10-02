@@ -111,16 +111,16 @@ export default function Settings() {
           </select>
         </label>
         <label>
+          <span>{t('set.motion')}</span>
           <input type="checkbox" checked={prefs.motion === 'off'}
                  onChange={(e) =>
                    pref('motion', e.target.checked ? 'off' : 'on')} />
-          {' '}{t('set.motion')}
         </label>
         <label>
+          <span>{t('set.dyslexia')}</span>
           <input type="checkbox" checked={prefs.dyslexia === 'on'}
                  onChange={(e) =>
                    pref('dyslexia', e.target.checked ? 'on' : 'off')} />
-          {' '}{t('set.dyslexia')}
         </label>
       </section>
 

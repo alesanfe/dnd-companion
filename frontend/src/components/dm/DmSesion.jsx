@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../api.js'
+import { opLabel } from '../../i18n.jsx'
 
 /** Pestaña Sesión: datos de campaña, feed de tiradas en vivo,
     sesiones y preparación, peticiones de tirada a jugadores. */
@@ -115,7 +116,7 @@ export default function DmSesion({ c }) {
           {eventFeed && eventFeed.map((e) => (
             <div key={e.event_id} className="row">
               <span className="muted">{e.occurred_at.slice(11, 19)}</span>
-              <span>{e.type}</span>
+              <span>{opLabel(t, e.type)}</span>
             </div>
           ))}
         </>
@@ -132,7 +133,7 @@ export default function DmSesion({ c }) {
                     style={{ borderColor: feedFilter === f
                       ? 'var(--accent)' : undefined }}
                     onClick={() => setFeedFilter(f)}>
-              {f === 'todas' ? t('dm.allRolls') : f}</button>))}
+              {f === 'todas' ? t('dm.allRolls') : opLabel(t, f)}</button>))}
         </div>
         {newRolls > 0 && (
           <button className="ghost" role="status"

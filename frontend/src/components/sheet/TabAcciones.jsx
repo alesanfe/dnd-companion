@@ -33,9 +33,11 @@ export default function TabAcciones({ c }) {
           {t('acc.hide')}</button>)}
       {actions === null && (
         <button onClick={loadActions}>{t('acc.show')}</button>)}
-      {actions && Object.entries(actions).map(([g, list]) => (
+      {actions && Object.entries(actions)
+        .filter(([, list]) => list.length > 0)
+        .map(([g, list]) => (
         <div key={g}>
-          <h3 className="muted" style={{ textTransform: 'capitalize' }}>{g.replace('_', ' ')}</h3>
+          <h3 className="muted">{t(`actGroup.${g}`)}</h3>
           <ul>{list.map((a, i) => {
             const isAtk = a.name.startsWith('Ataque:')
             const isSpell = a.name.startsWith('Conjuro:')

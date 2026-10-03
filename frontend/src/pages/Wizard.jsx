@@ -132,9 +132,15 @@ export default function Wizard() {
       {step === 0 && (
         <section className="card">
           <h2>1. {t('wiz.name')} + {t('search.edition')}</h2>
-          <input value={name} onChange={(e) => setName(e.target.value)}
-                 aria-label={t('wiz.name')}
-                 placeholder={t('wiz.name')} />
+          {/* etiqueta visible — el placeholder desaparece al escribir
+              y no cuenta como label persistente (WCAG 3.3.2) */}
+          <label htmlFor="wiz-name" className="muted"
+                 style={{ display: 'block', marginBottom: '.3rem' }}>
+            {t('wiz.name')}
+          </label>
+          <input id="wiz-name" value={name}
+                 onChange={(e) => setName(e.target.value)}
+                 placeholder={t('wiz.namePh')} />
           {[
             ['dnd5e-2024', 'wizard.rules.2024'],
             ['dnd5e-2014', 'wizard.rules.2014'],

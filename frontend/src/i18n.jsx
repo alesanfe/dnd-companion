@@ -1,4 +1,4 @@
-/* i18n ligero: diccionario ES/EN + contexto. Idioma persistido en
+﻿/* i18n ligero: diccionario ES/EN + contexto. Idioma persistido en
    localStorage ('dnd-lang'); por defecto el del navegador.
    Uso:  const { t, lang, setLang } = useT()   →  t('nav.sheets') */
 import { createContext, useContext, useEffect, useState } from 'react'
@@ -174,7 +174,8 @@ es: {
   'wiz.title': 'Nuevo personaje', 'wiz.next': 'Siguiente',
   'wiz.startOver': 'Empezar de nuevo (descarta el borrador)',
   'wiz.back': 'Atrás', 'wiz.finish': 'Crear personaje',
-  'wiz.name': 'Nombre', 'wiz.class': 'Clase', 'wiz.species': 'Especie',
+  'wiz.name': 'Nombre', 'wiz.namePh': 'Nombre del personaje…',
+  'wiz.class': 'Clase', 'wiz.species': 'Especie',
   'wiz.background': 'Trasfondo', 'wiz.abilities': 'Puntuaciones',
   'wiz.summary': 'Resumen',
 
@@ -353,6 +354,11 @@ es: {
 
   'acc.show': 'Ver acciones disponibles',
   'acc.hide': 'Ocultar acciones',
+  'actGroup.action': 'Acción',
+  'actGroup.bonus_action': 'Acción adicional',
+  'actGroup.reaction': 'Reacción',
+  'actGroup.movement': 'Movimiento',
+  'actGroup.free': 'Fuera de combate',
   'acc.attackWith': 'Atacar con {name}',
   'acc.cast': 'Lanzar {name}',
   'acc.hit': 'impacto', 'acc.dmg': 'daño',
@@ -431,6 +437,8 @@ es: {
   'inv.chargeRecover': 'Recuperar carga de {name}',
   'inv.weightTitle': 'Peso en libras por unidad',
   'inv.weightAria': 'Peso de {name}',
+  'inv.removeAria': 'Quitar 1 × {name}',
+  'inv.useAria': 'Usar 1 × {name}',
   'inv.weightPrompt': 'Peso por unidad de {name} en libras',
   'inv.chargeTitle': 'Configurar cargas (varitas, objetos mágicos)',
   'inv.chargeAria': 'Cargas de {name}',
@@ -624,6 +632,7 @@ es: {
   'camp.presentClose': 'cerrar presentación',
 
   'camps.player': 'Jugador',
+  'camps.coDm': 'Co-DM', 'camps.guest': 'Invitado', 'camps.spectator': 'Espectador',
 
   'cb.rollTag': 'tirada',
   'cb.goSheet': 'Ir a la ficha',
@@ -873,7 +882,7 @@ es: {
   'map.lightFtAria': 'radio de luz que emite el token en pies',
   'map.musicTitle': 'música ambiente del mapa',
   'map.musicPrompt': 'URL de audio (mp3/ogg/stream) — vacío para quitar',
-  'map.zoomReset': 'encuadrar mapa',
+  'map.zoomReset': 'encuadrar mapa', 'map.zoomIn': 'ampliar', 'map.zoomOut': 'alejar',
   'map.modeWall': 'muro',
   'map.clearWalls': 'quitar muros',
   'com.toMap': 'al mapa',
@@ -1188,7 +1197,8 @@ en: {
   'wiz.title': 'New character', 'wiz.next': 'Next',
   'wiz.startOver': 'Start over (discards the draft)',
   'wiz.back': 'Back', 'wiz.finish': 'Create character',
-  'wiz.name': 'Name', 'wiz.class': 'Class', 'wiz.species': 'Species',
+  'wiz.name': 'Name', 'wiz.namePh': 'Character name…',
+  'wiz.class': 'Class', 'wiz.species': 'Species',
   'wiz.background': 'Background', 'wiz.abilities': 'Ability scores',
   'wiz.summary': 'Summary',
 
@@ -1367,6 +1377,11 @@ en: {
 
   'acc.show': 'Show available actions',
   'acc.hide': 'Hide actions',
+  'actGroup.action': 'Action',
+  'actGroup.bonus_action': 'Bonus action',
+  'actGroup.reaction': 'Reaction',
+  'actGroup.movement': 'Movement',
+  'actGroup.free': 'Out of combat',
   'acc.attackWith': 'Attack with {name}',
   'acc.cast': 'Cast {name}',
   'acc.hit': 'hit', 'acc.dmg': 'damage',
@@ -1445,6 +1460,8 @@ en: {
   'inv.chargeRecover': 'Recover a charge of {name}',
   'inv.weightTitle': 'Weight in pounds per unit',
   'inv.weightAria': 'Weight of {name}',
+  'inv.removeAria': 'Remove 1 × {name}',
+  'inv.useAria': 'Use 1 × {name}',
   'inv.weightPrompt': 'Weight per unit of {name} in pounds',
   'inv.chargeTitle': 'Set charges (wands, magic items)',
   'inv.chargeAria': 'Charges of {name}',
@@ -1638,6 +1655,7 @@ en: {
   'camp.presentClose': 'close presentation',
 
   'camps.player': 'Player',
+  'camps.coDm': 'Co-DM', 'camps.guest': 'Guest', 'camps.spectator': 'Spectator',
 
   'cb.rollTag': 'roll',
   'cb.goSheet': 'Go to sheet',
@@ -1885,7 +1903,7 @@ en: {
   'map.lightFtAria': 'light radius the token emits in feet',
   'map.musicTitle': 'map ambient music',
   'map.musicPrompt': 'Audio URL (mp3/ogg/stream) — empty to remove',
-  'map.zoomReset': 'fit map',
+  'map.zoomReset': 'fit map', 'map.zoomIn': 'zoom in', 'map.zoomOut': 'zoom out',
   'map.modeWall': 'wall',
   'map.clearWalls': 'clear walls',
   'com.toMap': 'to map',

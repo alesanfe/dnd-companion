@@ -233,9 +233,10 @@ def test_contextual_actions_groups_spells_and_weapons():
     # spells_known se rellena vía wizard avanzado; comprobamos lo básico:
     acts = client.get(f"/api/characters/{cid}/actions").json()["actions"]
     names = [a["name"] for a in acts["action"]]
-    assert "Attack" in names
+    assert "Ataque" in names
     assert any("Daga" in n for n in names)
-    assert any(a["name"] == "Opportunity Attack" for a in acts["reaction"])
+    assert any(a["name"] == "Ataque de oportunidad"
+               for a in acts["reaction"])
 
 
 # --- combate ↔ ficha, craft, miembros, tirada con efectos --------------

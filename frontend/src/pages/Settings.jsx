@@ -5,7 +5,7 @@ import { conflictedOps, deadOps, dropOp, markOp,
          pendingOps } from '../db.js'
 import { clearAuth, currentUser, getPrefs, setAuth, setPref }
   from '../session.js'
-import { useT } from '../i18n.jsx'
+import { useT, opLabel } from '../i18n.jsx'
 import { clearMetrics, snapshot } from '../metrics.js'
 
 /** Ajustes consolidados: cuenta, apariencia, accesibilidad y

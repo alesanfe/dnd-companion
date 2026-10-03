@@ -127,10 +127,23 @@ export default function Entity() {
                     to={`/content/${encodeURIComponent(v.id)}`}
                     className="chip">
                 {rs.replace('dnd5e-', '')}</Link>)))}
-          {editions.diff?.length > 0 && (
-            <span className="muted" style={{ fontSize: '.8rem' }}>
-              {t('entity.diff')} {editions.diff.map((k) =>
-                k.replaceAll('_', ' ')).join(', ')}</span>)}
+          {(() => {
+            // diff crudo del backend: quita metadatos sin interés
+            // (url/desc duplicados) y traduce por search.field.* —
+            // igual que el resumen de resultados del buscador
+            const SKIP = new Set(['url', 'desc', 'index', 'name'])
+            const diff = [...new Set(editions.diff || [])]
+              .filter((k) => !SKIP.has(k))
+              .map((k) => {
+                const lbl = t(`search.field.${k}`)
+                return lbl === `search.field.${k}`
+                  ? k.replaceAll('_', ' ') : lbl
+              })
+            return diff.length > 0 && (
+              <span className="muted" style={{ fontSize: '.8rem' }}>
+                {t('entity.diff')} {diff.slice(0, 8).join(', ')}
+                {diff.length > 8 && '…'}</span>)
+          })()}
         </div>)}
 
       {block && (

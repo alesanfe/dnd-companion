@@ -92,7 +92,7 @@ def _spell(d: dict) -> dict:
     props = d.get("properties") or {}
     lvl = d.get("level", props.get("Level", ""))
     lvl_txt = ("truco" if str(lvl) in ("0", "cantrip")
-               else f"nivel {lvl}")
+               else str(lvl))
     return {
         "kind": "spell",
         "fields": _filter([

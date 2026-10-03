@@ -279,8 +279,11 @@ export default function TabInventario({ c }) {
                { item_id: it.id })
           }>{it.equipped ? t('inv.unequip') : t('inv.equip')}</button>
           <button onClick={() => op('character.inventory.remove',
-                                    { item_id: it.id, quantity: 1 })}>
-            {invTab === 'consumibles' ? t('common.use') : '-'}</button>
+                                    { item_id: it.id, quantity: 1 })}
+                  aria-label={invTab === 'consumibles'
+                    ? tf('inv.useAria', { name: it.name })
+                    : tf('inv.removeAria', { name: it.name })}>
+            {invTab === 'consumibles' ? t('common.use') : '−1'}</button>
         </div>
       ))}
       {invTab === 'equipado' &&

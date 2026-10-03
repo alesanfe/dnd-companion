@@ -1019,13 +1019,13 @@ export default function MapBoard({ campaign, size = CELL,
         {map && (
           <span className="row" style={{ gap: 0 }}>
             <span className="tb-sep" aria-hidden="true" />
-            <button className="ghost" aria-label="-"
+            <button className="ghost" aria-label={t('map.zoomOut')}
                     onClick={() => setView((v) => ({
                       ...v, z: Math.max(.35, v.z / 1.25) }))}>−</button>
             <button className="ghost" title={t('map.zoomReset')}
                     aria-label={t('map.zoomReset')}
                     onClick={() => setView({ x: 0, y: 0, z: 1 })}>⛶</button>
-            <button className="ghost" aria-label="+"
+            <button className="ghost" aria-label={t('map.zoomIn')}
                     onClick={() => setView((v) => ({
                       ...v, z: Math.min(4, v.z * 1.25) }))}>+</button>
           </span>)}

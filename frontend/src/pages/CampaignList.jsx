@@ -22,12 +22,14 @@ export default function CampaignList() {
     try {
       await api.importCampaign(JSON.parse(await f.text()))
       load()
-    } catch (ex) { setErr(ex.message) }
+    } catch (ex) { setErr(errText(ex, t)) }
   }
 
   useEffect(() => { load() }, [])
 
-  const ROLE = { owner: 'DM', dm: 'DM', player: t('camps.player') }
+  const ROLE = { owner: 'DM', dm: 'DM', co_dm: t('camps.coDm'),
+                 player: t('camps.player'), guest: t('camps.guest'),
+                 spectator: t('camps.spectator') }
   return (
     <main>
       <h1>{t('camp.title')}

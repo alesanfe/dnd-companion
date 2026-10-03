@@ -496,12 +496,12 @@ def contextual_actions(character_id: str,
         "action": [], "bonus_action": [], "reaction": [],
         "movement": [], "free": [],
     }
-    for basic in ("Attack", "Dash", "Disengage", "Dodge", "Help",
-                  "Hide", "Search", "Use Object"):
+    for basic in ("Ataque", "Correr", "Desengancharse", "Esquivar",
+                  "Ayudar", "Esconderse", "Buscar", "Usar objeto"):
         groups["action"].append({"name": basic, "source": "basic"})
     groups["reaction"].append(
-        {"name": "Opportunity Attack", "source": "basic"})
-    groups["movement"].append({"name": "Move", "source": "basic"})
+        {"name": "Ataque de oportunidad", "source": "basic"})
+    groups["movement"].append({"name": "Moverse", "source": "basic"})
 
     str_mod = char.abilities.modifier("str")
     dex_mod = char.abilities.modifier("dex")

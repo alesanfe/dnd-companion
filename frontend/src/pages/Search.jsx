@@ -168,6 +168,7 @@ export default function Search() {
             <label className="muted" style={{ fontSize: '.8em' }}
                    title={t('search.compare')}>
               <input type="checkbox"
+                     aria-label={`${t('search.compare')} ${r.name}`}
                      checked={compare.includes(r.id)}
                      onChange={(e) => setCompare((prev) =>
                        e.target.checked

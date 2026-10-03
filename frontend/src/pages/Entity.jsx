@@ -70,7 +70,8 @@ export default function Entity() {
   }
 
   if (err) return <main><p className="error" role="alert">{err}</p></main>
-  if (!ent) return <main><p className="muted">{t('common.loading')}</p></main>
+  if (!ent) return <main><p className="muted" role="status">
+    {t('common.loading')}</p></main>
 
   const d = ent.data || {}
   return (
@@ -304,7 +305,8 @@ function AddToCharacter({ entity }) {
       {open && (
         <div className="card" role="dialog"
              aria-label={tf('ent.addAria', { name: entity.name })}>
-          {chars === null && <p className="muted">{t('common.loading')}</p>}
+          {chars === null &&
+            <p className="muted" role="status">{t('common.loading')}</p>}
           {chars?.length === 0 && (
             <p className="muted">{t('ent.noChars')}</p>)}
           {(chars || []).map((c) => (

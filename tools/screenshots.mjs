@@ -129,7 +129,7 @@ async function main() {
   const pv = mapPage.getByRole('button', { name: /vista jugador|player view/i });
   if (await isVisible(pv)) {
     await pv.click();
-    await page.waitForTimeout(1000);
+    await mapPage.waitForTimeout(1000);
     await mapPage.screenshot({ path: `${OUT}/dm-map-player.png` });
     console.log('ok dm-map-player');
   }

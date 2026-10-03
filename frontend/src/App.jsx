@@ -26,6 +26,13 @@ function MobileNav() {
   const { t } = useT()
   const [open, setOpen] = useState(false)
   const go = (to) => { setOpen(false); nav(to) }
+  // Esc cierra el menú del "+" — como cualquier popover
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
   return (
     <nav className="mobile-nav" aria-label={t('nav.create')}>
       <NavLink to="/" end>{t('nav.home')}</NavLink>

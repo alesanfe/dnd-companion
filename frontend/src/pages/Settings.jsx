@@ -61,12 +61,14 @@ export default function Settings() {
             <div className="row">
               <label style={{ flex: 1 }}>{t('account.user')}
                 <input value={creds.u} style={{ width: '100%' }}
+                       autoComplete="username"
                        onChange={(e) =>
                          setCreds({ ...creds, u: e.target.value })} />
               </label>
               <label style={{ flex: 1 }}>{t('account.pass')}
                 <input type="password" value={creds.p}
                        style={{ width: '100%' }}
+                       autoComplete="current-password"
                        onChange={(e) =>
                          setCreds({ ...creds, p: e.target.value })} />
               </label>

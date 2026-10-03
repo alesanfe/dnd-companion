@@ -22,7 +22,7 @@ export default function EntityPreview({ id }) {
   }, [id])
 
   if (err) return <p className="error" role="alert">{err}</p>
-  if (!ent) return <p className="muted">{t('common.loading')}</p>
+  if (!ent) return <p className="muted" role="status">{t('common.loading')}</p>
 
   return (
     <div>

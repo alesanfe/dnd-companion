@@ -39,7 +39,8 @@ export default function CampaignList() {
                onChange={onImport} />
       </h1>
       {err && <p className="error" role="alert">{err}</p>}
-      {camps === null && <p className="muted">{t('common.loading')}</p>}
+      {camps === null &&
+        <p className="muted" role="status">{t('common.loading')}</p>}
       {camps && camps.length === 0 && (
         <div className="card empty">
           <p><strong>{t('camp.empty')}</strong></p>

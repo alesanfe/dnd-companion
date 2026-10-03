@@ -146,6 +146,14 @@ export default function CampaignBoard() {
     document.getElementById(location.hash.slice(1))
       ?.scrollIntoView({ block: 'center' })
   }, [campTab, entities])
+  // el modal de presentación también se cierra con Esc (además del
+  // clic en el fondo y el botón ×)
+  useEffect(() => {
+    if (!presented) return
+    const onKey = (e) => { if (e.key === 'Escape') setPresented(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [presented])
 
   const join = async (e) => {
     e.preventDefault()
@@ -407,7 +415,8 @@ export default function CampaignBoard() {
       </>)}
 
       {campTab === 'mundo' && (<>
-        {entities === null ? <p className="muted">{t('common.loading')}</p> : (
+        {entities === null
+          ? <p className="muted" role="status">{t('common.loading')}</p> : (
           Object.entries(byKind).map(([kind, list]) => (
             <section key={kind} className="card">
               <h2>{KIND_LABEL[kind] ? t(KIND_LABEL[kind]) : kind}</h2>

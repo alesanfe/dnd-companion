@@ -300,7 +300,7 @@ export default function CharacterSheet() {
     d0.species_id, d0.background_id].filter(Boolean))
 
   if (err && !char) return <main><p className="error" role="alert">{err}</p></main>
-  if (!char) return <main><p>{t('common.loading')}</p></main>
+  if (!char) return <main><p role="status">{t('common.loading')}</p></main>
 
   const d = char.data
   const hp = d.hp || { current: 0, max: 0, temp: 0 }

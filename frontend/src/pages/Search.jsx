@@ -126,7 +126,7 @@ export default function Search() {
           }}>{t('search.ask')}</button>
         </div>
       </details>
-      {err && <p className="error">{err}</p>}
+      {err && <p className="error" role="alert">{err}</p>}
       {asked && (
         <section className="card">
           <h2>{t('search.assistant')}</h2>

@@ -299,7 +299,7 @@ export default function CharacterSheet() {
     ...(d0.classes || []).flatMap((cl) => [cl.class_id, cl.subclass_id]),
     d0.species_id, d0.background_id].filter(Boolean))
 
-  if (err && !char) return <main><p className="error">{err}</p></main>
+  if (err && !char) return <main><p className="error" role="alert">{err}</p></main>
   if (!char) return <main><p>{t('common.loading')}</p></main>
 
   const d = char.data

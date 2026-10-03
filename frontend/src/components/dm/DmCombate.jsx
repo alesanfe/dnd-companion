@@ -108,7 +108,7 @@ export default function DmCombate({ c }) {
           <strong>{difficulty.rating.toUpperCase()}</strong>
           {' '}· {tf('com.adjXp', { n: difficulty.adjusted_xp,
                                   base: difficulty.raw_xp })}
-          {difficulty.warnings.map((w) => <em key={w} className="error"><br />{w}</em>)}
+          {difficulty.warnings.map((w) => <em key={w} className="error" role="alert"><br />{w}</em>)}
         </p>
       )}
       {/* constructor: presupuesto → composición de la content DB */}
@@ -133,7 +133,7 @@ export default function DmCombate({ c }) {
         }}>{t('com.suggest')}</button>
       </div>
       {suggested?.error && (
-        <p className="error">{suggested.error}</p>)}
+        <p className="error" role="alert">{suggested.error}</p>)}
       {suggested?.monsters && (
         <div>
           <p className="muted">

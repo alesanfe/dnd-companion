@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../api.js'
 import { ItemPicker } from './pickers.jsx'
+import { onTabsKeyDown } from '../../a11y.js'
 import { AttackPanel, Section } from './panels.jsx'
 import { abilityScore } from './data.js'
 
@@ -180,6 +181,7 @@ export default function TabInventario({ c }) {
           </div>)
       })()}
       <div className="row tabs" role="tablist"
+           onKeyDown={onTabsKeyDown}
            aria-label={t('sheet.inventory')}>
         {[['equipado', t('sheet.equipped')], ['mochila', t('sheet.backpack')],
           ['consumibles', t('sheet.consumables')]].map(([k, l]) => (

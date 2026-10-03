@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { api } from '../api.js'
 import { campaignSocket } from '../ws.js'
 import { useT } from '../i18n.jsx'
+import { onTabsKeyDown } from '../a11y.js'
 import MapBoard from '../components/MapBoard.jsx'
 import VoiceChat from '../components/VoiceChat.jsx'
 import WikiText from '../components/WikiText.jsx'
@@ -210,7 +211,7 @@ export default function CampaignBoard() {
           <VoiceChat sock={sockRef} me={me?.user_id}
                      presence={presence} rtcMsg={rtcMsg} />
         </p>)}
-      {err && <p className="error">{err}</p>}
+      {err && <p className="error" role="alert">{err}</p>}
 
       {/* peticiones de tirada del DM para mis personajes */}
       {pend.map((p) => (
@@ -229,7 +230,8 @@ export default function CampaignBoard() {
           <button type="submit">{t('camp.join')}</button>
         </form>)}
 
-      <nav className="tabs" role="tablist" aria-label={t('camp.title')}>
+      <nav className="tabs" role="tablist" aria-label={t('camp.title')}
+           onKeyDown={onTabsKeyDown}>
         {[['resumen', t('camp.tab.summary')],
           ['mundo', t('camp.tab.world')],
           ...(byKind.map?.length ? [['mapa', t('camp.tab.map')]] : []),

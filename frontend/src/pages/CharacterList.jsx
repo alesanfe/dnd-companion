@@ -174,7 +174,7 @@ export default function CharacterList() {
   return (
     <main>
       <h1>{t('charlist.title')}</h1>
-      {err && <p className="error">{t('clist.backendErr')}: {err}</p>}
+      {err && <p className="error" role="alert">{t('clist.backendErr')}: {err}</p>}
       <form onSubmit={create} className="row">
         <input value={name} onChange={(e) => setName(e.target.value)}
                aria-label={t('charlist.new')}

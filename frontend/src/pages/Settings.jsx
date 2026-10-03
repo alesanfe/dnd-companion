@@ -343,8 +343,10 @@ function ShortcutsCard() {
     [['Ctrl', 'K'], t('keys.palette')],
     [['Esc'], t('keys.esc')],
     [['↑', '↓', 'Enter'], t('keys.paletteNav')],
+    [['←', '→'], t('keys.tabsNav')],
     [['Tab'], t('keys.tabTrap')],
     [['Shift', '+', t('keys.click')], t('keys.mapMeasure')],
+    [['←', '→', '↑', '↓'], t('keys.mapMove')],
   ]
   return (
     <section className="card">

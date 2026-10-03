@@ -1,4 +1,5 @@
 import { SHEET_TABS } from './data.js'
+import { onTabsKeyDown } from '../../a11y.js'
 
 // cabecera pegajosa: vitales a mano + config del HUD + nav de pestañas
 // — extraída de pages/CharacterSheet.jsx (AU-22)
@@ -92,7 +93,8 @@ export default function SheetHead({
                 {tr('tab.' + k, label)}</label>))}
         </div>)}
       {!focus && (
-        <nav className="tabs" role="tablist" aria-label={t('sheet.tabsAria')}>
+        <nav className="tabs" role="tablist" aria-label={t('sheet.tabsAria')}
+             onKeyDown={onTabsKeyDown}>
           {SHEET_TABS.map(([k, label, icon]) => (
               <button key={k} role="tab" aria-selected={tab === k}
                       onClick={() => setTab(k)}>

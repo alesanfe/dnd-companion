@@ -115,7 +115,7 @@ export default function Wizard() {
   return (
     <main>
       <h1>{t('wiz.title')}</h1>
-      {err && <p className="error">{err}</p>}
+      {err && <p className="error" role="alert">{err}</p>}
 
       <p className="muted" aria-label={t('wiz.progress')}>
         {[t('wiz.step0'), t('wiz.step1'), t('wiz.step2'), t('wiz.step3'),

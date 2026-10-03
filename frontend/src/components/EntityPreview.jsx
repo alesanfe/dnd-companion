@@ -21,7 +21,7 @@ export default function EntityPreview({ id }) {
       setBlock(r.statblock)).catch(() => setBlock(null))
   }, [id])
 
-  if (err) return <p className="error">{err}</p>
+  if (err) return <p className="error" role="alert">{err}</p>
   if (!ent) return <p className="muted">{t('common.loading')}</p>
 
   return (

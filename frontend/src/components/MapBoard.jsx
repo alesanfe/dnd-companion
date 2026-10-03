@@ -1248,9 +1248,25 @@ export default function MapBoard({ campaign, size = CELL,
             onSelect={setSel} />)}
 
       {map && (
-      <svg ref={svgRef} width={W} height={H} role="img"
+      <svg ref={svgRef} width={W} height={H} role="application"
+           tabIndex={0}
            viewBox={`${view.x} ${view.y} ${vw} ${vh}`}
            aria-label={t('map.canvasAria')}
+           onKeyDown={(e) => {
+             // flechas mueven el token seleccionado 1 casilla —
+             // la única vía de teclado para mover en el grid
+             if (!sel) return
+             if (e.key === 'Escape') { setSel(null); return }
+             const DIRS = { ArrowUp: [0, -1], ArrowDown: [0, 1],
+                            ArrowLeft: [-1, 0], ArrowRight: [1, 0] }
+             const dv = DIRS[e.key]
+             if (!dv) return
+             e.preventDefault()
+             const nx = sel.x + dv[0], ny = sel.y + dv[1]
+             if (nx < 0 || ny < 0 || nx >= d.cols || ny >= d.rows) return
+             if (readOnly ? canMoveTok(sel) : mode === 'move')
+               moveTokRemote(sel, nx, ny)
+           }}
            onClick={onSvgClick} onMouseMove={onSvgMove}
            onMouseDown={onSvgDown} onMouseUp={onSvgUp}
            onContextMenu={(e) => {

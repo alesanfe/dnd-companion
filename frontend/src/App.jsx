@@ -66,7 +66,9 @@ export default function App() {
       <Header />
       <CommandPalette />
       <div id="content" tabIndex={-1}>
-      <Suspense fallback={<main><p className="muted">…</p></main>}>
+      <Suspense fallback={
+        <main><p className="muted" role="status" aria-live="polite">
+          {t('common.loading')}</p></main>}>
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/characters" element={<CharacterList />} />

@@ -38,7 +38,7 @@ export default function CampaignList() {
         <input ref={fileRef} type="file" accept=".json" hidden
                onChange={onImport} />
       </h1>
-      {err && <p className="error">{err}</p>}
+      {err && <p className="error" role="alert">{err}</p>}
       {camps === null && <p className="muted">{t('common.loading')}</p>}
       {camps && camps.length === 0 && (
         <div className="card empty">

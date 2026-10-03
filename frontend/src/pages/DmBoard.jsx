@@ -4,6 +4,7 @@ import { currentUser } from '../session.js'
 import { campaignSocket } from '../ws.js'
 import VoiceChat from '../components/VoiceChat.jsx'
 import { useT } from '../i18n.jsx'
+import { onTabsKeyDown } from '../a11y.js'
 import DmSesion from '../components/dm/DmSesion.jsx'
 import DmCombate from '../components/dm/DmCombate.jsx'
 import DmCampana from '../components/dm/DmCampana.jsx'
@@ -266,7 +267,8 @@ export default function DmBoard() {
       <h1>{t('nav.dm')}</h1>
       <div className="dm-shell">
       <aside className="dm-side">
-        <nav role="tablist" aria-label={t('nav.dm')}>
+        <nav role="tablist" aria-label={t('nav.dm')}
+             onKeyDown={onTabsKeyDown}>
           {[['sesion', t('dm.session')], ['combate', t('dm.combat')],
             ['mapa', t('dm.map')], ['campana', t('dm.campaign')]]
             .map(([k, label]) => (
@@ -299,7 +301,7 @@ export default function DmBoard() {
           </p>)}
       </aside>
       <div className="dm-main">
-      {err && <p className="error">{err}</p>}
+      {err && <p className="error" role="alert">{err}</p>}
 
       <DmSesion c={ctx} />
       <DmCampana c={ctx} />

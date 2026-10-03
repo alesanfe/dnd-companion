@@ -69,7 +69,7 @@ export default function Entity() {
     setFav(!fav)
   }
 
-  if (err) return <main><p className="error">{err}</p></main>
+  if (err) return <main><p className="error" role="alert">{err}</p></main>
   if (!ent) return <main><p className="muted">{t('common.loading')}</p></main>
 
   const d = ent.data || {}
@@ -313,7 +313,7 @@ function AddToCharacter({ entity }) {
               <button onClick={() => add(c.id)}>{t('common.add')}</button>
             </div>))}
           {done && <p role="status" className="muted">✓ {done}</p>}
-          {err && <p className="error">{err}</p>}
+          {err && <p className="error" role="alert">{err}</p>}
         </div>)}
     </>
   )

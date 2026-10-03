@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, flushQueue } from '../api.js'
+import { api, errText, flushQueue } from '../api.js'
 import { conflictedOps, deadOps, dropOp, markOp,
          pendingOps } from '../db.js'
 import { clearAuth, currentUser, getPrefs, setAuth, setPref }
@@ -17,6 +17,7 @@ export default function Settings() {
   const [prefs, setPrefs] = useState(getPrefs())
   const [online, setOnline] = useState(navigator.onLine)
   const [pending, setPending] = useState(0)
+  const [authErr, setAuthErr] = useState(null)
 
   const tick = async () => {
     setOnline(navigator.onLine)
@@ -35,9 +36,12 @@ export default function Settings() {
   }, [])
 
   const auth = async (fn) => {
-    const r = await fn(creds.u, creds.p)
-    setAuth(r.token, { user_id: r.user_id, username: creds.u })
-    setUser(currentUser()); setCreds({ u: '', p: '' })
+    setAuthErr(null)
+    try {
+      const r = await fn(creds.u, creds.p)
+      setAuth(r.token, { user_id: r.user_id, username: creds.u })
+      setUser(currentUser()); setCreds({ u: '', p: '' })
+    } catch (e) { setAuthErr(errText(e, t)) }
   }
   const pref = (k, v) => { setPref(k, v); setPrefs(getPrefs()) }
 
@@ -79,6 +83,7 @@ export default function Settings() {
               <button className="ghost" onClick={() => auth(api.register)}>
                 {t('account.register')}</button>
             </div>
+            {authErr && <p className="error" role="alert">{authErr}</p>}
             <p className="muted">{t('set.accountHint')}</p>
           </>)}
       </section>
@@ -389,8 +394,8 @@ function SyncQueue({ onChanged }) {
         <li key={o.id} className="row">
           {o.payload.entity_kind === 'character' ? (
             <Link to={`/character/${o.payload.entity_id}/actividad`}>
-              {o.payload.operation_type}</Link>
-          ) : <span>{o.payload.operation_type}</span>}
+              {opLabel(t, o.payload.operation_type)}</Link>
+          ) : <span>{opLabel(t, o.payload.operation_type)}</span>}
           <span className="muted">
             {' '}· {new Date(o.created_at).toLocaleTimeString()}</span>
           <button className="ghost" style={{ minHeight: 24 }}
@@ -404,7 +409,7 @@ function SyncQueue({ onChanged }) {
           ve aquí en vez de jamás enterarse */}
       {(dead || []).map((o) => (
         <li key={o.id} className="row" style={{ opacity: .7 }}>
-          <s>{o.payload.operation_type}</s>
+          <s>{opLabel(t, o.payload.operation_type)}</s>
           <span className="muted">
             {' '}· {t('sync.rejected')}
             {' '}· {new Date(o.created_at).toLocaleTimeString()}</span>
@@ -419,7 +424,7 @@ function SyncQueue({ onChanged }) {
           'pending' (con versión refrescada) o se descarta */}
       {(confl || []).map((o) => (
         <li key={o.id} className="row" style={{ opacity: .85 }}>
-          {o.payload.operation_type}
+          {opLabel(t, o.payload.operation_type)}
           <span className="muted">
             {' '}· {t('sync.conflictLocal')}
             {' '}· {new Date(o.created_at).toLocaleTimeString()}</span>

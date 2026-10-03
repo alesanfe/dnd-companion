@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api } from '../api.js'
+import { api, errText } from '../api.js'
 import { useT } from '../i18n.jsx'
 import { trackTask } from '../metrics.js'
 
@@ -50,7 +50,7 @@ export default function Wizard() {
   useEffect(() => {
     // all_sources: ofrece también homebrew/UA/terceros importados
     api.contentOptions('class', ruleset, true)
-      .then((r) => setClasses(r.options)).catch((e) => setErr(e.message))
+      .then((r) => setClasses(r.options)).catch((e) => setErr(errText(e, t)))
     // 2024 usa 'species'; 2014 usa 'race'; 'mixed' trae ambos
     Promise.all([
       api.contentOptions('race', ruleset, true),
@@ -105,7 +105,7 @@ export default function Wizard() {
       localStorage.removeItem(DRAFT_KEY)
       trackTask('wizard', true)
       nav(`/character/${r.id}`)
-    } catch (e) { setErr(e.message); setBusy(false); trackTask('wizard', false) }
+    } catch (e) { setErr(errText(e, t)); setBusy(false); trackTask('wizard', false) }
   }
 
   const sel = (list, value, set) => (

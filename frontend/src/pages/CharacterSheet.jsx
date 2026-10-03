@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useSearchParams }
   from 'react-router-dom'
-import { api } from '../api.js'
+import { api, errText } from '../api.js'
 import { useT } from '../i18n.jsx'
 import { STATS, SKILL_ES, COND_RULES, SHEET_TABS }
   from '../components/sheet/data.js'
@@ -114,7 +114,7 @@ export default function CharacterSheet() {
     const cached = await import('../db.js')
       .then(({ db }) => db.char_cache.get(id)).catch(() => null)
     if (cached?.char) applyChar(cached.char)
-    else setErr(e.message)
+    else setErr(errText(e, t))
   })
   useEffect(() => { load() }, [id])
 
@@ -262,7 +262,7 @@ export default function CharacterSheet() {
       load()
       return r
     } catch (e) {
-      setErr(e.message)
+      setErr(errText(e, t))
       load() // resync on conflict
       return null
     }
@@ -289,7 +289,7 @@ export default function CharacterSheet() {
       setRollLog((l) => [`${r.expression} → ${r.kept.join('+')} = ${r.total}${fx}${rr}`, ...l].slice(0, 10))
       if (useInsp || heroic)
         await op('character.inspiration.set', { value: false })
-    } catch (e) { setErr(e.message) }
+    } catch (e) { setErr(errText(e, t)) }
   }
 
   // hook incondicional — jamás después de un return (React exige
@@ -332,7 +332,7 @@ export default function CharacterSheet() {
         (r.effects_applied || []).length
           ? ` [${r.effects_applied.join(', ')}]` : ''}`, ...l]
       .slice(0, 10))
-    } catch (e) { setErr(e.message) }
+    } catch (e) { setErr(errText(e, t)) }
   }
 
   // contexto compartido con las pestañas extraídas (components/sheet/)
@@ -422,7 +422,7 @@ export default function CharacterSheet() {
             try {
               await api.undoOp(undoable.id)
               setUndoable(null); load()
-            } catch (e) { setErr(e.message) }
+            } catch (e) { setErr(errText(e, t)) }
           }}>{t('sheet.undoBtn')}</button>
           <button className="ghost"
                   onClick={() => setUndoable(null)}>×</button>
@@ -441,7 +441,7 @@ export default function CharacterSheet() {
               const r = await api.characterRoll(id, rollRequest.expression, 'check')
               setRollLog((l) => [`${r.expression} → ${r.kept.join('+')} = ${r.total}`, ...l].slice(0, 10))
               setRollRequest(null)
-            } catch (e) { setErr(e.message) }
+            } catch (e) { setErr(errText(e, t)) }
           }}>{t('sheet.roll')} {rollRequest.expression}</button>
           <button className="ghost" title={t('sheet.secretHint')}
                   onClick={async () => {
@@ -452,7 +452,7 @@ export default function CharacterSheet() {
                 `🔒 ${r.expression} → ${r.total} ${t('sheet.secretTag')}`,
                 ...l].slice(0, 10))
               setRollRequest(null)
-            } catch (e) { setErr(e.message) }
+            } catch (e) { setErr(errText(e, t)) }
           }}>{t('sheet.secretBtn')}</button>
           <button className="ghost"
                   onClick={() => setRollRequest(null)}>

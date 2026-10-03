@@ -79,6 +79,21 @@ async function req(path, opts = {}) {
   return res.json()
 }
 
+/**
+ * errText — convierte un error de API en texto listo para el usuario.
+ * Sin status (red/timeout) y códigos genéricos → clave i18n; 409/422
+ * conservan el detalle del backend porque suele explicar la causa.
+ */
+export function errText(e, t) {
+  const st = e?.status
+  if (!st) return t('err.network')
+  if (st === 401) return t('err.401')
+  if (st === 403) return t('err.403')
+  if (st === 404) return t('err.404')
+  if (st >= 500) return t('err.5xx')
+  return e?.message || t('err.title')
+}
+
 /** Reenvía operaciones encoladas mientras estuvimos offline. */
 export async function flushQueue() {
   const pending = await pendingOps()

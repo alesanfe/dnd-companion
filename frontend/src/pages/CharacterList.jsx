@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api } from '../api.js'
+import { api, errText } from '../api.js'
 import { loadJSON } from '../session.js'
 import { useT } from '../i18n.jsx'
 
@@ -17,7 +17,8 @@ const avatarHue = (name = '') => {
 
 export default function CharacterList() {
   const { t, tf } = useT()
-  const [chars, setChars] = useState([])
+  /* null = aún cargando: el estado vacío solo pinta tras la respuesta */
+  const [chars, setChars] = useState(null)
   const [name, setName] = useState('')
   const [err, setErr] = useState(null)
   const [menu, setMenu] = useState(null)   // id del char con ⋮ abierto
@@ -32,7 +33,7 @@ export default function CharacterList() {
 
   const load = () => api.listCharacters()
     .then((r) => setChars(r.characters))
-    .catch((e) => setErr(e.message))
+    .catch((e) => setErr(errText(e, t)))
 
   useEffect(() => {
     load()
@@ -53,7 +54,7 @@ export default function CharacterList() {
     if (!name.trim() || busy) return
     setBusy(true)
     try { await api.createCharacter(name.trim()); setName(''); load() }
-    catch (ex) { setErr(ex.message) }
+    catch (ex) { setErr(errText(ex, t)) }
     finally { setBusy(false) }
   }
 
@@ -80,12 +81,12 @@ export default function CharacterList() {
         await api.deleteCharacter(c.id)
         load()
       }
-    } catch (ex) { setErr(ex.message); load() }
+    } catch (ex) { setErr(errText(ex, t)); load() }
   }
 
   const lastCharId = loadJSON('dnd-last-char')?.id
 
-  const byView = chars.filter((c) => {
+  const byView = (chars ?? []).filter((c) => {
     if (view === 'favoritos') return favs.has(c.id)
     if (view === 'archivados') return archived.has(c.id)
     return !archived.has(c.id)
@@ -106,10 +107,11 @@ export default function CharacterList() {
     const portrait = localStorage.getItem(`dnd-portrait-${c.id}`)
     return (
       <div key={c.id} className="card char-card">
-        <div className="row" style={{ marginTop: 0, flexWrap: 'nowrap' }}>
+        <div className="row" style={{ marginTop: 0, flexWrap: 'nowrap',
+                                      minWidth: 0 }}>
           <button className="ghost" style={{ padding: '0 .3rem' }}
                   aria-pressed={favs.has(c.id)}
-                  aria-label={`Favorito: ${c.name}`}
+                  aria-label={tf('clist.favAria', { name: c.name })}
                   onClick={() => toggle(favs, setFavs, FAVS_KEY, c.id)}>
             {favs.has(c.id) ? '★' : '☆'}</button>
           <span className="avatar sm" aria-hidden="true"
@@ -121,12 +123,14 @@ export default function CharacterList() {
                       } 45% 42%)` }}>
             {!portrait && (c.name || '?')[0].toUpperCase()}</span>
           <Link to={`/character/${c.id}`}
-                style={{ flex: 1, fontSize: '1.1rem',
+                style={{ flex: 1, fontSize: '1.1rem', minWidth: 0,
+                         overflow: 'hidden', textOverflow: 'ellipsis',
+                         whiteSpace: 'nowrap',
                          fontWeight: 700, textDecoration: 'none',
                          color: 'inherit' }}>
             {c.name}</Link>
           <button className="ghost"
-                  aria-label={`Opciones de ${c.name}`}
+                  aria-label={tf('clist.menuAria', { name: c.name })}
                   onClick={() => setMenu(menu === c.id ? null : c.id)}>
             ⋮</button>
         </div>
@@ -180,7 +184,7 @@ export default function CharacterList() {
                aria-label={t('charlist.new')}
                placeholder={t('charlist.new') + '…'} />
         <button type="submit" disabled={busy}>{t('nav.create')}</button>
-        <Link to="/new"><button type="button">Wizard →</button></Link>
+        <Link to="/new"><button type="button">{t('charlist.wizard')}</button></Link>
         <label className="ghost" style={{ cursor: 'pointer',
              display: 'inline-flex', alignItems: 'center',
              minHeight: 44, padding: '0 1rem', borderRadius: 6,
@@ -202,14 +206,17 @@ export default function CharacterList() {
         </label>
       </form>
 
-      {chars.length === 0 && !err && (
+      {chars === null && !err && (
+        <p role="status">{t('common.loading')}</p>)}
+
+      {chars !== null && chars.length === 0 && !err && (
         <div className="card empty">
           <p><strong>{t('charlist.empty')}</strong></p>
           <Link to="/new">
             <button className="primary">{t('wiz.finish')}</button></Link>
         </div>)}
 
-      {chars.length > 0 && (
+      {(chars?.length ?? 0) > 0 && (
         <div className="row" role="group" aria-label={t('clist.filterAria')}>
           {[['activos', t('charlist.view.active')],
             ['favoritos', `★ ${t('dash.favs')}`],
@@ -228,9 +235,9 @@ export default function CharacterList() {
           </select>
         </div>)}
 
-      {chars.length > 4 && (
+      {(chars?.length ?? 0) > 4 && (
         <input value={filter} onChange={(e) => setFilter(e.target.value)}
-               placeholder={tf('clist.searchPh', { n: chars.length })}
+               placeholder={tf('clist.searchPh', { n: chars?.length ?? 0 })}
                aria-label={t('clist.searchAria')} />)}
 
       {/* si hay varias campañas, agrupa las tarjetas por campaña
@@ -256,7 +263,7 @@ export default function CharacterList() {
         {[...new Set(shown.map((c) => c.campaign_id).filter(Boolean))]
           .length > 0 ? null : shown.map(renderCard)}
       </div>
-      {shown.length === 0 && chars.length > 0 && (
+      {shown.length === 0 && (chars?.length ?? 0) > 0 && (
         <p className="muted">{t('charlist.view.empty')}</p>)}
     </main>
   )

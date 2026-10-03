@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api } from '../api.js'
+import { api, errText } from '../api.js'
 import { useT } from '../i18n.jsx'
 
 /** Lista de campañas del usuario — hub entre fichas y mesa. */
@@ -12,7 +12,7 @@ export default function CampaignList() {
 
   const load = () => api.listCampaigns()
       .then((r) => setCamps(r.campaigns))
-      .catch((e) => setErr(e.message))
+      .catch((e) => setErr(errText(e, t)))
 
   // restaura un backup exportado (misma forma que /export)
   const onImport = async (e) => {

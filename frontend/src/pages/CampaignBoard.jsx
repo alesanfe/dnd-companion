@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { api } from '../api.js'
+import { api, errText } from '../api.js'
 import { campaignSocket } from '../ws.js'
 import { useT } from '../i18n.jsx'
 import { onTabsKeyDown } from '../a11y.js'
@@ -47,7 +47,7 @@ export default function CampaignBoard() {
       }).catch(() => {})
     api.listEntities(id, null, 'player')
       .then((r) => setEntities(r.entities))
-      .catch((e) => setErr(e.message))
+      .catch((e) => setErr(errText(e, t)))
     api.listSessions(id)
       .then((r) => setSessions(r.sessions || []))
       .catch(() => {})

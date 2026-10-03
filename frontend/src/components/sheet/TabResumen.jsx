@@ -22,7 +22,8 @@ export default function TabResumen({ c }) {
   return (<div className="sheet-cols">
     <div className="row" hidden={!show('resumen')}>
       <span className="muted">XP: {d.xp || 0}</span>
-      <input type="number" min="0" style={{ maxWidth: 90 }} value={xpAdd}
+      <input type="number" min="0" style={{ maxWidth: 90 }}
+             value={xpAdd || ''} placeholder="+XP"
              aria-label={t('sheet.xpAmount')}
              onChange={(e) => setXpAdd(+e.target.value)} />
       <button disabled={!xpAdd} onClick={() => {

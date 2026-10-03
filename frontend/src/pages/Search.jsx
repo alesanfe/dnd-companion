@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api } from '../api.js'
+import { api, errText } from '../api.js'
 import { loadJSON } from '../session.js'
 import { useT, etypeLabel } from '../i18n.jsx'
 import EntityPreview from '../components/EntityPreview.jsx'
@@ -38,14 +38,18 @@ export default function Search() {
       JSON.stringify({ q, type, edition, source }))
   }, [q, type, edition, source])
 
-  const doSearch = async (term) => {
+  const doSearch = async (term, filters = {}) => {
     const term0 = term ?? q
+    /* overrides para "limpiar filtros" — el estado aún no se aplicó */
+    const ty = filters.type ?? type
+    const ed = filters.edition ?? edition
+    const so = filters.source ?? source
     try {
-      const cmd = (type ? `/${type} ` : '') + term0.trim() +
-                  (edition ? ` ruleset:${edition}` : '')
-      const r = cmd.trim().startsWith('/') || edition
+      const cmd = (ty ? `/${ty} ` : '') + term0.trim() +
+                  (ed ? ` ruleset:${ed}` : '')
+      const r = cmd.trim().startsWith('/') || ed
         ? await api.commandSearch(cmd)
-        : await api.search(term0, null, source || null)
+        : await api.search(term0, null, so || null)
       setResults(r.results)
       setParsed(r.parsed || null)
       trackTask('search', true)
@@ -55,7 +59,7 @@ export default function Search() {
           JSON.stringify([term0.trim(),
             ...rec.filter((x) => x !== term0.trim())].slice(0, 8)))
       }
-    } catch (e2) { setErr(e2.message); trackTask('search', false) }
+    } catch (e2) { setErr(errText(e2, t)); trackTask('search', false) }
   }
   const go = (e) => { e?.preventDefault(); doSearch() }
 
@@ -85,8 +89,8 @@ export default function Search() {
           <option value="">{t('search.allTypes')}</option>
           {['spell', 'monster', 'class', 'race', 'species', 'feat',
             'equipment', 'item', 'condition', 'rule', 'background',
-            'trait'].map((t) => (
-            <option key={t} value={t}>{t}</option>))}
+            'trait'].map((ty) => (
+            <option key={ty} value={ty}>{etypeLabel(t, ty)}</option>))}
         </select>
         <button type="submit">{t('search.button')}</button>
         {/* el atajo existe desde la paleta pero nadie lo anunciaba —
@@ -122,7 +126,7 @@ export default function Search() {
               const r = await api.rulesAsk(
                 q, edition ? `dnd5e-${edition}` : null)
               setAsked(r)
-            } catch (e2) { setErr(e2.message) }
+            } catch (e2) { setErr(errText(e2, t)) }
           }}>{t('search.ask')}</button>
         </div>
       </details>
@@ -149,7 +153,14 @@ export default function Search() {
         }} />)}
 
       {results.length === 0 && q.trim() && (
-        <p className="empty">{t('search.empty')}</p>)}
+        <p className="empty">{t('search.empty')}
+          {(type || edition || source) && (
+            <button className="ghost" style={{ marginLeft: '.6rem' }}
+                    onClick={() => {
+                      setType(''); setEdition(''); setSource('')
+                      doSearch(q, { type: '', edition: '', source: '' })
+                    }}>
+              {t('search.clearFilters')}</button>)}</p>)}
 
       {parsed && (
         <p className="muted">

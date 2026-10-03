@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
 import { currentUser, loadJSON } from '../session.js'
-import { useT } from '../i18n.jsx'
+import { useT, opLabel } from '../i18n.jsx'
 import { trackTask } from '../metrics.js'
 
 /** Inicio: responde "¿qué quieres hacer ahora?" — continuar donde
@@ -138,7 +138,7 @@ export default function Dashboard() {
             <div key={o.operation_id} className="row">
               <span className="muted">
                 {o.timestamp?.slice(11, 19)}</span>
-              <span style={{ flex: 1 }}>{o.operation_type}</span>
+              <span style={{ flex: 1 }}>{opLabel(t, o.operation_type)}</span>
             </div>))}
         </section>)}
 

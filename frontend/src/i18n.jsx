@@ -22,8 +22,10 @@ export function LangProvider({ children }) {
      variables; fallback: la propia clave */
   const tf = (key, vars = {}) => {
     let s = STRINGS[lang]?.[key] ?? STRINGS.es[key] ?? key
-    for (const [k, v] of Object.entries(vars))
-      s = s.replaceAll(`{${k}}`, String(v))
+    for (const [k, v] of Object.entries(vars)) {
+      /* acepta {{name}} y {name} — ambas formas coexisten en STRINGS */
+      s = s.replaceAll(`{{${k}}}`, String(v)).replaceAll(`{${k}}`, String(v))
+    }
     return s
   }
   return (
@@ -38,6 +40,23 @@ export const useT = () => useContext(LangCtx)
 export const etypeLabel = (t, ty) => {
   const v = t(`etype.${ty}`)
   return v === `etype.${ty}` ? ty : v
+}
+
+/** Nombre legible de una operación ('hp.damage' → 'PG: daño').
+    Traduce familia y verbo por separado; el segmento desconocido
+    queda humanizado (guión/punto → espacio), nunca en crudo. */
+export const opLabel = (t, ty = '') => {
+  const segs = ty.split(/[.]/)
+  const part = (k, s) => {
+    const v = t(`${k}.${s}`)
+    return v === `${k}.${s}` ? s.replace(/_/g, ' ') : v
+  }
+  if (segs.length === 1) return part('opv', segs[0])
+  /* segs[0] = entidad (character/combatant…) — ya la da el contexto;
+     traduce familia intermedia + verbo final */
+  const mid = segs.slice(1, -1).map((s) => part('opf', s)).join(' ')
+  const verb = part('opv', segs[segs.length - 1])
+  return mid ? `${mid}: ${verb}` : verb
 }
 
 /* ---- diccionario ---- */
@@ -73,6 +92,9 @@ es: {
   'charlist.synced': 'sincronizado','charlist.view.active': 'Activos',
   'charlist.view.archived': 'Archivados',
   'charlist.view.empty': 'Nada que mostrar en esta vista.',
+  'charlist.wizard': 'Asistente →',
+  'clist.favAria': 'Favorito: {name}',
+  'clist.menuAria': 'Opciones de {name}',
 
   'tab.resumen': 'Resumen', 'tab.acciones': 'Acciones',
   'tab.stats': 'Características', 'tab.magia': 'Magia',
@@ -126,6 +148,7 @@ es: {
   'search.recentQueries': 'Búsquedas recientes',
   'search.collections': 'Colecciones',
   'search.empty': 'Sin resultados — prueba otro término, quita filtros o busca en otra fuente.',
+  'search.clearFilters': 'Quitar filtros',
   'search.homebrew': '+ Contenido homebrew',
   'search.assistant': 'Asistente de reglas',
   'search.compare': 'Comparar',
@@ -921,7 +944,7 @@ es: {
   'stats.traceDis': 'con desventaja',
   'stats.traceErr': 'sin datos',
   'com.delTitle': 'Borrar el combate',
-  'com.delConfirm': '¿Borrar el combate? Esta acción no se puede deshacer.',
+  'com.delConfirm': '¿Borrar el combate «{name}» (ronda {round})? Esta acción no se puede deshacer.',
   'pkg.title': 'Paquetes de contenido',
   'pkg.install': '⇪ Instalar paquete (.json)',
   'pkg.entities': 'entidades importadas',
@@ -1006,8 +1029,50 @@ es: {
   'err.hint': 'La vista ha dejado de funcionar. Tus datos están a salvo ' +
             '(todo se guarda en local o en la cola de sincronización).',
   'err.reload': 'Recargar',
+  'err.network': 'Sin conexión con el servidor; comprueba tu red.',
+  'err.401': 'Sesión caducada; vuelve a iniciar sesión.',
+  'err.403': 'No tienes permiso para hacer eso.',
+  'err.404': 'No encontrado.',
+  'err.409': 'Conflicto con otro cambio; recarga y reintenta.',
+  'err.5xx': 'El servidor ha fallado; inténtalo de nuevo en un momento.',
   'common.add': 'Añadir', 'common.details': 'Detalles',
   'common.forget': 'Olvidar', 'common.pin': 'Fijar',
+  /* familias (opf.*) y verbos (opv.*) de operation_type — opLabel() */
+  'opf.hp': 'PG', 'opf.spell': 'conjuro', 'opf.spellbook': 'grimorio',
+  'opf.spell_slot': 'hueco de conjuro', 'opf.inventory': 'inventario',
+  'opf.item': 'objeto', 'opf.currency': 'monedas', 'opf.condition': 'condición',
+  'opf.feat': 'dote', 'opf.feature': 'rasgo', 'opf.journal': 'diario',
+  'opf.language': 'idioma', 'opf.proficiency': 'competencia',
+  'opf.resource': 'recurso', 'opf.rest': 'descanso', 'opf.reward': 'recompensa',
+  'opf.shop': 'tienda', 'opf.ability': 'característica', 'opf.asi': 'mejora',
+  'opf.xp': 'PX', 'opf.death_save': 'salvación de muerte',
+  'opf.hit_die': 'dado de golpe', 'opf.identity': 'identidad',
+  'opf.inspiration': 'inspiración', 'opf.narrative': 'narrativa',
+  'opf.speeds': 'velocidad', 'opf.subclass': 'subclase', 'opf.state': 'estado',
+  'opf.effect': 'efecto', 'opf.initiative': 'iniciativa',
+  'opf.entity': 'entidad', 'opf.action': 'acción', 'opf.usage': 'uso',
+  'opv.damage': 'daño', 'opv.heal': 'curación', 'opv.set': 'fijado',
+  'opv.apply': 'aplicado', 'opv.applied': 'aplicado', 'opv.remove': 'quitado',
+  'opv.removed': 'quitado', 'opv.add': 'añadido', 'opv.added': 'añadido',
+  'opv.learn': 'aprendido', 'opv.forget': 'olvidado', 'opv.prepare': 'preparado',
+  'opv.unprepare': 'despreparado', 'opv.cast': 'lanzado', 'opv.spend': 'gastado',
+  'opv.unspend': 'recuperado', 'opv.earn': 'ganado', 'opv.convert': 'convertido',
+  'opv.equip': 'equipado', 'opv.unequip': 'desequipado', 'opv.attune': 'sintonizado',
+  'opv.unattune': 'desintonizado', 'opv.restore': 'restaurado',
+  'opv.restored': 'restaurado', 'opv.break': 'roto', 'opv.use': 'usado',
+  'opv.used': 'usado', 'opv.buy': 'comprado', 'opv.refund': 'devuelto',
+  'opv.insert': 'insertado', 'opv.pop': 'extraído', 'opv.roll': 'tirada',
+  'opv.long': 'largo', 'opv.short': 'corto', 'opv.next_turn': 'siguiente turno',
+  'opv.prev_turn': 'turno anterior', 'opv.end': 'finalizado',
+  'opv.ended': 'finalizado', 'opv.check': 'prueba', 'opv.save': 'salvación',
+  'opv.delegate': 'delegado', 'opv.delegated': 'delegado',
+  'opv.transferred': 'transferido', 'opv.charged': 'cargado',
+  'opv.changed': 'cambiado', 'opv.created': 'creado', 'opv.advanced': 'avanzado',
+  'opv.attack': 'ataque', 'opv.shove_grapple': 'empujón/agarrón',
+  'opv.level_up': 'subida de nivel', 'opv.tick': 'pulso', 'opv.pin': 'fijado',
+  'opv.unpin': 'desfijado', 'opv.craft': 'fabricado', 'opv.add_raw': 'añadido',
+  'opv.death_save_roll': 'salvación de muerte', 'opv.immune': 'inmune',
+  'opv.delete': 'borrado', 'opv.noop': 'sin efecto',
 },
 
 en: {
@@ -1041,6 +1106,9 @@ en: {
   'charlist.synced': 'synced','charlist.view.active': 'Active',
   'charlist.view.archived': 'Archived',
   'charlist.view.empty': 'Nothing to show in this view.',
+  'charlist.wizard': 'Wizard →',
+  'clist.favAria': 'Favorite: {name}',
+  'clist.menuAria': 'Options for {name}',
 
   'tab.resumen': 'Summary', 'tab.acciones': 'Actions',
   'tab.stats': 'Ability Scores', 'tab.magia': 'Magic',
@@ -1094,6 +1162,7 @@ en: {
   'search.recentQueries': 'Recent searches',
   'search.collections': 'Collections',
   'search.empty': 'No results — try another term, remove filters or search another source.',
+  'search.clearFilters': 'Clear filters',
   'search.homebrew': '+ Homebrew content',
   'search.assistant': 'Rules assistant',
   'search.compare': 'Compare',
@@ -1887,7 +1956,7 @@ en: {
   'stats.traceDis': 'with disadvantage',
   'stats.traceErr': 'no data',
   'com.delTitle': 'Delete the combat',
-  'com.delConfirm': 'Delete this combat? This cannot be undone.',
+  'com.delConfirm': 'Delete combat "{name}" (round {round})? This cannot be undone.',
   'pkg.title': 'Content packages',
   'pkg.install': '⇪ Install package (.json)',
   'pkg.entities': 'entities imported',
@@ -1972,7 +2041,49 @@ en: {
   'err.hint': 'The view stopped working. Your data is safe ' +
             '(everything is saved locally or in the sync queue).',
   'err.reload': 'Reload',
+  'err.network': 'No connection to the server; check your network.',
+  'err.401': 'Session expired; log in again.',
+  'err.403': "You don't have permission to do that.",
+  'err.404': 'Not found.',
+  'err.409': 'Conflicts with another change; reload and retry.',
+  'err.5xx': 'The server failed; try again in a moment.',
   'common.add': 'Add', 'common.details': 'Details',
   'common.forget': 'Forget', 'common.pin': 'Pin',
+  /* operation_type families (opf.*) and verbs (opv.*) — opLabel() */
+  'opf.hp': 'HP', 'opf.spell': 'spell', 'opf.spellbook': 'spellbook',
+  'opf.spell_slot': 'spell slot', 'opf.inventory': 'inventory',
+  'opf.item': 'item', 'opf.currency': 'coins', 'opf.condition': 'condition',
+  'opf.feat': 'feat', 'opf.feature': 'feature', 'opf.journal': 'journal',
+  'opf.language': 'language', 'opf.proficiency': 'proficiency',
+  'opf.resource': 'resource', 'opf.rest': 'rest', 'opf.reward': 'reward',
+  'opf.shop': 'shop', 'opf.ability': 'ability', 'opf.asi': 'improvement',
+  'opf.xp': 'XP', 'opf.death_save': 'death save',
+  'opf.hit_die': 'hit die', 'opf.identity': 'identity',
+  'opf.inspiration': 'inspiration', 'opf.narrative': 'narrative',
+  'opf.speeds': 'speed', 'opf.subclass': 'subclass', 'opf.state': 'state',
+  'opf.effect': 'effect', 'opf.initiative': 'initiative',
+  'opf.entity': 'entity', 'opf.action': 'action', 'opf.usage': 'usage',
+  'opv.damage': 'damage', 'opv.heal': 'healing', 'opv.set': 'set',
+  'opv.apply': 'applied', 'opv.applied': 'applied', 'opv.remove': 'removed',
+  'opv.removed': 'removed', 'opv.add': 'added', 'opv.added': 'added',
+  'opv.learn': 'learned', 'opv.forget': 'forgotten', 'opv.prepare': 'prepared',
+  'opv.unprepare': 'unprepared', 'opv.cast': 'cast', 'opv.spend': 'spent',
+  'opv.unspend': 'recovered', 'opv.earn': 'earned', 'opv.convert': 'converted',
+  'opv.equip': 'equipped', 'opv.unequip': 'unequipped', 'opv.attune': 'attuned',
+  'opv.unattune': 'unattuned', 'opv.restore': 'restored',
+  'opv.restored': 'restored', 'opv.break': 'broken', 'opv.use': 'used',
+  'opv.used': 'used', 'opv.buy': 'bought', 'opv.refund': 'refunded',
+  'opv.insert': 'inserted', 'opv.pop': 'pulled', 'opv.roll': 'roll',
+  'opv.long': 'long', 'opv.short': 'short', 'opv.next_turn': 'next turn',
+  'opv.prev_turn': 'previous turn', 'opv.end': 'ended',
+  'opv.ended': 'ended', 'opv.check': 'check', 'opv.save': 'save',
+  'opv.delegate': 'delegated', 'opv.delegated': 'delegated',
+  'opv.transferred': 'transferred', 'opv.charged': 'charged',
+  'opv.changed': 'changed', 'opv.created': 'created', 'opv.advanced': 'advanced',
+  'opv.attack': 'attack', 'opv.shove_grapple': 'shove/grapple',
+  'opv.level_up': 'level up', 'opv.tick': 'tick', 'opv.pin': 'pinned',
+  'opv.unpin': 'unpinned', 'opv.craft': 'crafted', 'opv.add_raw': 'added',
+  'opv.death_save_roll': 'death save', 'opv.immune': 'immune',
+  'opv.delete': 'deleted', 'opv.noop': 'no effect',
 },
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { api } from '../api.js'
+import { api, errText } from '../api.js'
 import { currentUser } from '../session.js'
 import { campaignSocket } from '../ws.js'
 import VoiceChat from '../components/VoiceChat.jsx'
@@ -200,7 +200,7 @@ export default function DmBoard() {
   }
 
   const refresh = (id, version) =>
-    api.getCombat(id).then((r) => setCombat(r)).catch((e) => setErr(e.message))
+    api.getCombat(id).then((r) => setCombat(r)).catch((e) => setErr(errText(e, t)))
 
   const cop = async (type, payload) => {
     try {
@@ -209,7 +209,7 @@ export default function DmBoard() {
         type, payload, 'combat')
       refresh(combat.id)
       return r
-    } catch (e) { setErr(e.message); refresh(combat.id); return null }
+    } catch (e) { setErr(errText(e, t)); refresh(combat.id); return null }
   }
 
   const searchMonsters = async (e) => {

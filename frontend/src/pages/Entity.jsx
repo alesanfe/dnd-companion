@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { api } from '../api.js'
+import { api, errText } from '../api.js'
 import { loadJSON } from '../session.js'
 import { useT, etypeLabel } from '../i18n.jsx'
 
@@ -34,7 +34,7 @@ export default function Entity() {
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
-    api.getEntity(id).then(setEnt).catch((e) => setErr(e.message))
+    api.getEntity(id).then(setEnt).catch((e) => setErr(errText(e, t)))
     api.statblockPreview(id).then((r) => setBlock(r.statblock))
       .catch(() => setBlock(null))
     api.entityRender(id).then((r) => setView(r.render))
@@ -290,7 +290,7 @@ function AddToCharacter({ entity }) {
                         opType, payload)
       setDone(`${entity.name} → ${ch.name}`)
       setErr(null)
-    } catch (e) { setErr(e.message) }
+    } catch (e) { setErr(errText(e, t)) }
   }
 
   return (

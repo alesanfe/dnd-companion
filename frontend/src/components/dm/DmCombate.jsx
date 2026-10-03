@@ -235,7 +235,9 @@ export default function DmCombate({ c }) {
             <button className="ghost" title={t('com.delTitle')}
                     aria-label={t('com.delTitle')}
                     onClick={async () => {
-              if (!confirm(t('com.delConfirm'))) return
+              if (!confirm(tf('com.delConfirm', {
+                name: combat.combat.name, round: combat.combat.round })))
+                return
               await api.deleteCombat(combat.id)
               setCombat(null)
             }}>🗑</button>
@@ -399,6 +401,7 @@ export default function DmCombate({ c }) {
               </span>
               <span className="hp">{cb.hp_current}/{cb.hp_max}</span>
               <input type="number" style={{ maxWidth: 70 }}
+                     placeholder="±"
                      aria-label={tf('com.dmgAmtAria', { name: cb.name })}
                      value={dmg[cb.id] || ''}
                      onChange={(e) => setDmg({ ...dmg, [cb.id]: +e.target.value })} />
@@ -433,7 +436,7 @@ export default function DmCombate({ c }) {
               <input type="number" min="1" placeholder={t('sheet.rounds')}
                      title={t('sheet.condDurTitle')}
                      aria-label={t('sheet.condDurAria')}
-                     style={{ maxWidth: 80 }}
+                     style={{ maxWidth: 110 }}
                      value={condRounds}
                      onChange={(e) => setCondRounds(e.target.value)} />
               <button disabled={!newCond.trim()} onClick={() => {

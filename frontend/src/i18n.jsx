@@ -999,6 +999,13 @@ es: {
 
   'common.cancel': 'Cancelar', 'common.close': 'Cerrar',
   'common.save': 'Guardar','common.loading': 'Cargando…', 'common.use': 'Usar',
+  'nf.title': 'Página no encontrada',
+  'nf.hint': 'La dirección no existe o el contenido se ha movido.',
+  'nf.home': 'Volver al inicio',
+  'err.title': 'Algo ha fallado',
+  'err.hint': 'La vista ha dejado de funcionar. Tus datos están a salvo ' +
+            '(todo se guarda en local o en la cola de sincronización).',
+  'err.reload': 'Recargar',
   'common.add': 'Añadir', 'common.details': 'Detalles',
   'common.forget': 'Olvidar', 'common.pin': 'Fijar',
 },
@@ -1958,6 +1965,13 @@ en: {
 
   'common.cancel': 'Cancel', 'common.close': 'Close',
   'common.save': 'Save','common.loading': 'Loading…', 'common.use': 'Use',
+  'nf.title': 'Page not found',
+  'nf.hint': 'This address does not exist or the content has moved.',
+  'nf.home': 'Back to home',
+  'err.title': 'Something went wrong',
+  'err.hint': 'The view stopped working. Your data is safe ' +
+            '(everything is saved locally or in the sync queue).',
+  'err.reload': 'Reload',
   'common.add': 'Add', 'common.details': 'Details',
   'common.forget': 'Forget', 'common.pin': 'Pin',
 },

@@ -1,8 +1,9 @@
-import { NavLink, Routes, Route, useNavigate, useLocation }
+import { NavLink, Routes, Route, Link, useNavigate, useLocation }
   from 'react-router-dom'
 import { lazy, Suspense, useState, useEffect } from 'react'
 import Header from './components/Header.jsx'
 import CommandPalette from './components/CommandPalette.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import CharacterList from './pages/CharacterList.jsx'
 import { useT } from './i18n.jsx'
@@ -59,6 +60,16 @@ function MobileNav() {
   )
 }
 
+function NotFound() {
+  const { t } = useT()
+  return (
+    <main>
+      <h1>{t('nf.title')}</h1>
+      <p className="muted">{t('nf.hint')}</p>
+      <p><Link to="/">{t('nf.home')}</Link></p>
+    </main>)
+}
+
 export default function App() {
   const { t } = useT()
   const loc = useLocation()
@@ -71,7 +82,7 @@ export default function App() {
   // navegador e historial identifican dónde está el usuario
   useEffect(() => {
     const seg = loc.pathname.split('/')
-    const key = {
+    const map = {
       '': 'nav.home',
       characters: 'charlist.title',
       new: 'wiz.title',
@@ -82,7 +93,9 @@ export default function App() {
       campaigns: 'camp.title',
       campaign: 'camp.title',
       settings: 'set.title',
-    }[seg[1] || ''] || 'nav.home'
+    }
+    const key = map[seg[1] || ''] ||
+      (seg[1] ? 'nf.title' : 'nav.home')
     document.title = `${t(key)} · D&D Companion`
   }, [loc.pathname, t])
   return (
@@ -94,6 +107,7 @@ export default function App() {
       <Suspense fallback={
         <main><p className="muted" role="status" aria-live="polite">
           {t('common.loading')}</p></main>}>
+      <ErrorBoundary>
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/characters" element={<CharacterList />} />
@@ -106,7 +120,11 @@ export default function App() {
         <Route path="/campaigns" element={<CampaignList />} />
         <Route path="/campaign/:id" element={<CampaignBoard />} />
         <Route path="/settings" element={<Settings />} />
+        {/* comodín: una URL mala no debe dejar la zona de contenido
+            en blanco — estado 404 con salida clara */}
+        <Route path="*" element={<NotFound />} />
       </Routes>
+      </ErrorBoundary>
       </Suspense>
       </div>
       <MobileNav />

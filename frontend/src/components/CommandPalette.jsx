@@ -45,9 +45,11 @@ export default function CommandPalette() {
     return () => window.removeEventListener('keydown', onKey)
   }, [open])
 
-  // al abrir: foco + cachear listas locales (baratas)
+  // al abrir: foco + cachear listas locales (baratas); al cerrar se
+  // devuelve el foco al elemento que la invocó (WCAG foco ordenado)
   useEffect(() => {
     if (!open) return
+    const prev = document.activeElement
     inputRef.current?.focus()
     api.listCharacters().then((r) =>
       setChars(r.characters || [])).catch(() => setChars([]))
@@ -64,6 +66,9 @@ export default function CommandPalette() {
           .catch(() => [])))
         .then((lists) => setEnts(lists.flat()))
     }).catch(() => setCamps([]))
+    return () => {
+      if (prev && document.contains(prev)) prev.focus()
+    }
   }, [open])
 
   const go = (to) => { setOpen(false); setQ(''); setResults([]); nav(to) }

@@ -67,6 +67,24 @@ export default function App() {
   useEffect(() => {
     trackPage('/' + (loc.pathname.split('/')[1] || ''))
   }, [loc.pathname])
+  // título del documento por sección (WCAG 2.4.2): pestañas del
+  // navegador e historial identifican dónde está el usuario
+  useEffect(() => {
+    const seg = loc.pathname.split('/')
+    const key = {
+      '': 'nav.home',
+      characters: 'charlist.title',
+      new: 'wiz.title',
+      character: 'nav.sheets',
+      search: 'search.title',
+      content: 'nav.compendium',
+      dm: 'nav.dm',
+      campaigns: 'camp.title',
+      campaign: 'camp.title',
+      settings: 'set.title',
+    }[seg[1] || ''] || 'nav.home'
+    document.title = `${t(key)} · D&D Companion`
+  }, [loc.pathname, t])
   return (
     <div className="app">
       <a href="#content" className="skip-link">{t('app.skip')}</a>

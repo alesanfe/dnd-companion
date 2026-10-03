@@ -300,7 +300,16 @@ export default function CharacterSheet() {
     d0.species_id, d0.background_id].filter(Boolean))
 
   if (err && !char) return <main><p className="error" role="alert">{err}</p></main>
-  if (!char) return <main><p role="status">{t('common.loading')}</p></main>
+  if (!char) return (
+    <main className="wide" aria-busy="true">
+      <p role="status">{t('common.loading')}</p>
+      {/* skeleton de la estructura conocida de la ficha mientras
+          llega — evita el salto de layout al pintar */}
+      <div className="skeleton" style={{ height: 90, marginBottom: 12 }} />
+      <div className="skeleton" style={{ height: 34, width: '60%',
+                                         marginBottom: 12 }} />
+      <div className="skeleton" style={{ height: 220 }} />
+    </main>)
 
   const d = char.data
   const hp = d.hp || { current: 0, max: 0, temp: 0 }

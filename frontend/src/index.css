@@ -117,6 +117,17 @@
   transition: none !important;
 }
 
+/* skeleton de carga — estructura conocida mientras llega el
+   contenido (la animación la apagan reduce-motion / data-motion) */
+.skeleton {
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--card) 25%,
+    var(--card-raised) 50%, var(--card) 75%);
+  background-size: 200% 100%;
+  animation: sk-slide 1.4s ease-in-out infinite;
+}
+@keyframes sk-slide { to { background-position: -200% 0 } }
+
 /* lectura fácil (dislexia) */
 [data-dyslexia="on"] body {
   letter-spacing: 0.05em;

@@ -16,7 +16,7 @@
   --success: #4caf78;
   --warning: #e5a84b;
   --info: #5b9bd5;
-  --private: #a06bd4;        /* homebrew / contenido privado */
+  --private: #ad7ce0;        /* homebrew / contenido privado */
   --card: #1e1e30;
   --card-raised: #292942;    /* popovers, paneles contextuales */
   --muted: #9b9bae;
@@ -33,11 +33,11 @@
   --bg: #f5f4f0;
   --bg-2: #ffffff;
   --fg: #22223a;
-  --accent: #9a6d1f;
+  --accent: #8a611a;
   --accent-2: #6b5bd0;
   --danger: #b03527;
   --success: #2d7a4d;
-  --warning: #b57e1e;
+  --warning: #8f6113;
   --info: #35648c;
   --private: #7a4fa8;
   --card: #ffffff;
@@ -59,12 +59,12 @@
   --accent-2: #6a5a9e;
   --danger: #a03420;
   --success: #3d6b3d;
-  --warning: #9a6b1e;
+  --warning: #8a5f18;
   --info: #4a6a86;
   --private: #6f4a86;
   --card: #efe6cf;
   --card-raised: #e8dcc0;
-  --muted: #8a7355;
+  --muted: #71603f;
   --btn: #ddd0b0;
   --btn-hover: #d0c19c;
   --border: #c9b78f;
@@ -215,6 +215,17 @@ button.dmg { background: var(--danger); color: #fff; }
 button.dmg:hover:not(:disabled) { background: var(--danger); filter: brightness(1.1); }
 button.heal { background: var(--success); color: #fff; }
 button.heal:hover:not(:disabled) { background: var(--success); filter: brightness(1.1); }
+
+/* contraste WCAG ≥4.5 sobre colores de acción: donde el color del
+   tema es claro (dark/hc) el texto va en tinta oscura; donde el
+   acento es oscuro (light/sepia) el primario va en blanco */
+[data-theme="light"] button.primary,
+[data-theme="sepia"] button.primary { color: #fff; }
+[data-theme="hc"] button.primary { color: #000; }
+[data-theme="dark"] button.dmg,
+[data-theme="dark"] button.heal { color: #14141f; }
+[data-theme="hc"] button.dmg,
+[data-theme="hc"] button.heal { color: #000; }
 
 /* secundario con borde — la variante por defecto en barras */
 button.ghost, .nav .ghost {

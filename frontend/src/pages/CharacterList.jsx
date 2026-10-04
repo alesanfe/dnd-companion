@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { api, errText } from '../api.js'
 import { loadJSON } from '../session.js'
 import { useT } from '../i18n.jsx'
+import { useDialogs } from '../components/ui/Dialogs.jsx'
 
 const FAVS_KEY = 'dnd-fav-chars'
 const ARCH_KEY = 'dnd-archived-chars'
@@ -17,6 +18,7 @@ const avatarHue = (name = '') => {
 
 export default function CharacterList() {
   const { t, tf } = useT()
+  const dlg = useDialogs()
   /* null = aún cargando: el estado vacío solo pinta tras la respuesta */
   const [chars, setChars] = useState(null)
   const [name, setName] = useState('')
@@ -86,7 +88,7 @@ export default function CharacterList() {
       } else if (action === 'archive') {
         toggle(archived, setArchived, ARCH_KEY, c.id)
       } else if (action === 'delete') {
-        if (!confirm(tf('clist.deleteConfirm', { name: c.name })))
+        if (!await dlg.confirm(tf('clist.deleteConfirm', { name: c.name })))
           return
         await api.deleteCharacter(c.id)
         load()

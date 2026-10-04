@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { api } from '../../api.js'
 import WikiText from '../WikiText.jsx'
+import { useDialogs } from '../ui/Dialogs.jsx'
 
 const REL_TYPES = ['knows', 'ally', 'enemy', 'family', 'works_for',
                    'owns', 'located_in', 'quest_giver', 'member_of',
@@ -17,6 +18,7 @@ export default function DmCampana({ c }) {
   const [editNotes, setEditNotes] = useState(null) // entidad en edición
   const [shareEnt, setShareEnt] = useState(null)   // entidad compartiendo
   const [notesDraft, setNotesDraft] = useState('')
+  const dlg = useDialogs()
   if (!campaign) return null
   const show = dmTab === 'campana'
   const reload = () =>
@@ -119,7 +121,8 @@ export default function DmCampana({ c }) {
               <button className="ghost" aria-label={tf('camp.deleteAria',
                                         { name: e.name })}
                       onClick={async () => {
-                if (!confirm(tf('camp.deleteConfirm', { name: e.name }))) return
+                if (!await dlg.confirm(
+                      tf('camp.deleteConfirm', { name: e.name }))) return
                 await api.deleteEntity(campaign.id, e.id)
                 reload()
               }}>×</button>
@@ -128,7 +131,7 @@ export default function DmCampana({ c }) {
                         aria-label={tf('camp.restockAria',
                                        { name: e.name })}
                         onClick={async () => {
-                  const line = prompt(t('camp.restockPrompt'))
+                  const line = await dlg.prompt(t('camp.restockPrompt'))
                   if (!line?.trim()) return
                   const [nm, pr, qt] = line.split('|').map((s) => s.trim())
                   if (!nm) return

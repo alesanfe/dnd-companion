@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../api.js'
 import { opLabel } from '../../i18n.jsx'
+import { useDialogs } from '../ui/Dialogs.jsx'
 
 /** Pestaña Sesión: datos de campaña, feed de tiradas en vivo,
     sesiones y preparación, peticiones de tirada a jugadores. */
@@ -20,6 +21,7 @@ export default function DmSesion({ c }) {
   const [busy, setBusy] = useState(false)
   const [loot, setLoot] = useState({ coin: 'gp', amount: '' })
   const [lootMsg, setLootMsg] = useState(null)
+  const dlg = useDialogs()
   useEffect(() => {
     if (!campaign || partyChars.length === 0) {
       setPendingReqs([])
@@ -104,7 +106,7 @@ export default function DmSesion({ c }) {
             <button className="ghost" style={{ color: '#c33' }}
                     title={t('camp.delTitle')}
                     onClick={async () => {
-              if (prompt(tf('camp.delPrompt',
+              if (await dlg.prompt(tf('camp.delPrompt',
                             { name: campaign.name })) !== campaign.name)
                 return
               await api.deleteCampaign(campaign.id)
@@ -202,7 +204,7 @@ export default function DmSesion({ c }) {
                       title={t('ses.delTitle')}
                       aria-label={t('ses.delTitle')}
                       onClick={async () => {
-                if (!confirm(tf('ses.delConfirm',
+                if (!await dlg.confirm(tf('ses.delConfirm',
                                 { title: s.title }))) return
                 await api.deleteSession(campaign.id, s.id)
                 const r = await api.listSessions(campaign.id)

@@ -1357,3 +1357,26 @@ tr:last-child { border-bottom: none; }
   body { background: #fff; color: #000; }
   main.wide, main { max-width: none; }
 }
+
+/* diálogos modales propios (sustituyen confirm/prompt nativos) */
+.dlg-backdrop {
+  position: fixed; inset: 0; z-index: 120;
+  background: rgba(0, 0, 0, .5);
+  display: flex; align-items: flex-start; justify-content: center;
+}
+.dlg {
+  max-width: 440px; width: calc(100% - 2rem);
+  margin-top: 18vh;
+  background: var(--card); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 1rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .4);
+}
+.dlg h3 { margin: 0 0 .8rem; font-size: 1.05rem; }
+.dlg input { width: 100%; margin-bottom: .8rem; }
+.dlg-actions {
+  display: flex; justify-content: flex-end; gap: .5rem;
+}
+@media (max-width: 700px) {
+  .dlg { margin-top: 12vh; }
+}

@@ -7,6 +7,7 @@ import { clearAuth, currentUser, getPrefs, setAuth, setPref }
   from '../session.js'
 import { useT, opLabel } from '../i18n.jsx'
 import { clearMetrics, snapshot } from '../metrics.js'
+import { useDialogs } from '../components/ui/Dialogs.jsx'
 
 /** Ajustes consolidados: cuenta, apariencia, accesibilidad y
     estado de sincronización — antes repartidos en el header. */
@@ -227,6 +228,7 @@ function PushCard({ user }) {
     las fuentes instaladas salen como 'pkg:<id>' en el compendio. */
 function PackagesCard() {
   const { t, tf } = useT()
+  const dlg = useDialogs()
   const [pkgs, setPkgs] = useState(null)
   const [msg, setMsg] = useState(null)
   const load = () => api.listPackages()
@@ -279,7 +281,7 @@ function PackagesCard() {
                   title={t('pkg.uninstall')}
                   aria-label={`${t('pkg.uninstall')} ${p.name}`}
                   onClick={async () => {
-                    if (!confirm(tf('pkg.uninstallConfirm',
+                    if (!await dlg.confirm(tf('pkg.uninstallConfirm',
                                     { name: p.name }))) return
                     try {
                       const r = await api.uninstallPackage(p.id)

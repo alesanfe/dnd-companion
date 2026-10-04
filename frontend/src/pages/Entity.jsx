@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { api, errText } from '../api.js'
 import { loadJSON } from '../session.js'
 import { useT, etypeLabel } from '../i18n.jsx'
+import { useDialogs } from '../components/ui/Dialogs.jsx'
 
 /** Copia con fallback: navigator.clipboard no existe en contextos
     no seguros (http:// en LAN) — el botón "copiar" no hacía nada. */
@@ -25,6 +26,7 @@ async function copyText(text) {
     original como fallback. */
 export default function Entity() {
   const { t, tf } = useT()
+  const dlg = useDialogs()
   const { id } = useParams()
   const [ent, setEnt] = useState(null)
   const [block, setBlock] = useState(null)
@@ -103,8 +105,8 @@ export default function Entity() {
               <button key={c} className="ghost"
                       onClick={() => addToCollection(c)}>{c}</button>))}
           <div className="row">
-            <button onClick={() => {
-              const n = prompt(t('ent.colNamePrompt'))
+            <button onClick={async () => {
+              const n = await dlg.prompt(t('ent.colNamePrompt'))
               if (n?.trim()) addToCollection(n.trim())
             }}>{t('ent.newCol')}</button>
             <button className="ghost"

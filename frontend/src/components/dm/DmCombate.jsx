@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useDialogs } from '../ui/Dialogs.jsx'
 import { api } from '../../api.js'
 import { AB_LONG, SKILL_ES } from '../sheet/data.js'
 
@@ -20,6 +21,7 @@ export default function DmCombate({ c }) {
   const [suggestDiff, setSuggestDiff] = useState('medium')
   const [suggested, setSuggested] = useState(null)
   const [delegMembers, setDelegMembers] = useState(null)
+  const dlg = useDialogs()
   if (!campaign) return null
 
   /* Primera casilla libre para un token, calculada sobre el data
@@ -238,7 +240,7 @@ export default function DmCombate({ c }) {
             <button className="ghost" title={t('com.delTitle')}
                     aria-label={t('com.delTitle')}
                     onClick={async () => {
-              if (!confirm(tf('com.delConfirm', {
+              if (!await dlg.confirm(tf('com.delConfirm', {
                 name: combat.combat.name, round: combat.combat.round })))
                 return
               await api.deleteCombat(combat.id)

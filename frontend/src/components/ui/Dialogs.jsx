@@ -11,7 +11,7 @@ import { useT } from '../../i18n.jsx'
 const Ctx = createContext(null)
 export const useDialogs = () => useContext(Ctx)
 
-function Dialog({ title, onClose, children }) {
+function Dialog({ title, onClose, alert, children }) {
   const ref = useRef(null)
   useEffect(() => {
     // foco al primer control interactivo del diálogo
@@ -38,7 +38,8 @@ function Dialog({ title, onClose, children }) {
     <div className="dlg-backdrop" onMouseDown={(e) => {
       if (e.target === e.currentTarget) onClose()
     }}>
-      <div ref={ref} className="dlg" role="alertdialog"
+      <div ref={ref} className="dlg"
+           role={alert ? 'alertdialog' : 'dialog'}
            aria-modal="true" aria-labelledby="dlg-t">
         <h3 id="dlg-t">{title}</h3>
         {children}
@@ -70,11 +71,11 @@ export function DialogProvider({ children }) {
     <Ctx.Provider value={{ confirm, prompt }}>
       {children}
       {req?.kind === 'confirm' && (
-        <Dialog title={req.title} onClose={() => close(false)}>
+        <Dialog alert title={req.title} onClose={() => close(false)}>
           <div className="dlg-actions">
             <button className="ghost" onClick={() => close(false)}>
               {t('common.cancel')}</button>
-            <button className="danger" onClick={() => close(true)}>
+            <button className="dmg" onClick={() => close(true)}>
               {t('common.confirm')}</button>
           </div>
         </Dialog>)}

@@ -5,6 +5,7 @@ import { blockedByWall, cellDist, inCone, CELL, MARK_COLORS,
 import { useT } from '../i18n.jsx'
 import WikiText from './WikiText.jsx'
 import { MapToken, MapPin, InitiativeRibbon } from './MapPieces.jsx'
+import { useDialogs } from './ui/Dialogs.jsx'
 
 const DEFAULTS = MAP_DEFAULTS
 
@@ -116,6 +117,7 @@ export default function MapBoard({ campaign, size = CELL,
     catch { return { walk: 30, fly: 0, swim: 0, climb: 0 } }
   })
   const { t, tf } = useT()
+  const dlg = useDialogs()
   /* versión del combate que sigue a cada op aplicada — la prop
      llega por props/WS y queda stale entre dos ops seguidas (409) */
   const combatVerRef = useRef(null)
@@ -215,8 +217,8 @@ export default function MapBoard({ campaign, size = CELL,
     }
   }
 
-  const addToken = () => {
-    const name = prompt(t('map.tokenPrompt'))
+  const addToken = async () => {
+    const name = await dlg.prompt(t('map.tokenPrompt'))
     if (!name?.trim()) return
     // auto-numeración para nombres repetidos ("Goblin", "Goblin 2"…)
     const base = name.trim()
@@ -257,13 +259,14 @@ export default function MapBoard({ campaign, size = CELL,
       .catch((e) => setZoneLog(`⚠ ${tk.name}: ${e.message}`))
   }
 
-  const renameTok = () => {
-    const name = prompt(t('map.renameTokPrompt'), sel.name)
+  const renameTok = async () => {
+    const name = await dlg.prompt(t('map.renameTokPrompt'), sel.name)
     if (name?.trim()) patchTok({ name: name.trim() })
   }
 
-  const setHp = () => {
-    const mx = +prompt(t('map.tokenMaxHp'), sel.max_hp ?? 10)
+  const setHp = async () => {
+    const n = await dlg.prompt(t('map.tokenMaxHp'), String(sel.max_hp ?? 10))
+    const mx = n === null ? 0 : +n
     if (mx > 0) patchTok({ max_hp: mx, hp: mx })
   }
 
@@ -439,7 +442,8 @@ export default function MapBoard({ campaign, size = CELL,
     }
     const tcbt = _cbOf(tk)
     if (tcbt) return tcbt.stat_block?.ac ?? null
-    const v = +prompt(tf('map.atkAcPrompt', { name: tk.name }), 10)
+    const n = await dlg.prompt(tf('map.atkAcPrompt', { name: tk.name }), '10')
+    const v = n === null ? 0 : +n
     return Number.isFinite(v) && v > 0 ? v : null
   }
 
@@ -582,8 +586,8 @@ export default function MapBoard({ campaign, size = CELL,
                 : t('map.atkMiss') }))
   }
 
-  const dropTok = () => {
-    if (!confirm(tf('map.tokenDelConfirm', { name: sel.name }))) return
+  const dropTok = async () => {
+    if (!await dlg.confirm(tf('map.tokenDelConfirm', { name: sel.name }))) return
     save({ ...d, tokens: d.tokens.filter((tk) => tk.id !== sel.id) })
     setSel(null)
   }
@@ -846,7 +850,8 @@ export default function MapBoard({ campaign, size = CELL,
     !blockedByWall(d.walls || [], tk.x, tk.y, x, y))
 
   const newMap = async () => {
-    const name = prompt(t('map.newPrompt'), `Mapa ${maps.length + 1}`)
+    const name = await dlg.prompt(
+      t('map.newPrompt'), `Mapa ${maps.length + 1}`)
     if (!name?.trim()) return
     const r = await api.createEntity(campaign.id, {
       kind: 'map', name: name.trim(), visibility: 'public',
@@ -857,7 +862,7 @@ export default function MapBoard({ campaign, size = CELL,
   }
 
   const renameMap = async () => {
-    const name = prompt(t('map.renamePrompt'), map.name)
+    const name = await dlg.prompt(t('map.renamePrompt'), map.name)
     if (!name?.trim() || name.trim() === map.name) return
     await api.patchEntity(campaign.id, map.id,
       { name: name.trim(), expected_version: map.version })
@@ -865,7 +870,7 @@ export default function MapBoard({ campaign, size = CELL,
   }
 
   const delMap = async () => {
-    if (!confirm(tf('map.delConfirm', { name: map.name }))) return
+    if (!await dlg.confirm(tf('map.delConfirm', { name: map.name }))) return
     await api.deleteEntity(campaign.id, map.id)
     setCurId(null)
     load()
@@ -982,8 +987,8 @@ export default function MapBoard({ campaign, size = CELL,
           <span className="tb-sep" aria-hidden="true" />
           <button className="ghost" title={t('map.bgTitle')}
                   aria-label={t('map.bgTitle')}
-                  onClick={() => {
-            const u = prompt(t('map.bgPrompt'), d.image_url || '')
+                  onClick={async () => {
+            const u = await dlg.prompt(t('map.bgPrompt'), d.image_url || '')
             if (u === null) return
             // '' — no undefined: el PATCH hace merge y un campo
             // undefined no se serializa (no llegaría a borrar)
@@ -991,8 +996,8 @@ export default function MapBoard({ campaign, size = CELL,
           }}>🖼 {t('map.bgLbl')}</button>
           <button className="ghost" title={t('map.musicTitle')}
                   aria-label={t('map.musicTitle')}
-                  onClick={() => {
-            const u = prompt(t('map.musicPrompt'), d.music_url || '')
+                  onClick={async () => {
+            const u = await dlg.prompt(t('map.musicPrompt'), d.music_url || '')
             if (u === null) return
             save({ ...d, music_url: u.trim() })
           }}>♪ {t('map.musicLbl')}</button>
@@ -1117,8 +1122,8 @@ export default function MapBoard({ campaign, size = CELL,
           {/* retrato del token: URL de imagen renderizada en el
               círculo (vacío = vuelve a iniciales+color) */}
           <button className="ghost" title={t('map.tokImg')}
-                  onClick={() => {
-                    const u = prompt(t('map.tokImgPrompt'),
+                  onClick={async () => {
+                    const u = await dlg.prompt(t('map.tokImgPrompt'),
                                      sel.image_url || '')
                     if (u !== null)
                       patchTok({ image_url: u.trim() || undefined })

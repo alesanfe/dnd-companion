@@ -4,6 +4,7 @@ import { ItemPicker } from './pickers.jsx'
 import { onTabsKeyDown } from '../../a11y.js'
 import { AttackPanel, Section } from './panels.jsx'
 import { abilityScore } from './data.js'
+import { useDialogs } from '../ui/Dialogs.jsx'
 
 /** Pestaña Inventario: monedas, objetos (equipado/mochila/
     consumibles), fabricación, entrega a compañeros y tiendas de
@@ -16,6 +17,7 @@ export default function TabInventario({ c }) {
   const show = (g) => focus ? hud.has(g) : tab === g
   // compañeros de grupo para pasar objetos (transferencia atómica)
   const [party, setParty] = useState(null)
+  const dlg = useDialogs()
   useEffect(() => {
     if (!char.campaign_id) { setParty(null); return }
     api.listCharacters(char.campaign_id)
@@ -248,9 +250,10 @@ export default function TabInventario({ c }) {
           <button className="ghost" style={{ minHeight: 30 }}
                   title={t('inv.weightTitle')}
                   aria-label={tf('inv.weightAria', { name: it.name })}
-                  onClick={() => {
-            const n = window.prompt(
-              tf('inv.weightPrompt', { name: it.name }), it.weight || 0)
+                  onClick={async () => {
+            const n = await dlg.prompt(
+              tf('inv.weightPrompt', { name: it.name }),
+              String(it.weight || 0))
             if (n === null) return
             op('character.item.weight.set',
                { item_id: it.id, weight: Math.max(0, +n || 0) })
@@ -258,10 +261,10 @@ export default function TabInventario({ c }) {
           <button className="ghost" style={{ minHeight: 30 }}
                   title={t('inv.chargeTitle')}
                   aria-label={tf('inv.chargeAria', { name: it.name })}
-                  onClick={() => {
-            const n = window.prompt(
+                  onClick={async () => {
+            const n = await dlg.prompt(
               tf('inv.chargePrompt', { name: it.name }),
-              it.charges_max ?? 3)
+              String(it.charges_max ?? 3))
             if (n === null) return
             op('character.item.charge.set',
                { item_id: it.id, max: Math.max(0, +n || 0) })

@@ -1,11 +1,13 @@
 import { SpellPicker } from './pickers.jsx'
 import { SpellList, Section } from './panels.jsx'
+import { useDialogs } from '../ui/Dialogs.jsx'
 
 /** Pestaña Magia: espacios de conjuro y conjuros conocidos. */
 export default function TabMagia({ c }) {
   const { id, d, slots, op, t, tf, focus, hud, tab, setCastId,
           derived } = c
   const show = (g) => focus ? hud.has(g) : tab === g
+  const dlg = useDialogs()
   const ABILITY_ES = { str: 'FUE', dex: 'DES', con: 'CON',
                        int: 'INT', wis: 'SAB', cha: 'CAR' }
   return (<div className="sheet-cols">
@@ -105,8 +107,8 @@ export default function TabMagia({ c }) {
       {(d.spells_known || []).length > 0 && (
         <SpellList ids={d.spells_known} charId={id}
           preparedIds={d.spells_prepared}
-          onToBook={(sid) => {
-            const name = window.prompt(
+          onToBook={async (sid) => {
+            const name = await dlg.prompt(
               t('mag.bookPrompt'), t('mag.bookDefault'))
             if (name?.trim())
               op('character.spellbook.add',

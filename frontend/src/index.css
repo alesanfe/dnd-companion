@@ -1339,15 +1339,46 @@ tr:last-child { border-bottom: none; }
 @media print {
   header, .mobile-nav, .tabs, .fab, .fab-menu,
   .popover, button, input, select, textarea, .skip-link,
-  .toolbar, .tour, .identity-edit > summary {
+  .toolbar, .tour, .identity-edit > summary, .no-print {
     display: none !important;
   }
+  /* el título de sección vive en un <button>: ocultar botones en
+     papel lo borraba y dejaba tarjetas sin nombre — se imprime
+     como texto plano */
+  .csec-btn {
+    display: block !important;
+    color: #000 !important;
+    border: none !important;
+    background: none !important;
+    padding: 0; margin: 0 0 .3rem;
+    text-align: left; font-weight: 700; font-size: 1.05rem;
+  }
+  .csec-caret { display: none !important; }
   /* las secciones de otras pestañas también se imprimen:
      la hoja impresa es la ficha completa */
   section.csec[hidden], .csec-body[hidden], .row[hidden],
   .identity-edit > *:not(summary) {
     display: block !important;
   }
+  /* …salvo lo marcado no-print (chat) — la regla anterior tiene
+     más especificidad que una clase sola, por eso hace falta
+     declararla aquí con la misma combinación */
+  section.csec.no-print { display: none !important; }
+  /* botones-dato: mods de característica, salvaciones y habilidades
+     son <button> — ocultarlos dejaba la hoja sin esos números. En
+     papel se imprimen como texto, no como control */
+  button.ab-mod, button.ab-save, .skill-list button {
+    display: inline-flex !important;
+    color: #000 !important; background: none !important;
+    border: none !important; padding: 0;
+    font: inherit; font-weight: 600;
+  }
+  /* tiles y chips oscuros → legibles sobre papel blanco */
+  .vstat, .chip, .coin, .ability-cell, .hp-bar {
+    background: #fff !important; color: #000 !important;
+    border-color: #999 !important;
+  }
+  .ability-cell *:not(button) { color: #000 !important; }
   .sticky-head { position: static; background: #fff; }
   .sheet-cols { column-count: 2; }
   .card { border: 1px solid #999; break-inside: avoid;

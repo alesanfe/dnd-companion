@@ -12,7 +12,7 @@ export default function TabActividad({ c }) {
   return (<>
     {char?.campaign_id && (
       <Section title={t('act.chat')}  hidden={!show('actividad')}
-               extraClass="optional">
+               extraClass="optional no-print">
         <ul className="log" role="log" aria-live="polite">
           {chat.length === 0 &&
             <li className="muted">{t('act.chatEmpty')}</li>}

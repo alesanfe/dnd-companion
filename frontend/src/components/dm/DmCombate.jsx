@@ -121,10 +121,8 @@ export default function DmCombate({ c }) {
         <select value={suggestDiff}
                 aria-label={t('com.suggest')}
                 onChange={(e) => setSuggestDiff(e.target.value)}>
-          <option value="easy">easy</option>
-          <option value="medium">medium</option>
-          <option value="hard">hard</option>
-          <option value="deadly">deadly</option>
+          {['easy', 'medium', 'hard', 'deadly'].map((d) => (
+            <option key={d} value={d}>{t(`com.diff.${d}`)}</option>))}
         </select>
         <button className="ghost" onClick={async () => {
           const lv = partyLevels.split(',')
@@ -143,7 +141,10 @@ export default function DmCombate({ c }) {
         <div>
           <p className="muted">
             {tf('com.suggestBudget', {
-              difficulty: suggested.difficulty,
+              difficulty: (() => {
+                const v = t(`com.diff.${suggested.difficulty}`)
+                return v === `com.diff.${suggested.difficulty}`
+                  ? suggested.difficulty : v })(),
               n: suggested.budget })}
             {' '}· {tf('com.adjXp', {
               n: suggested.adjusted_xp, base: suggested.raw_xp })}

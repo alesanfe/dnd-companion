@@ -103,7 +103,8 @@ export default function DmSesion({ c }) {
             }>{t('ses.audit')}</button>
             {/* DELETE /campaigns existía sin UI — borrar la campaña
                 completa (fichas, entidades, eventos) pide el nombre */}
-            <button className="ghost" style={{ color: '#c33' }}
+            <button className="ghost"
+                    style={{ color: 'var(--danger)' }}
                     title={t('camp.delTitle')}
                     onClick={async () => {
               if (await dlg.prompt(tf('camp.delPrompt',

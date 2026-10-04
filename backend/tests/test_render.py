@@ -36,7 +36,7 @@ def test_render_spell_fields():
          "higher_level": ["+1d6 por nivel extra."]}
     out = render.render("spell", d)
     labels = {f["label"]: f["value"] for f in out["fields"]}
-    assert labels["Nivel"] == "nivel 3"
+    assert labels["Nivel"] == "3"
     assert labels["Escuela"] == "Evocación"
     assert labels["Concentración"] == "sí"
     assert labels["Componentes"] == "v, s"

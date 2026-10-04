@@ -608,11 +608,17 @@ def derived_all(character_id: str,
 
     # conjuros: característica de lanzamiento según la clase
     # (multi-schema — classinfo cubre 5e-bits/5etools/open5e)
+    # can_cast distingue lanzadores reales del fallback 'int': sin él
+    # un fighter llevaba ability=INT y la UI no podía detectarlo
     cast_ability = "int"
+    can_cast = False
     if char.classes:
         from ..domain.classinfo import spellcasting_ability
         cls = _content_row(char.classes[0].class_id) or {}
-        cast_ability = spellcasting_ability(cls) or "int"
+        raw = spellcasting_ability(cls)
+        if raw is not None:
+            cast_ability = raw
+            can_cast = True
     cast_mod = char.abilities.modifier(cast_ability)
     from ..rules import rules
     cbase = rules()["combat"]
@@ -627,6 +633,7 @@ def derived_all(character_id: str,
                          char.proficiency_bonus + cast_mod,
         "spell_attack": char.proficiency_bonus + cast_mod,
         "spellcasting_ability": cast_ability,
+        "can_cast": can_cast,
         # tope 2014/2024: nivel total + mod de lanzamiento (mín. 1)
         "prepared_limit": max(1, char.total_level + cast_mod),
         "proficiency_bonus": char.proficiency_bonus,

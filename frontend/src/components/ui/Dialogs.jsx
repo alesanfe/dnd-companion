@@ -83,6 +83,7 @@ export function DialogProvider({ children }) {
         <Dialog title={req.title} onClose={() => close(null)}>
           <form onSubmit={(e) => { e.preventDefault(); close(value) }}>
             <input value={value} autoFocus
+                   aria-label={req.title}
                    onChange={(e) => setValue(e.target.value)} />
             <div className="dlg-actions">
               <button type="button" className="ghost"

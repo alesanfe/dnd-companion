@@ -92,9 +92,11 @@ export default function TabMagia({ c }) {
                   .replace(/-/g, ' ')} />
       {/* guía para no-lanzadores: la pestaña queda casi vacía y el
           picker parece roto sin esta pista (las subclases arcanas
-          sí la usan) */}
+          sí la usan). can_cast viene del derived — el fallback 'int'
+          del backend hacía truthy spellcasting_ability para TODAS
+          las clases y la nota nunca se veía */}
       {(d.spells_known || []).length === 0 &&
-        !derived?.spellcasting_ability && (
+        derived?.can_cast === false && (
         <p className="muted">{t('mag.noCaster')}</p>)}
       {(d.spells_prepared || []).length > 0 && derived && (
         <p className="muted">

@@ -80,7 +80,11 @@ export default function Dashboard() {
               <strong style={{ fontSize: '1.15rem' }}>{lastCamp.name}</strong>
               <span className="muted">{relTime(lastCamp.at)}</span>
             </Link>)}
-          {!lastChar && !lastCamp && (
+          {/* CTA de bienvenida solo para usuarios SIN contenido —
+              con fichas/campañas el mensaje 'empieza creando' quedaba
+              contradictorio junto a las estadísticas de Tu mesa */}
+          {!lastChar && !lastCamp &&
+            chars?.length === 0 && camps?.length === 0 && (
             <div className="empty" style={{ textAlign: 'left' }}>
               <p style={{ fontSize: '1.05rem', marginTop: 0 }}>
                 🎲 <strong>{t('dash.firstTime')}</strong></p>

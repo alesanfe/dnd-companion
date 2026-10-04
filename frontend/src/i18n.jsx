@@ -413,6 +413,7 @@ es: {
   'mag.pactSpend': 'Gastar espacio de pacto nivel {lv}',
   'mag.pactRecover': 'Recuperar espacio de pacto nivel {lv}',
   'mag.learnPh': 'Aprender conjuro — buscar en todas las fuentes',
+  'mag.noCaster': 'Tu clase no lanza conjuros — solo lo necesitas si una subclase lo concede (p. ej. Caballero Arcano).',
   'mag.overLimit': '⚠ por encima del límite (nivel + mod de lanzamiento)',
   'mag.bookPrompt': 'Libro de destino (p.ej. "De dominio", "Grimorio")',
   'mag.bookDefault': 'Dominio',
@@ -421,6 +422,8 @@ es: {
 
   'inv.convertTitle': 'Cambiar monedas (10sp→1gp…)',
   'inv.amount': 'Cant.',
+  'inv.earnAria': 'añadir {n} {c}',
+  'inv.spendAria': 'gastar {n} {c}',
   'inv.convertAmt': 'Cantidad a cambiar',
   'inv.from': 'De', 'inv.to': 'A',
   'inv.convert': 'Cambiar',
@@ -1451,6 +1454,7 @@ en: {
   'mag.pactSpend': 'Spend pact slot level {lv}',
   'mag.pactRecover': 'Recover pact slot level {lv}',
   'mag.learnPh': 'Learn spell — search all sources',
+  'mag.noCaster': 'Your class has no spellcasting — only needed if a subclass grants it (e.g. Eldritch Knight).',
   'mag.overLimit': '⚠ over the limit (level + casting mod)',
   'mag.bookPrompt': 'Destination book (e.g. "Domain", "Grimoire")',
   'mag.bookDefault': 'Domain',
@@ -1459,6 +1463,8 @@ en: {
 
   'inv.convertTitle': 'Convert coins (10sp→1gp…)',
   'inv.amount': 'Amt.',
+  'inv.earnAria': 'earn {n} {c}',
+  'inv.spendAria': 'spend {n} {c}',
   'inv.convertAmt': 'Amount to convert',
   'inv.from': 'From', 'inv.to': 'To',
   'inv.convert': 'Convert',

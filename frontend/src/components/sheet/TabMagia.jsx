@@ -88,6 +88,12 @@ export default function TabMagia({ c }) {
         placeholder={t('mag.learnPh')}
         forClass={d.classes?.[0]?.class_id?.split(/[:|]/).pop()
                   .replace(/-/g, ' ')} />
+      {/* guía para no-lanzadores: la pestaña queda casi vacía y el
+          picker parece roto sin esta pista (las subclases arcanas
+          sí la usan) */}
+      {(d.spells_known || []).length === 0 &&
+        !derived?.spellcasting_ability && (
+        <p className="muted">{t('mag.noCaster')}</p>)}
       {(d.spells_prepared || []).length > 0 && derived && (
         <p className="muted">
           {t('sheet.prepared')}: {(d.spells_prepared || []).length}/

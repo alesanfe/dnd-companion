@@ -102,9 +102,26 @@ export default function CommandPalette() {
     const low = term.toLowerCase()
     const items = []
 
+    // vacío: muestra las acciones + fichas/campañas recientes —
+    // abrir la paleta a un recuadro mudo parecía roto
+    if (!term) {
+      for (const a of ACTIONS) items.push({ kind: 'action', ...a })
+      for (const c of chars.slice(0, 4))
+        items.push({ kind: 'char', label: c.name,
+          sub: `${(c.class_names || []).join('/') || '—'} · ${t('sheet.lvlShort')}${c.level || 1}`,
+          run: () => go(`/character/${c.id}`) })
+      for (const c of camps.slice(0, 3))
+        items.push({ kind: 'campaign', label: c.name,
+          sub: c.ruleset ? t(`ruleset.${c.ruleset}`) : t('camp.name'),
+          run: () => go(`/campaign/${c.id}`) })
+      setResults(items)
+      setIdx(0)
+      return
+    }
+
     // acciones de navegación/creación filtradas por texto
     for (const a of ACTIONS)
-      if (term && a.label.toLowerCase().includes(low))
+      if (a.label.toLowerCase().includes(low))
         items.push({ kind: 'action', ...a })
 
     // tirada directa si la consulta es una expresión de dados

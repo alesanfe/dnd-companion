@@ -22,13 +22,6 @@ export default function TabResumen({ c }) {
   return (<div className="sheet-cols">
     <div className="row" hidden={!show('resumen')}>
       <span className="muted">XP: {d.xp || 0}</span>
-      <input type="number" min="0" style={{ maxWidth: 90 }}
-             value={xpAdd || ''} placeholder="+XP"
-             aria-label={t('sheet.xpAmount')}
-             onChange={(e) => setXpAdd(+e.target.value)} />
-      <button disabled={!xpAdd} onClick={() => {
-        op('character.xp.add', { amount: xpAdd }); setXpAdd(0)
-      }}>+XP</button>
       {d.inspiration
         ? <span className="chip">✦ {t('sheet.inspiration')}
             <button aria-label={t('sheet.inspSpendAria')} onClick={async () => {
@@ -77,11 +70,15 @@ export default function TabResumen({ c }) {
               {derived.xp_to_next > 0 &&
                 ` · ${tf('sheet.xpToGo', { n: derived.xp_to_next })}`}</span>}
         </span>
-        <input type="number" min="1" value={amount}
-               onChange={(e) => setAmount(+e.target.value)}
+        {/* xpAdd propio: compartía `amount` con el input de daño de
+            PG — meter 500 de XP dejaba 500 en Daño */}
+        <input type="number" min="1" value={xpAdd || ''}
+               placeholder={t('sheet.xpAmount')}
+               onChange={(e) => setXpAdd(+e.target.value)}
                aria-label={t('sheet.xpAmount')} />
-        <button onClick={() =>
-          op('character.xp.add', { amount })}>+XP</button>
+        <button disabled={!xpAdd} onClick={() => {
+          op('character.xp.add', { amount: xpAdd }); setXpAdd(0)
+        }}>+XP</button>
         {derived?.next_level_xp != null &&
           (d.xp || 0) >= derived.next_level_xp && (
           <button className="primary" onClick={() =>

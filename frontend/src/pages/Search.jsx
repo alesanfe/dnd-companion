@@ -7,12 +7,24 @@ import EntityPreview from '../components/EntityPreview.jsx'
 import { trackTask } from '../metrics.js'
 
 /* el excerpt del FTS viene del JSON de la entidad (homebrew
-   incluido) — escapar SIEMPRE antes de marcar, o es XSS */
+   incluido) — escapar SIEMPRE antes de marcar, o es XSS.
+   Además se limpia: tags 5etools {@spell X} → X y se quita la
+   sintaxis {}/" del JSON (los corchetes [ ] son las marcas de
+   coincidencia del FTS, NO se tocan) */
 const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
     "'": '&#39;' }[ch]))
+const cleanExcerpt = (s) => String(s)
+  .replace(/\{@\w+\s+([^}|]+?)(?:\|[^}]*)?\}/g, '$1')
+  .replace(/\{@?\w+[^}]*\}/g, ' ')   // tag cortado por el snippet
+  .replace(/\s@\w+\b/g, ' ')         // resto de tag sin llaves
+  .replace(/[{}"]/g, ' ')
+  .replace(/(^|[,\[])\s*[A-Za-z_]+\s*:/g, '$1')   // claves JSON
+  .replace(/\s+,/g, ',')
+  .replace(/\s+/g, ' ')
+  .trim()
 const markExcerpt = (s) =>
-  esc(s).replace(/\[([^\]]+)\]/g, '<mark>$1</mark>')
+  esc(cleanExcerpt(s)).replace(/\[([^\]]+)\]/g, '<mark>$1</mark>')
 
 export default function Search() {
   const { t, tf } = useT()
@@ -81,7 +93,8 @@ export default function Search() {
     <main className="wide">
       <h1>{t('search.title')}</h1>
       <form onSubmit={go} className="row">
-        <input value={q} onChange={(e) => setQ(e.target.value)}
+        <input type="search" value={q}
+               onChange={(e) => setQ(e.target.value)}
                aria-label={t('search.title')}
                placeholder={t('search.placeholder')} autoFocus />
         <select value={type} onChange={(e) => setType(e.target.value)}

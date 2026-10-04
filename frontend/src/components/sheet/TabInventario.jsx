@@ -38,8 +38,12 @@ export default function TabInventario({ c }) {
                 aria-label={t('inv.coinAria')}>
           {['pp', 'gp', 'ep', 'sp', 'cp'].map((cc) => <option key={cc}>{cc}</option>)}
         </select>
-        <button className="heal" onClick={() => op('character.currency.earn', { [coin]: amount })}>+</button>
-        <button className="dmg" onClick={() => op('character.currency.spend', { [coin]: amount })}>-</button>
+        <button className="heal"
+                aria-label={tf('inv.earnAria', { n: amount, c: coin.toUpperCase() })}
+                onClick={() => op('character.currency.earn', { [coin]: amount })}>+</button>
+        <button className="dmg"
+                aria-label={tf('inv.spendAria', { n: amount, c: coin.toUpperCase() })}
+                onClick={() => op('character.currency.spend', { [coin]: amount })}>−</button>
         <details style={{ position: 'relative' }}>
           <summary className="muted" style={{ cursor: 'pointer' }}
                    title={t('inv.convertTitle')}

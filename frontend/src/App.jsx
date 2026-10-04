@@ -27,12 +27,20 @@ function MobileNav() {
   const { t } = useT()
   const [open, setOpen] = useState(false)
   const go = (to) => { setOpen(false); nav(to) }
-  // Esc cierra el menú del "+" — como cualquier popover
+  // Esc cierra el menú del "+" — como cualquier popover; tocar
+  // fuera también (antes quedaba abierto tapando el contenido)
   useEffect(() => {
     if (!open) return
     const onKey = (e) => { if (e.key === 'Escape') setOpen(false) }
+    const onTap = (e) => {
+      if (!e.target.closest('.mobile-nav')) setOpen(false)
+    }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('pointerdown', onTap)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('pointerdown', onTap)
+    }
   }, [open])
   return (
     <nav className="mobile-nav" aria-label={t('nav.create')}>

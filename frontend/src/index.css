@@ -95,6 +95,12 @@
   --radius: 6px;
 }
 [data-theme="hc"] button { color: #000; font-weight: 700; }
+/* los botones de texto (ghost, cabeceras colapsables) no tienen
+   fondo claro — negro sobre negro los hacía invisibles */
+[data-theme="hc"] button.ghost,
+[data-theme="hc"] button.csec-btn,
+[data-theme="hc"] [role="tab"],
+[data-theme="hc"] nav[role="tablist"] button { color: #fff; }
 [data-theme="hc"] .card { border: 2px solid #fff; }
 
 /* escala de texto */

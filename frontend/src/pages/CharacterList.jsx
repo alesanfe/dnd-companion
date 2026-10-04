@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import { api, errText } from '../api.js'
 import { loadJSON } from '../session.js'
 import { useT } from '../i18n.jsx'
@@ -30,10 +30,20 @@ export default function CharacterList() {
   const [archived, setArchived] = useState(() => loadSet(ARCH_KEY))
 
   const [camps, setCamps] = useState([])
+  const importRef = useRef(null)
 
   const load = () => api.listCharacters()
     .then((r) => setChars(r.characters))
     .catch((e) => setErr(errText(e, t)))
+
+  /* el FAB del nav móvil enlaza /characters?import=1 — sin esto el
+     enlace caía en la lista y el import quedaba a otro clic de
+     distancia */
+  const loc = useLocation()
+  useEffect(() => {
+    if (new URLSearchParams(loc.search).has('import'))
+      importRef.current?.click()
+  }, [loc.search])
 
   useEffect(() => {
     load()
@@ -189,7 +199,7 @@ export default function CharacterList() {
              minHeight: 44, padding: '0 1rem', borderRadius: 6,
              border: '1px solid var(--border)' }}>
           {t('charlist.import')}
-          <input type="file" accept=".json" hidden
+          <input ref={importRef} type="file" accept=".json" hidden
                  aria-label={t('charlist.import')}
                  onChange={async (e) => {
                    const f = e.target.files[0]

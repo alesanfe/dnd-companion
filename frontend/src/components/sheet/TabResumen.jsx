@@ -74,6 +74,7 @@ export default function TabResumen({ c }) {
             PG — meter 500 de XP dejaba 500 en Daño */}
         <input type="number" min="1" value={xpAdd || ''}
                placeholder={t('sheet.xpAmount')}
+               style={{ maxWidth: 124 }}
                onChange={(e) => setXpAdd(+e.target.value)}
                aria-label={t('sheet.xpAmount')} />
         <button disabled={!xpAdd} onClick={() => {
@@ -394,7 +395,7 @@ export default function TabResumen({ c }) {
         <input type="number" min="1" placeholder={t('sheet.rounds')}
                title={t('sheet.condDurTitle')}
                aria-label={t('sheet.condDurAria')}
-               style={{ maxWidth: 76 }}
+               style={{ maxWidth: 92 }}
                value={condRounds}
                onChange={(e) => setCondRounds(e.target.value)} />
         <button disabled={!newCond.trim()} onClick={() => {

@@ -1048,6 +1048,7 @@ es: {
   'hbm.actionName': 'Acción',
 
   'common.cancel': 'Cancelar', 'common.close': 'Cerrar',
+  'common.confirm': 'Confirmar', 'common.ok': 'Aceptar',
   'common.save': 'Guardar','common.loading': 'Cargando…', 'common.use': 'Usar',
   'nf.title': 'Página no encontrada',
   'nf.hint': 'La dirección no existe o el contenido se ha movido.',
@@ -2087,6 +2088,7 @@ en: {
   'hbm.actionName': 'Action',
 
   'common.cancel': 'Cancel', 'common.close': 'Close',
+  'common.confirm': 'Confirm', 'common.ok': 'OK',
   'common.save': 'Save','common.loading': 'Loading…', 'common.use': 'Use',
   'nf.title': 'Page not found',
   'nf.hint': 'This address does not exist or the content has moved.',

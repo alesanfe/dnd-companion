@@ -137,7 +137,9 @@ async function main() {
   // compendio filtrado por tipo spell + texto
   await page.goto(`${BASE}/search`, { waitUntil: 'networkidle' });
   const sel = page.locator('select').first();
-  await sel.selectOption({ label: 'spell' }).catch(() => {});
+  // el label es el traducido (conjuro) y el value el tipo inglés
+  await sel.selectOption({ value: 'spell' })
+    .catch(() => sel.selectOption('conjuro').catch(() => {}));
   await page.locator('input[type="text"], input[type="search"], input:not([type])')
     .first().fill('fireball');
   await page.getByRole('button', { name: /buscar|search/i }).click();
@@ -225,8 +227,15 @@ async function main() {
   await page.waitForTimeout(800);
   await page.screenshot({ path: `${OUT}/wizard-step3.png` });
   console.log('ok wizard-step3');
-  await pick(page, /^Human/);
-  await pick(page, /^Soldier/);
+  // especie y trasfondo son SearchableSelect (input filtro + select)
+  const sels = page.locator('select');
+  const filtros = page.getByLabel(/filtrar opciones|filter options/i);
+  await filtros.nth(0).fill('Human');
+  await page.waitForTimeout(300);
+  await sels.nth(0).selectOption({ index: 1 });
+  await filtros.nth(1).fill('Soldier');
+  await page.waitForTimeout(300);
+  await sels.nth(1).selectOption({ index: 1 });
   await page.getByRole('button', { name: /siguiente|next/i }).click();
   await page.waitForTimeout(800);
   await page.screenshot({ path: `${OUT}/wizard-step4.png` });

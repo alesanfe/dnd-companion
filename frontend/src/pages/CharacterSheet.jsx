@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useParams, useSearchParams }
+import { Link, useParams, useSearchParams }
   from 'react-router-dom'
 import { api, errText } from '../api.js'
 import { useT } from '../i18n.jsx'
@@ -299,7 +299,13 @@ export default function CharacterSheet() {
     ...(d0.classes || []).flatMap((cl) => [cl.class_id, cl.subclass_id]),
     d0.species_id, d0.background_id].filter(Boolean))
 
-  if (err && !char) return <main><p className="error" role="alert">{err}</p></main>
+  if (err && !char) return (
+    <main>
+      <section className="card" style={{ maxWidth: 460 }}>
+        <p className="error" role="alert">{err}</p>
+        <Link to="/characters">{t('nav.sheets')} →</Link>
+      </section>
+    </main>)
   if (!char) return (
     <main className="wide" aria-busy="true">
       <p role="status">{t('common.loading')}</p>

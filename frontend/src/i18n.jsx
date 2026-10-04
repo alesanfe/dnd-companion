@@ -152,6 +152,7 @@ es: {
   'search.homebrew': '+ Contenido homebrew',
   'search.assistant': 'Asistente de reglas',
   'search.compare': 'Comparar',
+  'search.compareEmpty': 'Sin campos comparables — estas entidades no tienen datos estructurados.',
 
   'camp.title': 'Campañas','camp.name': 'Nombre', 'camp.invite': 'Código de invitación',
   'camp.join': 'Unirse', 'camp.open': 'Abrir',
@@ -1196,6 +1197,7 @@ en: {
   'search.homebrew': '+ Homebrew content',
   'search.assistant': 'Rules assistant',
   'search.compare': 'Compare',
+  'search.compareEmpty': 'No comparable fields — these entities have no structured data.',
 
   'camp.title': 'Campaigns','camp.name': 'Name', 'camp.invite': 'Invite code',
   'camp.join': 'Join', 'camp.open': 'Open',

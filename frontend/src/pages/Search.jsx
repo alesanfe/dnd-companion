@@ -18,6 +18,7 @@ const cleanExcerpt = (s) => String(s)
   .replace(/\{@\w+\s+([^}|]+?)(?:\|[^}]*)?\}/g, '$1')
   .replace(/\{@?\w+[^}]*\}/g, ' ')   // tag cortado por el snippet
   .replace(/\s@\w+\b/g, ' ')         // resto de tag sin llaves
+  .replace(/#\w+/g, '')              // sufijo de referencia: spell#c
   .replace(/[{}"]/g, ' ')
   .replace(/(^|[,\[])\s*[A-Za-z_]+\s*:/g, '$1')   // claves JSON
   .replace(/\s+,/g, ',')
@@ -265,6 +266,9 @@ function Compare({ ids }) {
               {v.name}</Link></th>)}
         </tr></thead>
         <tbody>
+          {keys.length === 0 && (
+            <tr><td colSpan={views.length + 1} className="muted">
+              {t('search.compareEmpty')}</td></tr>)}
           {keys.map((k) => (
             <tr key={k}>
               <td className="muted" style={{ paddingRight: '1rem' }}>{k}</td>

@@ -83,6 +83,19 @@ export function useCampaignSocket(char, id, notify, load, sinks) {
 /** Recorrido de primera visita — una vez, salta con Saltar. */
 export function SheetTour({ step, onStep }) {
   const { t } = useT()
+  useEffect(() => {
+    if (step === null) return undefined
+    // Escape cierra el tour igual que Saltar — los diálogos fijos
+    // deben tener salida por teclado (WCAG 2.1.2)
+    const esc = (e) => {
+      if (e.key === 'Escape') {
+        localStorage.setItem('dnd-tour-done', '1')
+        onStep(null)
+      }
+    }
+    window.addEventListener('keydown', esc)
+    return () => window.removeEventListener('keydown', esc)
+  }, [step])
   if (step === null) return null
   const last = step === TOUR_KEYS.length - 1
   const done = () => {

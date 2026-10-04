@@ -1211,6 +1211,18 @@ details.adv[open] > summary { border-color: var(--accent); color: var(--fg); }
   gap: 0.5rem;
 }
 .tour-nav .step { font-size: 0.75rem; }
+/* móvil: el coachmark fijo de 320px cubría media pantalla y el nav
+   inferior — va a todo lo ancho por encima de la barra, compacto
+   y con tope de altura */
+@media (max-width: 700px) {
+  .tour {
+    left: .6rem; right: .6rem; width: auto;
+    bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+    padding: .7rem;
+    max-height: 42vh; overflow-y: auto;
+  }
+  .tour p { font-size: .84rem; }
+}
 
 /* scrollbars sutiles */
 ::-webkit-scrollbar { width: 10px; height: 10px; }

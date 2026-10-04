@@ -875,7 +875,7 @@ export default function MapBoard({ campaign, size = CELL,
 
   return (
     <div className="mapboard">
-      <div className="row" style={{ flexWrap: 'wrap' }}>
+      <div className="row map-tools" style={{ flexWrap: 'wrap' }}>
         <select value={curId ?? ''} aria-label={t('map.picker')}
                 onChange={(e) => setCurId(e.target.value)}>
           {maps.map((m) => (

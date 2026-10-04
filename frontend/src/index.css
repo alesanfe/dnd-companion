@@ -966,6 +966,20 @@ main.dm { max-width: 1440px; }
   background: var(--border);
 }
 
+/* toolbar del mapa en móvil: 10+ controles envueltos empujaban el
+   tablero bajo el fold — fila única con scroll horizontal como
+   las pestañas de la ficha */
+@media (max-width: 999px) {
+  .map-tools {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .map-tools > * { flex-shrink: 0; }
+}
+
 .purse { flex-wrap: wrap; }
 .coin {
   font-family: ui-monospace, monospace;

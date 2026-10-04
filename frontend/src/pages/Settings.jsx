@@ -473,7 +473,7 @@ function SyncConflicts() {
   return (
     <div role="alert">
       <strong>⚠ {tf('set.conflicts', { n: rows.length })}
-      </strong>
+      </strong>{' '}
       <span className="muted">
         {t('set.conflictsHint')}</span>
       <ul style={{ margin: '.3rem 0', paddingLeft: '1rem' }}>
@@ -481,8 +481,8 @@ function SyncConflicts() {
           <li key={r.operation_id} className="row">
             {r.entity_kind === 'character' ? (
               <Link to={`/character/${r.entity_id}/actividad`}>
-                {r.operation_type}</Link>
-            ) : <span>{r.operation_type}</span>}
+                {opLabel(t, r.operation_type)}</Link>
+            ) : <span>{opLabel(t, r.operation_type)}</span>}
             <span className="muted"
                   title={JSON.stringify(r.payload)}>
               {' '}· {r.timestamp?.slice(11, 19)}

@@ -783,6 +783,16 @@ main.dm { max-width: 1440px; }
     background: var(--card);
   }
 }
+/* móvil: píldoras compactas — 5 controles a 44px+gap comían ~1/3 de
+   pantalla; sigue siendo tocable (~40px) y cabe en menos filas */
+@media (max-width: 999px) {
+  .dm-side nav button {
+    padding: .4rem .6rem; font-size: .85rem; min-height: 40px;
+  }
+  .dm-side > button.ghost {
+    font-size: .85rem; padding: .35rem .6rem; min-height: 40px;
+  }
+}
 @media (min-width: 1000px) {
   .dm-combat-grid {
     display: grid;

@@ -50,7 +50,7 @@ export default function DmCampana({ c }) {
           <option value="quest">{t('camp.kind.quest')}</option>
           <option value="faction">{t('camp.kind.faction')}</option>
           <option value="scene">{t('camp.kind.scene')}</option>
-          <option value="shop">{t('camp.k.shop')}</option>
+          <option value="shop">{t('camp.kind.shop')}</option>
           <option value="note">{t('camp.kind.note')}</option>
         </select>
         <input value={entForm.name} placeholder={t('camp.name')}
@@ -114,7 +114,9 @@ export default function DmCampana({ c }) {
         .map((e) => (
         <div key={e.id} id={`ent-${e.id}`}>
         <div className="row">
-          <span className="muted">{e.kind}</span>
+          <span className="muted">{(() => {
+            const v = t(`camp.kind.${e.kind}`)
+            return v === `camp.kind.${e.kind}` ? e.kind : v })()}</span>
           <span style={{ flex: 1 }}>{e.name}</span>
           {!playerView && (
             <>

@@ -47,21 +47,37 @@ export default function Wizard() {
   const [err, setErr] = useState(null)
   const [busy, setBusy] = useState(false)
 
+  // nombre legible de la opción elegida (las listas traen .name);
+  // fallback: slug humanizado por si la lista aún no cargó
+  const disp = (list, id) =>
+    id ? (list.find((o) => o.id === id)?.name ??
+          id.split(':').pop().split('|')[0].replace(/-/g, ' '))
+       : '—'
+
+  // con all_sources el corpus puede traer cientos de opciones
+  // homebrew — SRD/Open5e primero para que lo oficial no quede
+  // enterrado alfabéticamente
+  const officialFirst = (opts = []) => [...opts].sort((a, b) => {
+    const off = (o) => /srd-|open5e|5e-bits/.test(o.source_id || '') ? 0 : 1
+    return off(a) - off(b) || (a.name || '').localeCompare(b.name || '')
+  })
+
   useEffect(() => {
     // all_sources: ofrece también homebrew/UA/terceros importados
     api.contentOptions('class', ruleset, true)
-      .then((r) => setClasses(r.options)).catch((e) => setErr(errText(e, t)))
+      .then((r) => setClasses(officialFirst(r.options)))
+      .catch((e) => setErr(errText(e, t)))
     // 2024 usa 'species'; 2014 usa 'race'; 'mixed' trae ambos
     Promise.all([
       api.contentOptions('race', ruleset, true),
       api.contentOptions('species', ruleset, true),
     ]).then(([a, b]) => {
       const seen = new Set()
-      setSpecies([...a.options, ...b.options]
-        .filter((o) => !seen.has(o.id) && seen.add(o.id)))
+      setSpecies(officialFirst([...a.options, ...b.options]
+        .filter((o) => !seen.has(o.id) && seen.add(o.id))))
     }).catch(() => {})
     api.contentOptions('background', ruleset, true)
-      .then((r) => setBackgrounds(r.options)).catch(() => {})
+      .then((r) => setBackgrounds(officialFirst(r.options))).catch(() => {})
   }, [ruleset])
 
   // borrador persistente: salir del wizard o cerrar la pestaña no
@@ -265,10 +281,9 @@ export default function Wizard() {
           <h2>5. {t('wiz.summary')}</h2>
           <p><strong>{name}</strong></p>
           <p className="muted">
-            {[classId, speciesId, backgroundId]
-              .filter(Boolean).map((x) =>
-                x.split(':').pop().split('|')[0].replace(/-/g, ' '))
-              .join(' · ')}
+            {[disp(classes, classId), disp(species, speciesId),
+              disp(backgrounds, backgroundId)]
+              .filter((x) => x !== '—').join(' · ')}
             {' · '}
             {t(`ruleset.${ruleset}`)}
           </p>
@@ -304,14 +319,11 @@ export default function Wizard() {
           {t(`ruleset.${ruleset}`)}</p>
         <dl>
           <dt>{t('wiz.class')}</dt>
-          <dd>{classId ? classId.split(':').pop().split('|')[0]
-              .replace(/-/g, ' ') : '—'}</dd>
+          <dd>{disp(classes, classId)}</dd>
           <dt>{t('wiz.species')}</dt>
-          <dd>{speciesId ? speciesId.split(':').pop().split('|')[0]
-              .replace(/-/g, ' ') : '—'}</dd>
+          <dd>{disp(species, speciesId)}</dd>
           <dt>{t('wiz.background')}</dt>
-          <dd>{backgroundId ? backgroundId.split(':').pop().split('|')[0]
-              .replace(/-/g, ' ') : '—'}</dd>
+          <dd>{disp(backgrounds, backgroundId)}</dd>
         </dl>
         {Object.values(abilities).some(Boolean) && (
           <p className="muted">

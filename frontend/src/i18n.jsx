@@ -620,7 +620,9 @@ es: {
 
   'camp.kind.location': 'Lugar', 'camp.kind.quest': 'Misión',
   'camp.kind.faction': 'Facción', 'camp.kind.scene': 'Escena',
-  'camp.kind.note': 'Nota',
+  'camp.kind.note': 'Nota', 'camp.kind.npc': 'PNJ',
+  'camp.kind.map': 'Mapa', 'camp.kind.shop': 'Tienda',
+  'camp.kind.event': 'Evento',
   'camp.monstersPh': 'monstruos: goblin, orc',
   'camp.createPrivate': 'Crear (privado)',
   'camp.loadList': 'Cargar lista',
@@ -1662,7 +1664,9 @@ en: {
 
   'camp.kind.location': 'Location', 'camp.kind.quest': 'Quest',
   'camp.kind.faction': 'Faction', 'camp.kind.scene': 'Scene',
-  'camp.kind.note': 'Note',
+  'camp.kind.note': 'Note', 'camp.kind.npc': 'NPC',
+  'camp.kind.map': 'Map', 'camp.kind.shop': 'Shop',
+  'camp.kind.event': 'Event',
   'camp.monstersPh': 'monsters: goblin, orc',
   'camp.createPrivate': 'Create (private)',
   'camp.loadList': 'Load list',

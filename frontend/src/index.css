@@ -297,6 +297,7 @@ input, select, textarea {
   padding: 0.6rem 0.75rem;
 }
 input { flex: 1; min-width: 0; }
+textarea { display: block; width: 100%; }
 input[type="number"] { max-width: 90px; }
 input[type="checkbox"] { flex: none; width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
 input[type="file"] { flex: none; }

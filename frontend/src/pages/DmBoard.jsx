@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api, errText } from '../api.js'
 import { currentUser } from '../session.js'
 import { campaignSocket } from '../ws.js'
@@ -13,6 +14,7 @@ import DmMapa from '../components/dm/DmMapa.jsx'
 export default function DmBoard() {
   const { t, tf } = useT()
   const [campaign, setCampaign] = useState(null)
+  const [campPick, setCampPick] = useState(null)  // selector si no hay ninguna abierta
   const [campName, setCampName] = useState('')
   const [combat, setCombat] = useState(null)   // {id, version, combat}
   const combatRef = useRef(null)              // para el handler WS
@@ -159,13 +161,18 @@ export default function DmBoard() {
     // escriben/leen así) — el id en crudo rompía la tarjeta de
     // "continuar" del Dashboard y viceversa
     const raw = localStorage.getItem('dnd-last-campaign')
-    if (!raw) return
+    // sin campaña abierta → ofrecer selector (la página entera
+    // quedaba en blanco: las pestañas devuelven null sin campaign)
+    const pick = () => api.listCampaigns()
+      .then((r) => setCampPick(r.campaigns || []))
+      .catch(() => setCampPick([]))
+    if (!raw) { pick(); return }
     let last = null
     try { last = JSON.parse(raw)?.id } catch { last = raw }
-    if (!last) return
+    if (!last) { pick(); return }
     api.getCampaign(last)
       .then(setCampaign)
-      .catch(() => localStorage.removeItem('dnd-last-campaign'))
+      .catch(() => { localStorage.removeItem('dnd-last-campaign'); pick() })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -253,6 +260,31 @@ export default function DmBoard() {
     newCond, setNewCond, condRounds, setCondRounds,
     areaDmg, setAreaDmg, areaAmt, setAreaAmt,
     areaType, setAreaType, areaResults, setAreaResults,
+  }
+
+  /* Sin campaña abierta: selector en vez de lienzo vacío — los
+     componentes de pestaña devuelven null sin campaign y antes la
+     página era un callejón sin salida tras borrar el storage. */
+  if (!campaign) {
+    return (
+      <main className="dm">
+        <h1>{t('nav.dm')}</h1>
+        {campPick === null
+          ? <p className="muted" role="status">{t('common.loading')}</p>
+          : (
+          <section className="card" style={{ maxWidth: 460 }}>
+            <h2>{t('dm.pickCampaign')}</h2>
+            {campPick.length === 0 && (
+              <p className="muted">{t('dm.noCampaigns')}{' '}
+                <Link to="/campaigns">{t('nav.campaigns')} →</Link></p>)}
+            {campPick.map((cp) => (
+              <div key={cp.id} className="row">
+                <span style={{ flex: 1 }}>{cp.name}</span>
+                <button onClick={() => setCampaign(cp)}>
+                  {t('dm.openBoard')}</button>
+              </div>))}
+          </section>)}
+      </main>)
   }
 
   return (

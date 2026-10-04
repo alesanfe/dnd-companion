@@ -108,7 +108,8 @@ export default function CharacterList() {
     return (
       <div key={c.id} className="card char-card">
         <div className="row" style={{ marginTop: 0, flexWrap: 'nowrap',
-                                      minWidth: 0 }}>
+                                      minWidth: 0,
+                                      alignItems: 'flex-start' }}>
           <button className="ghost" style={{ padding: '0 .3rem' }}
                   aria-pressed={favs.has(c.id)}
                   aria-label={tf('clist.favAria', { name: c.name })}
@@ -124,8 +125,6 @@ export default function CharacterList() {
             {!portrait && (c.name || '?')[0].toUpperCase()}</span>
           <Link to={`/character/${c.id}`}
                 style={{ flex: 1, fontSize: '1.1rem', minWidth: 0,
-                         overflow: 'hidden', textOverflow: 'ellipsis',
-                         whiteSpace: 'nowrap',
                          fontWeight: 700, textDecoration: 'none',
                          color: 'inherit' }}>
             {c.name}</Link>

@@ -595,7 +595,8 @@ es: {
   'com.amount': 'Cantidad',
   'com.xpDetail': '{raw} XP brutos · {adj} ajustados',
   'com.monsterPh': 'Buscar monstruo (goblin, orc…)',
-  'com.npcPh': 'NPC manual',
+  'com.npcPh': 'NPC manual', 'com.npcHpLbl': 'PG', 'com.npcInitLbl': 'init.',
+  'com.levelsLbl': 'Niveles del grupo', 'com.crsLbl': 'CRs de monstruos',
   'com.dmgUntyped': 'daño sin tipo',
   'com.resistNote': 'se aplica resistencia/inmunidad/vulnerabilidad del stat block',
   'com.turn': 'turno',
@@ -632,6 +633,9 @@ es: {
   'camp.presentClose': 'cerrar presentación',
 
   'camps.player': 'Jugador',
+  'dm.pickCampaign': 'Elige una campaña para la mesa',
+  'dm.noCampaigns': 'No hay campañas todavía — crea una primero:',
+  'dm.openBoard': 'Abrir mesa',
   'camps.coDm': 'Co-DM', 'camps.guest': 'Invitado', 'camps.spectator': 'Espectador',
 
   'cb.rollTag': 'tirada',
@@ -1618,7 +1622,8 @@ en: {
   'com.amount': 'Amount',
   'com.xpDetail': '{raw} raw XP · {adj} adjusted',
   'com.monsterPh': 'Search monster (goblin, orc…)',
-  'com.npcPh': 'Manual NPC',
+  'com.npcPh': 'Manual NPC', 'com.npcHpLbl': 'HP', 'com.npcInitLbl': 'init.',
+  'com.levelsLbl': 'Party levels', 'com.crsLbl': 'Monster CRs',
   'com.dmgUntyped': 'untyped damage',
   'com.resistNote': 'applies stat block resistance/immunity/vulnerability',
   'com.turn': 'turn',
@@ -1655,6 +1660,9 @@ en: {
   'camp.presentClose': 'close presentation',
 
   'camps.player': 'Player',
+  'dm.pickCampaign': 'Choose a campaign for the table',
+  'dm.noCampaigns': 'No campaigns yet — create one first:',
+  'dm.openBoard': 'Open table',
   'camps.coDm': 'Co-DM', 'camps.guest': 'Guest', 'camps.spectator': 'Spectator',
 
   'cb.rollTag': 'roll',

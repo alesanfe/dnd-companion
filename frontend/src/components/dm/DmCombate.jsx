@@ -91,12 +91,15 @@ export default function DmCombate({ c }) {
     <section className="card" hidden={!show}>
       <h2>{t('dm.difficulty')}</h2>
       <div className="row">
-        <input value={partyLevels} placeholder={t('com.levelsPh')}
-               aria-label={t('com.levelsPh')}
-               onChange={(e) => setPartyLevels(e.target.value)} />
-        <input value={crs} placeholder={t('com.crsPh')}
-               aria-label={t('com.crsPh')}
-               onChange={(e) => setCrs(e.target.value)} />
+        {/* labels visibles — rellenados, "3,3,3,3" no dice qué es */}
+        <label className="muted">{t('com.levelsLbl')}
+          <input value={partyLevels} placeholder={t('com.levelsPh')}
+                 onChange={(e) => setPartyLevels(e.target.value)} />
+        </label>
+        <label className="muted">{t('com.crsLbl')}
+          <input value={crs} placeholder={t('com.crsPh')}
+                 onChange={(e) => setCrs(e.target.value)} />
+        </label>
         <button onClick={async () => {
           const lv = partyLevels.split(',').map((x) => +x.trim()).filter(Boolean)
           const cr = crs.split(',').map((x) => x.trim()).filter(Boolean)
@@ -338,13 +341,18 @@ export default function DmCombate({ c }) {
           <div className="row">
             <input value={manual.name} placeholder={t('com.npcPh')}
                    aria-label={t('com.npcPh')}
+                   style={{ minWidth: 120 }}
                    onChange={(e) => setManual({ ...manual, name: e.target.value })} />
-            <input type="number" style={{ maxWidth: 70 }} value={manual.hp_max}
-                   aria-label={t('map.hpMaxAria') || 'HP max'}
-                   onChange={(e) => setManual({ ...manual, hp_max: +e.target.value })} />
-            <input type="number" style={{ maxWidth: 70 }} value={manual.initiative}
-                   aria-label={t('dm.initiative')}
-                   onChange={(e) => setManual({ ...manual, initiative: +e.target.value })} />
+            <label className="muted">{t('com.npcHpLbl')}
+              <input type="number" style={{ maxWidth: 70 }}
+                     value={manual.hp_max}
+                     onChange={(e) => setManual({ ...manual, hp_max: +e.target.value })} />
+            </label>
+            <label className="muted">{t('com.npcInitLbl')}
+              <input type="number" style={{ maxWidth: 70 }}
+                     value={manual.initiative}
+                     onChange={(e) => setManual({ ...manual, initiative: +e.target.value })} />
+            </label>
             <button disabled={!manual.name}
                     onClick={() => cop('combatant.add', {
                       name: manual.name, hp_max: manual.hp_max,
@@ -432,6 +440,7 @@ export default function DmCombate({ c }) {
               <input list="dm-conds" value={newCond}
                      placeholder={t('sheet.condPh')}
                      aria-label={t('com.condAria2')}
+                     style={{ flex: 1, minWidth: 130 }}
                      onChange={(e) => setNewCond(e.target.value)} />
               <input type="number" min="1" placeholder={t('sheet.rounds')}
                      title={t('sheet.condDurTitle')}

@@ -88,8 +88,6 @@ const SHOTS = [
   ['character-features', `/character/${CHAR_2024}/rasgos`],
   ['character-backstory', `/character/${CHAR_2024}/historia`],
   ['character-activity', `/character/${CHAR_2024}/actividad`],
-  // alias legado: el PNG se llamó "history" pero muestra Actividad
-  ['character-history', `/character/${CHAR_2024}/actividad`],
   ['wizard', '/new'],
   ['settings', '/settings'],
   ['settings-login', '/settings'],

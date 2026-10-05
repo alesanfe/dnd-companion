@@ -119,14 +119,20 @@ export default function CharacterList() {
     const portrait = localStorage.getItem(`dnd-portrait-${c.id}`)
     return (
       <div key={c.id} className="card char-card">
-        <div className="row" style={{ marginTop: 0, flexWrap: 'nowrap',
-                                      minWidth: 0,
-                                      alignItems: 'flex-start' }}>
+        <div className="card-actions">
           <button className="ghost" style={{ padding: '0 .3rem' }}
                   aria-pressed={favs.has(c.id)}
                   aria-label={tf('clist.favAria', { name: c.name })}
                   onClick={() => toggle(favs, setFavs, FAVS_KEY, c.id)}>
             {favs.has(c.id) ? '★' : '☆'}</button>
+          <button className="ghost"
+                  aria-label={tf('clist.menuAria', { name: c.name })}
+                  onClick={() => setMenu(menu === c.id ? null : c.id)}>
+            ⋮</button>
+        </div>
+        <div className="row" style={{ marginTop: 0, flexWrap: 'nowrap',
+                                      minWidth: 0, paddingRight: '3.4rem',
+                                      alignItems: 'flex-start' }}>
           <span className="avatar sm" aria-hidden="true"
                 style={portrait
                   ? { backgroundImage: `url(${portrait})`,
@@ -135,15 +141,11 @@ export default function CharacterList() {
                       `hsl(${avatarHue(c.class_names?.[0] || c.name)
                       } 45% 42%)` }}>
             {!portrait && (c.name || '?')[0].toUpperCase()}</span>
-          <Link to={`/character/${c.id}`}
+          <Link to={`/character/${c.id}`} title={c.name}
                 style={{ flex: 1, fontSize: '1.1rem', minWidth: 0,
                          fontWeight: 700, textDecoration: 'none',
-                         color: 'inherit' }}>
+                         color: 'inherit', overflowWrap: 'break-word' }}>
             {c.name}</Link>
-          <button className="ghost"
-                  aria-label={tf('clist.menuAria', { name: c.name })}
-                  onClick={() => setMenu(menu === c.id ? null : c.id)}>
-            ⋮</button>
         </div>
         <p className="muted" style={{ margin: '0 0 .4rem' }}>
           {(c.class_names || []).join(' / ') || t('clist.noClass')}

@@ -680,11 +680,20 @@ main.dm { max-width: 1440px; }
 /* biblioteca de personajes */
 .char-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  /* 250px: con las acciones en esquina el nombre dispone de ~130px;
+     a 230 "Vientomusgo" (una sola palabra) se partía igualmente */
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 0.8rem;
 }
-.char-card { margin-bottom: 0; transition: border-color .15s ease; }
+.char-card { margin-bottom: 0; transition: border-color .15s ease;
+             position: relative; }
 .char-card:hover { border-color: var(--border-strong); }
+/* acciones de la ficha en la esquina — inline robaban ~80px al
+   nombre y los nombres largos se partían a mitad de palabra */
+.char-card .card-actions {
+  position: absolute; top: .5rem; right: .5rem;
+  display: flex; gap: .1rem;
+}
 .hp-bar {
   height: 8px;
   border-radius: 4px;

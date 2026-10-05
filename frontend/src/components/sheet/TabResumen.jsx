@@ -62,7 +62,9 @@ export default function TabResumen({ c }) {
             (d.xp || 0) / derived.next_level_xp * 100))}%` }} />
         </div>)}
       <div className="row">
-        <span>XP {d.xp || 0}
+        {/* flex:1+minWidth:0 — el texto envuelve y cede el hueco al
+            input; sin él el span empujaba y el input quedaba ~50px */}
+        <span style={{ flex: 1, minWidth: 0 }}>XP {d.xp || 0}
           {derived?.next_level_xp &&
             <span className="muted"> / {derived.next_level_xp}
               {' '}{tf('sheet.forLevel', { n: (d.classes || [])
@@ -74,7 +76,7 @@ export default function TabResumen({ c }) {
             PG — meter 500 de XP dejaba 500 en Daño */}
         <input type="number" min="1" value={xpAdd || ''}
                placeholder={t('sheet.xpAmount')}
-               style={{ maxWidth: 124 }}
+               style={{ maxWidth: 124, minWidth: 96 }}
                onChange={(e) => setXpAdd(+e.target.value)}
                aria-label={t('sheet.xpAmount')} />
         <button disabled={!xpAdd} onClick={() => {

@@ -16,7 +16,7 @@ PIPE_DIR     := data-pipeline
         test test-backend test-frontend test-all compile build preview \
         seed shots \
         import-srd-2014 import-srd-2024 import-open5e import-5etools \
-        import-foundry import-file \
+        import-foundry import-dnddata import-file \
         docker-up docker-up-d docker-down docker-logs \
         health clean
 
@@ -99,6 +99,9 @@ import-5etools: ## Importa 5etools local — uso: make import-5etools PATH=<clon
 
 import-foundry: ## Importa packs Foundry — uso: make import-foundry PATH=<clone>/packs/_source
 	cd $(PIPE_DIR) && $(PY) -m pipeline.cli import-foundry --path $(PATH)
+
+import-dnddata: ## Importa nick-aschenbach/dnd-data (NON-FREE) — uso: make import-dnddata PATH=<clone>/data RULESET=dnd5e-2014
+	cd $(PIPE_DIR) && $(PY) -m pipeline.cli import-dnddata $(if $(PATH),--path $(PATH),) --ruleset $(or $(RULESET),dnd5e-2014)
 
 import-file: ## Importa un JSON propio — uso: make import-file PATH=<f> LICENSE=<lic> TYPE=<t>
 	cd $(PIPE_DIR) && $(PY) -m pipeline.cli import-file --path $(PATH) --license $(LICENSE) --type $(TYPE)

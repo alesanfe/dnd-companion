@@ -1,0 +1,42 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Backend — sintaxis + tests
+        run: |
+          cd backend
+          pip install -e .[dev]
+          python -m compileall app ../data-pipeline
+          pytest tests -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Frontend — test + build
+        run: |
+          cd frontend
+          npm ci
+          npm test
+          npm run build
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publicar release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

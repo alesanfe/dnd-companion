@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, errText } from '../api.js'
-import { loadJSON } from '../session.js'
+import { loadJSON } from '../lib/session.js'
 import { useT, etypeLabel } from '../i18n.jsx'
 import EntityPreview from '../components/EntityPreview.jsx'
-import { trackTask } from '../metrics.js'
+import { trackTask } from '../lib/metrics.js'
 
 /* el excerpt del FTS viene del JSON de la entidad (homebrew
    incluido) — escapar SIEMPRE antes de marcar, o es XSS.

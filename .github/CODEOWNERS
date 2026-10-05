@@ -1,0 +1,12 @@
+# Propietarios por área — sustituir @owner por el mantenedor real.
+
+# Por defecto todo es del mantenedor
+*                                    @owner
+
+# Áreas críticas: revisión obligatoria de quien toque
+/backend/app/                        @owner
+/backend/pyproject.toml              @owner
+/frontend/src/                       @owner
+/data-pipeline/                      @owner
+/.github/workflows/                  @owner
+/docker-compose.yml                  @owner

@@ -1,5 +1,5 @@
 import { SHEET_TABS } from './data.js'
-import { onTabsKeyDown } from '../../a11y.js'
+import { onTabsKeyDown } from '../../lib/a11y.js'
 
 // cabecera pegajosa: vitales a mano + config del HUD + nav de pestañas
 // — extraída de pages/CharacterSheet.jsx (AU-22)

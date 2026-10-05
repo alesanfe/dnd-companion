@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { api } from '../api.js'
-import { pendingOps } from '../db.js'
-import { currentUser, clearAuth, getToken } from '../session.js'
+import { pendingOps } from '../lib/db.js'
+import { currentUser, clearAuth, getToken } from '../lib/session.js'
 import { useT } from '../i18n.jsx'
 
 export default function Header() {

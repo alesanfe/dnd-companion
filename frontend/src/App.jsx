@@ -7,7 +7,7 @@ import ErrorBoundary from './components/ErrorBoundary.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import CharacterList from './pages/CharacterList.jsx'
 import { useT } from './i18n.jsx'
-import { trackPage } from './metrics.js'
+import { trackPage } from './lib/metrics.js'
 
 // code-splitting: la ficha y las pantallas de DM son la mitad del
 // bundle — se cargan bajo demanda al navegar

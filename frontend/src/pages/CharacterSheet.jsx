@@ -105,13 +105,13 @@ export default function CharacterSheet() {
     applyChar(c)
     // caché offline: la tabla char_cache existía pero nadie escribía
     // — sin ella, recargar la ficha sin conexión moría en el GET
-    import('../db.js').then(({ db }) =>
+    import('../lib/db.js').then(({ db }) =>
       db.char_cache.put({ id, updated_at: Date.now(), char: c }))
       .catch(() => {})
   }).catch(async (e) => {
     // sin red → última versión cacheada; las ops que haga el jugador
     // encima ya van encoladas por applyOp
-    const cached = await import('../db.js')
+    const cached = await import('../lib/db.js')
       .then(({ db }) => db.char_cache.get(id)).catch(() => null)
     if (cached?.char) applyChar(cached.char)
     else setErr(errText(e, t))

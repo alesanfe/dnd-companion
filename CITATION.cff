@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "Si usas este software, cítalo así."
+type: software
+title: "D&D Companion"
+abstract: "Hojas de personaje D&D 5e (2014/2024) con motor de reglas
+  declarativo, VTT con mapa y combate, y herramientas de DM.
+  FastAPI + React PWA."
+authors:
+  - family-names: "alesanfe"
+    given-names: ""
+repository-code: "https://github.com/alesanfe/dnd-companion"
+license: MIT

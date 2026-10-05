@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api, errText } from '../api.js'
-import { loadJSON } from '../session.js'
+import { loadJSON } from '../lib/session.js'
 import { useT, etypeLabel } from '../i18n.jsx'
 import { useDialogs } from '../components/ui/Dialogs.jsx'
 

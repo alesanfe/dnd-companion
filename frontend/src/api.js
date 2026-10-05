@@ -1,6 +1,6 @@
-import { enqueueOp, pendingOps, markOp, pruneOps } from './db.js'
-import { getToken, currentUser } from './session.js'
-import { trackOp } from './metrics.js'
+import { enqueueOp, pendingOps, markOp, pruneOps } from './lib/db.js'
+import { getToken, currentUser } from './lib/session.js'
+import { trackOp } from './lib/metrics.js'
 
 const CLIENT_ID = crypto.randomUUID()
 

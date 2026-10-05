@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Regenera las capturas de docs/assets/ contra la app en marcha.
+ * Regenera las capturas de docs/assets/screenshots/ contra la app en marcha.
  *
  * Uso:
  *   npm i -g playwright   # o npx playwright
@@ -15,12 +15,12 @@
  * temas (claro/sepia/alto contraste/dislexia/print), estados con
  * sesión iniciada (usuario demo auto-registrado), pasos del wizard,
  * errores, diálogos del mapa, vistas móviles y el barrido
- * responsive de docs/assets/resp/.
+ * responsive de docs/assets/screenshots/resp/.
  */
 import { chromium } from 'playwright';
 
 const BASE = process.env.BASE_URL || 'http://localhost:5173';
-const OUT = new URL('../docs/assets/', import.meta.url).pathname
+const OUT = new URL('../docs/assets/screenshots/', import.meta.url).pathname
   .replace(/^\/([A-Z]:)/, '$1');
 const CAMPAIGN_ID = process.env.CAMPAIGN_ID ||
   '2575ee25263c4e6d986927c12e13e6c8';
@@ -352,7 +352,7 @@ async function main() {
   console.log('ok wizard-390-class');
   await mctx.close();
 
-  // barrido responsive de docs/assets/resp/
+  // barrido responsive de docs/assets/screenshots/resp/
   const RESP_PAGES = [
     ['home', '/'],
     ['compendium', '/search'],

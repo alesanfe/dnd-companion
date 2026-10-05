@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, errText } from '../api.js'
 import { useT } from '../i18n.jsx'
-import { trackTask } from '../metrics.js'
+import { trackTask } from '../lib/metrics.js'
 
 const ABILITIES = ['str', 'dex', 'con', 'int', 'wis', 'cha']
 const STANDARD_ARRAY = [15, 14, 13, 12, 10, 8]

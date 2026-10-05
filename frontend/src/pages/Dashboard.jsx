@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
-import { currentUser, loadJSON } from '../session.js'
+import { currentUser, loadJSON } from '../lib/session.js'
 import { useT, opLabel } from '../i18n.jsx'
-import { trackTask } from '../metrics.js'
+import { trackTask } from '../lib/metrics.js'
 
 /** Inicio: responde "¿qué quieres hacer ahora?" — continuar donde
     lo dejaste, acciones rápidas, actividad reciente y favoritos. */

@@ -1,0 +1,41 @@
+name: CI - Seguridad (secretos + dependencias)
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    - cron: '29 4 * * 1'
+
+jobs:
+  secrets:
+    name: 'Escaneo de secretos (gitleaks)'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+
+  pip-audit:
+    name: 'Auditoría dependencias Python (backend + pipeline)'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pip-audit
+      - run: pip install -e backend -e data-pipeline && pip-audit --local --skip-editable
+
+  npm-audit:
+    name: 'Auditoría dependencias npm (frontend)'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm audit --omit=dev --audit-level=high
+        working-directory: frontend

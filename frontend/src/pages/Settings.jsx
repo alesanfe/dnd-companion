@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, errText, flushQueue } from '../api.js'
 import { conflictedOps, deadOps, dropOp, markOp,
-         pendingOps } from '../db.js'
+         pendingOps } from '../lib/db.js'
 import { clearAuth, currentUser, getPrefs, setAuth, setPref }
-  from '../session.js'
+  from '../lib/session.js'
 import { useT, opLabel } from '../i18n.jsx'
-import { clearMetrics, snapshot } from '../metrics.js'
+import { clearMetrics, snapshot } from '../lib/metrics.js'
 import { useDialogs } from '../components/ui/Dialogs.jsx'
 
 /** Ajustes consolidados: cuenta, apariencia, accesibilidad y

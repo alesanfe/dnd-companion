@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api.js'
 import { blockedByWall, cellDist, inCone, CELL, MARK_COLORS,
-         MAP_DEFAULTS } from '../mapMath.js'
+         MAP_DEFAULTS } from '../lib/mapMath.js'
 import { useT } from '../i18n.jsx'
 import WikiText from './WikiText.jsx'
 import { MapToken, MapPin, InitiativeRibbon } from './MapPieces.jsx'

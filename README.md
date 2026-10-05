@@ -7,18 +7,23 @@ contenido con procedencia verificable y herramientas colaborativas
 de mesa.
 
 [Arquitectura](docs/ARCHITECTURE.md) ·
+[Requisitos](docs/REQUIREMENTS.md) ·
+[Modelo de datos](docs/DATA_MODEL.md) ·
+[Threat model](docs/THREAT_MODEL.md) ·
+[Privacidad](docs/PRIVACY.md) ·
+[Decisiones](docs/decisions/) ·
 [Guía para agentes](AGENTS.md)
 
 ## Capturas
 
 <table>
 <tr>
-  <td><img src="docs/assets/character-sheet.png" alt="Ficha de personaje 2024: cabecera con clase y nivel, chips de PG, CA, iniciativa, velocidad, inspiración y condición envenenado; pestañas de Resumen, Acciones, Magia e Inventario; XP, puntos de golpe, descansos y condiciones" width="420"></td>
-  <td><img src="docs/assets/character-spells.png" alt="Pestaña de magia de una maga 2014: espacios de conjuro por nivel con círculos gastados, conjuros conocidos con botón Lanzar y chip de concentración activa" width="420"></td>
+  <td><img src="docs/assets/screenshots/character-sheet.png" alt="Ficha de personaje 2024: cabecera con clase y nivel, chips de PG, CA, iniciativa, velocidad, inspiración y condición envenenado; pestañas de Resumen, Acciones, Magia e Inventario; XP, puntos de golpe, descansos y condiciones" width="420"></td>
+  <td><img src="docs/assets/screenshots/character-spells.png" alt="Pestaña de magia de una maga 2014: espacios de conjuro por nivel con círculos gastados, conjuros conocidos con botón Lanzar y chip de concentración activa" width="420"></td>
 </tr>
 <tr>
-  <td><img src="docs/assets/dm-combat.png" alt="Mesa del DM en la pestaña Combate: tracker de iniciativa con barras de PG por combatiente, condiciones con duración, calculadora de dificultad de encuentro y búsqueda de monstruos" width="420"></td>
-  <td><img src="docs/assets/dm-map.png" alt="Mapa táctico del VTT: cuadrícula con tokens de personajes y orcos, barras de PG sobre cada token, anillo de turno activo, cinta de iniciativa y pin de escena" width="420"></td>
+  <td><img src="docs/assets/screenshots/dm-combat.png" alt="Mesa del DM en la pestaña Combate: tracker de iniciativa con barras de PG por combatiente, condiciones con duración, calculadora de dificultad de encuentro y búsqueda de monstruos" width="420"></td>
+  <td><img src="docs/assets/screenshots/dm-map.png" alt="Mapa táctico del VTT: cuadrícula con tokens de personajes y orcos, barras de PG sobre cada token, anillo de turno activo, cinta de iniciativa y pin de escena" width="420"></td>
 </tr>
 </table>
 <p><sub>Ficha · Magia · Tracker de iniciativa · Mapa VTT —
@@ -30,31 +35,103 @@ paleta ⌘K, compendio, campaña, DM, móvil</summary>
 
 | Lista de fichas | Acciones + dados |
 |---|---|
-| ![Lista de personajes con HP, nivel, ruleset y favoritos](docs/assets/character-list.png) | ![Pestaña Acciones: ataques del inventario, dados libres y log](docs/assets/character-actions.png) |
+| ![Lista de personajes con HP, nivel, ruleset y favoritos](docs/assets/screenshots/character-list.png) | ![Pestaña Acciones: ataques del inventario, dados libres y log](docs/assets/screenshots/character-actions.png) |
 
 | Inventario | Paleta de comandos |
 |---|---|
-| ![Inventario con mochila, equipar, atacar y monedas](docs/assets/character-inventory.png) | ![Paleta ⌘K con resultados del compendio sobre la ficha](docs/assets/command-palette.png) |
+| ![Inventario con mochila, equipar, atacar y monedas](docs/assets/screenshots/character-inventory.png) | ![Paleta ⌘K con resultados del compendio sobre la ficha](docs/assets/screenshots/command-palette.png) |
 
 | Compendio | Entidad (spell) |
 |---|---|
-| ![Buscador de reglas con resultados multi-edición y fuente](docs/assets/compendium.png) | ![Detalle de conjuro SRD con chips de nivel/escuela/alcance y diff entre ediciones](docs/assets/content-entity.png) |
+| ![Buscador de reglas con resultados multi-edición y fuente](docs/assets/screenshots/compendium.png) | ![Detalle de conjuro SRD con chips de nivel/escuela/alcance y diff entre ediciones](docs/assets/screenshots/content-entity.png) |
 
 | Mesa DM — Sesión | Mapa — vista jugador |
 |---|---|
-| ![Tablero del DM en pestaña Sesión: campaña, sesiones, chat y petición de tirada](docs/assets/dm-board.png) | ![El mismo mapa en Vista jugador: la niebla se vuelve opaca](docs/assets/dm-map-player.png) |
+| ![Tablero del DM en pestaña Sesión: campaña, sesiones, chat y petición de tirada](docs/assets/screenshots/dm-board.png) | ![El mismo mapa en Vista jugador: la niebla se vuelve opaca](docs/assets/screenshots/dm-map-player.png) |
 
 | Móvil (PWA) | Asistente de creación |
 |---|---|
-| ![Ficha en móvil 390px: pestañas desplazables y nav inferior](docs/assets/sheet-mobile.png) | ![Wizard de personaje: concepto, clase, origen, stats, revisión](docs/assets/wizard.png) |
+| ![Ficha en móvil 390px: pestañas desplazables y nav inferior](docs/assets/screenshots/sheet-mobile.png) | ![Wizard de personaje: concepto, clase, origen, stats, revisión](docs/assets/screenshots/wizard.png) |
 
 | Tema claro | Tema sepia |
 |---|---|
-| ![Ficha en tema claro: misma cabecera y pestañas sobre fondo claro](docs/assets/sheet-light.png) | ![Ficha en tema sepia](docs/assets/sheet-sepia.png) |
+| ![Ficha en tema claro: misma cabecera y pestañas sobre fondo claro](docs/assets/screenshots/sheet-light.png) | ![Ficha en tema sepia](docs/assets/screenshots/sheet-sepia.png) |
 
 | Lectura fácil (dislexia) | Vista de impresión |
 |---|---|
-| ![Ficha con fuente de lectura fácil para dislexia](docs/assets/sheet-dyslexia.png) | ![Hoja imprimible: todas las pestañas desplegadas en media print](docs/assets/sheet-print.png) |
+| ![Ficha con fuente de lectura fácil para dislexia](docs/assets/screenshots/sheet-dyslexia.png) | ![Hoja imprimible: todas las pestañas desplegadas en media print](docs/assets/screenshots/sheet-print.png) |
+
+| Alto contraste | Ficha con reglas 2014 |
+|---|---|
+| ![Ficha en tema de alto contraste](docs/assets/screenshots/sheet-hc.png) | ![Ficha del mismo personaje con ruleset 2014](docs/assets/screenshots/character-sheet-2014.png) |
+
+| Pestaña Características | Pestaña Historia |
+|---|---|
+| ![Pestaña Características: rasgos de clase y especie del personaje](docs/assets/screenshots/character-features.png) | ![Pestaña Historia: trasfondo, personalidad, aliados y notas](docs/assets/screenshots/character-backstory.png) |
+
+| Pestaña Actividad | Sesión iniciada |
+|---|---|
+| ![Pestaña Actividad: historial de operaciones y chat de mesa](docs/assets/screenshots/character-activity.png) | ![Ficha con sesión de cuenta iniciada en la barra](docs/assets/screenshots/character-sheet-logged.png) |
+
+| Subida de nivel | Inicio |
+|---|---|
+| ![Subir de nivel: qué gana la clase actual o multiclase a otra nueva](docs/assets/screenshots/level-up.png) | ![Inicio: continuar campaña o personaje, acciones rápidas y resumen de la mesa](docs/assets/screenshots/home.png) |
+
+| Ajustes | Cuenta (login) |
+|---|---|
+| ![Ajustes: tema, idioma, accesibilidad y sincronización offline](docs/assets/screenshots/settings.png) | ![Ajustes — sección Cuenta con formulario de inicio de sesión](docs/assets/screenshots/settings-login.png) |
+
+| Cuenta con sesión | Conflictos de sincronización |
+|---|---|
+| ![Ajustes — cuenta autenticada y fichas personales](docs/assets/screenshots/settings-logged.png) | ![Ajustes — conflictos de optimistic locking con reintentar y descartar](docs/assets/screenshots/settings-conflicts.png) |
+
+| Métricas de sync | Comparador de ediciones |
+|---|---|
+| ![Ajustes — métricas de sincronización y cola pendiente](docs/assets/screenshots/settings-metrics.png) | ![Comparador: la misma entidad 2014 vs 2024 lado a lado con diff](docs/assets/screenshots/compare.png) |
+
+| Campañas | Campaña — Mundo |
+|---|---|
+| ![Lista de campañas con rol, ruleset e importar campaña](docs/assets/screenshots/campaign-list.png) | ![Campaña — pestaña Mundo: lugares, mapas y PNJ con visibilidad por rol](docs/assets/screenshots/campaign-board.png) |
+
+| Campaña — Mapa | Campaña — Sesiones |
+|---|---|
+| ![Campaña — pestaña Mapa con cinta de iniciativa y aviso de turno](docs/assets/screenshots/campaign-mapa.png) | ![Campaña — pestaña Sesiones (estado vacío)](docs/assets/screenshots/campaign-sesiones.png) |
+
+| Mesa DM — Campaña | Mesa DM — diálogo de mapa |
+|---|---|
+| ![Mesa DM — pestaña Campaña: entidades privadas, miembros, relaciones y exportar VTT](docs/assets/screenshots/dm-campaign.png) | ![Mapa del DM con diálogo de token: nombre, ft por casilla y añadir token](docs/assets/screenshots/dm-map-dialog.png) |
+
+| Asistente — clase | Asistente — origen |
+|---|---|
+| ![Wizard de personaje, paso 2: elección de clase](docs/assets/screenshots/wizard-step2.png) | ![Wizard de personaje, paso 3: origen](docs/assets/screenshots/wizard-step3.png) |
+
+| Asistente — características | Asistente — revisión |
+|---|---|
+| ![Wizard de personaje, paso 4: puntuaciones de característica](docs/assets/screenshots/wizard-step4.png) | ![Wizard de personaje, paso 5: revisión final antes de crear](docs/assets/screenshots/wizard-step5.png) |
+
+| Asistente en móvil | Menú +Crear en móvil |
+|---|---|
+| ![Wizard a 390px: pasos apilados con nav inferior](docs/assets/screenshots/wizard-390.png) | ![Wizard a 390px — selector de clase](docs/assets/screenshots/wizard-390-class.png) |
+
+| FAB móvil | Errores |
+|---|---|
+| ![Menú flotante +Crear en móvil: personaje, campaña o contenido](docs/assets/screenshots/fab-menu.png) | ![Ficha inexistente: estado "No encontrado" con enlace de vuelta](docs/assets/screenshots/error-404-char.png) |
+
+| | |
+|---|---|
+| ![Página 404: dirección inexistente con enlace al inicio](docs/assets/screenshots/not-found.png) | |
+
+</details>
+
+<details>
+<summary>Matriz responsive — las 4 superficies principales en 320/390/768/1024/1366/1920 px</summary>
+
+| Superficie | 320 | 390 | 768 | 1024 | 1366 | 1920 |
+|---|---|---|---|---|---|---|
+| Inicio | ![Inicio — viewport 320 px](docs/assets/screenshots/resp/home-320.png) | ![Inicio — viewport 390 px](docs/assets/screenshots/resp/home-390.png) | ![Inicio — viewport 768 px](docs/assets/screenshots/resp/home-768.png) | ![Inicio — viewport 1024 px](docs/assets/screenshots/resp/home-1024.png) | ![Inicio — viewport 1366 px](docs/assets/screenshots/resp/home-1366.png) | ![Inicio — viewport 1920 px](docs/assets/screenshots/resp/home-1920.png) |
+| Ficha | ![Ficha — viewport 320 px](docs/assets/screenshots/resp/sheet-320.png) | ![Ficha — viewport 390 px](docs/assets/screenshots/resp/sheet-390.png) | ![Ficha — viewport 768 px](docs/assets/screenshots/resp/sheet-768.png) | ![Ficha — viewport 1024 px](docs/assets/screenshots/resp/sheet-1024.png) | ![Ficha — viewport 1366 px](docs/assets/screenshots/resp/sheet-1366.png) | ![Ficha — viewport 1920 px](docs/assets/screenshots/resp/sheet-1920.png) |
+| Compendio | ![Compendio — viewport 320 px](docs/assets/screenshots/resp/compendium-320.png) | ![Compendio — viewport 390 px](docs/assets/screenshots/resp/compendium-390.png) | ![Compendio — viewport 768 px](docs/assets/screenshots/resp/compendium-768.png) | ![Compendio — viewport 1024 px](docs/assets/screenshots/resp/compendium-1024.png) | ![Compendio — viewport 1366 px](docs/assets/screenshots/resp/compendium-1366.png) | ![Compendio — viewport 1920 px](docs/assets/screenshots/resp/compendium-1920.png) |
+| Mapa DM | ![Mapa — viewport 320 px](docs/assets/screenshots/resp/dm-map-320.png) | ![Mapa — viewport 390 px](docs/assets/screenshots/resp/dm-map-390.png) | ![Mapa — viewport 768 px](docs/assets/screenshots/resp/dm-map-768.png) | ![Mapa — viewport 1024 px](docs/assets/screenshots/resp/dm-map-1024.png) | ![Mapa — viewport 1366 px](docs/assets/screenshots/resp/dm-map-1366.png) | ![Mapa — viewport 1920 px](docs/assets/screenshots/resp/dm-map-1920.png) |
 
 </details>
 

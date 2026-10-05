@@ -1,0 +1,4 @@
+Contact: https://github.com/alesanfe/dnd-companion/security/advisories/new
+Preferred-Languages: es, en
+Policy: https://github.com/alesanfe/dnd-companion/blob/main/SECURITY.md
+Expires: 2027-10-01T00:00:00.000Z

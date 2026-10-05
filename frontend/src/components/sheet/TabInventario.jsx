@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../api.js'
 import { ItemPicker } from './pickers.jsx'
-import { onTabsKeyDown } from '../../a11y.js'
+import { onTabsKeyDown } from '../../lib/a11y.js'
 import { AttackPanel, Section } from './panels.jsx'
 import { abilityScore } from './data.js'
 import { useDialogs } from '../ui/Dialogs.jsx'

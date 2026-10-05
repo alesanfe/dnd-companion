@@ -4,7 +4,7 @@
    como coordinador. */
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api.js'
-import { campaignSocket } from '../../ws.js'
+import { campaignSocket } from '../../lib/ws.js'
 import { useT } from '../../i18n.jsx'
 
 const TOUR_KEYS = ['tour.identity', 'tour.focus', 'tour.vitalbar',

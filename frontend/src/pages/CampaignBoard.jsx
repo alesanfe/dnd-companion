@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api, errText } from '../api.js'
-import { campaignSocket } from '../ws.js'
+import { campaignSocket } from '../lib/ws.js'
 import { useT } from '../i18n.jsx'
-import { onTabsKeyDown } from '../a11y.js'
+import { onTabsKeyDown } from '../lib/a11y.js'
 import MapBoard from '../components/MapBoard.jsx'
 import VoiceChat from '../components/VoiceChat.jsx'
 import WikiText from '../components/WikiText.jsx'
-import { currentUser } from '../session.js'
+import { currentUser } from '../lib/session.js'
 
 /** Vista de jugador: espacio de la campaña con pestañas —
     Resumen (actividad y personajes), Mundo (entidades reveladas)

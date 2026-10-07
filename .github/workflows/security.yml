@@ -13,7 +13,7 @@ jobs:
     name: 'Escaneo de secretos (gitleaks)'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       # Binario OSS fijado — gitleaks-action@v2 exige licencia de pago.
@@ -30,7 +30,7 @@ jobs:
     name: 'Auditoría dependencias Python (backend + pipeline)'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
@@ -41,7 +41,7 @@ jobs:
     name: 'Auditoría dependencias npm (frontend)'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22

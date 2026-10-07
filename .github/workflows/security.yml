@@ -47,3 +47,14 @@ jobs:
           node-version: 22
       - run: npm audit --omit=dev --audit-level=high
         working-directory: frontend
+
+  # Solo en PR: bloquea diffs de dependencias que introducen CVEs.
+  dependency-review:
+    name: 'Revisión de dependencias (PR)'
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0

@@ -41,3 +41,13 @@ jobs:
           npm ci
           npm test
           npm run build
+
+  # Los Dockerfiles son el despliegue real — que no se rompan en PR
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Backend image
+        run: docker build -t dnd-backend:ci ./backend
+      - name: Frontend image
+        run: docker build -t dnd-frontend:ci ./frontend

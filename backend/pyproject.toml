@@ -12,6 +12,10 @@ dependencies = [
     "uvicorn>=0.30",
     "pydantic>=2.7",
     "pywebpush>=2.0",   # Web Push PWA (roll-request con app cerrada)
+    # Pisos de seguridad sobre transitivas (pip-audit en CI):
+    "pyjwt>=2.15.0",    # PYSEC-2026-414x — vía pywebpush
+    "urllib3>=2.8.0",   # PYSEC-2026-417x — vía requests/pywebpush
+    "tornado>=6.5.9",   # GHSA-chx6-46f5-w4vp y otras
 ]
 
 [project.optional-dependencies]

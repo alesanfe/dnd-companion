@@ -7,7 +7,9 @@ name = "dnd-pipeline"
 version = "0.1.0"
 description = "Content importers: JSON sources -> content DB (SQLite + FTS5)"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "pyyaml>=6.0",   # importador Foundry (packs YAML CC-BY-4.0)
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]

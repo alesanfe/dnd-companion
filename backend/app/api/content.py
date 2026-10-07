@@ -277,9 +277,10 @@ def command_search(q: str = Query(..., min_length=2),
         # (antes el ORDER BY name enterraba "Fireball" bajo
         # "Absorbing Field" que solo la menciona)
         sql += (" ORDER BY CASE WHEN lower(e.name) = ? THEN 0"
-                " WHEN lower(e.name) LIKE ? THEN 1 ELSE 2 END, e.name"
-                " LIMIT ?")
-        params += [term, term + "%"]
+                " WHEN lower(e.name) LIKE ? THEN 1"
+                " WHEN instr(lower(e.name), ?) > 0 THEN 2 ELSE 3 END,"
+                " e.name LIMIT ?")
+        params += [term, term + "%", term]
     else:
         sql += " ORDER BY e.name LIMIT ?"
     params.append(limit * 4)                 # margen para filtrado Python

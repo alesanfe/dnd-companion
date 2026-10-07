@@ -14,8 +14,17 @@ jobs:
         run: |
           cd backend
           pip install -e .[dev]
+          cd ../data-pipeline
+          pip install -e .
       - name: Syntax check
         run: python -m compileall backend/app data-pipeline
+      - name: Import SRD content DB
+        # Los tests usan el corpus real (clases, monstruos, slots): la
+        # content DB no se commitea (es grande), se importa del SRD
+        # CC-BY-4.0 en cada run — conftest la copia a un tmp por sesión.
+        run: |
+          python -m pipeline.cli import-srd --edition 2014
+          python -m pipeline.cli import-srd --edition 2024
       - name: Tests
         run: pytest backend/tests -q
 
@@ -25,7 +34,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Test + build
         run: |
           cd frontend

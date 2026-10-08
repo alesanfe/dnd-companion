@@ -9,9 +9,12 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM nginx:alpine
+FROM nginxinc/nginx-unprivileged:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 # proxy /api + /ws al backend + fallback SPA — sin esto el compose
 # servía index.html donde el cliente esperaba JSON
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
+EXPOSE 8080
+
+# usuario no-root explícito (default de la imagen, uid 101)
+USER nginx

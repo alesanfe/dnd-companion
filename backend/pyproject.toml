@@ -9,7 +9,7 @@ description = "D&D Companion backend — FastAPI + effects engine"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
-    "uvicorn>=0.30",
+    "uvicorn[standard]>=0.30",   # WebSocket (websockets/wsproto) + HTTP/1.1 keep-alive
     "pydantic>=2.7",
     "pywebpush>=2.0",   # Web Push PWA (roll-request con app cerrada)
     # Pisos de seguridad sobre transitivas (pip-audit en CI):

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 
 _ABILITY_SHORT = {"strength": "str", "dexterity": "dex",
                   "constitution": "con", "intelligence": "int",
@@ -154,6 +155,6 @@ def asi_earned(char, content) -> int:
                    AND json_extract(data, '$.level') <= ?""",
                 (idx, str(cls_name).lower(), cl.level)).fetchone()[0]
             earned += (n or 0) * 2   # ab es acumulado por clase
-        except Exception:
-            pass
+        except sqlite3.Error:
+            pass  # fila de nivel ausente/mal formada → no cuenta ASI
     return earned

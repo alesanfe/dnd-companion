@@ -25,14 +25,14 @@ def combatant_initiative_roll(combat: Combat, p: dict, ctx):
         dex = (c.stat_block.get("abilities", {}).get("dex")
                or c.stat_block.get("dexterity") or 10)
     elif c.kind == "character" and c.ref_id:
-        try:
-            row = ctx.state_db().execute(
-                "SELECT data FROM characters WHERE id = ?",
-                (c.ref_id,)).fetchone()
-            if row:
+        row = ctx.state_db().execute(
+            "SELECT data FROM characters WHERE id = ?",
+            (c.ref_id,)).fetchone()
+        if row:
+            try:
                 dex = json.loads(row["data"])["abilities"]["dexterity"]
-        except Exception:
-            pass
+            except (KeyError, TypeError, ValueError):
+                pass  # ficha sin abilities.dexterity → mod 0
     inv = {"operation_type": "combatant.initiative",
            "payload": {"combatant_id": c.id, "value": c.initiative}}
     mod = (dex - 10) // 2

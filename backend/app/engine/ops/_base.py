@@ -485,11 +485,12 @@ def _list_add_remove(lst: list, value: str, add: bool):
 def _content(ctx, entity_id: str) -> dict | None:
     """Lee una entidad de la content DB (None si no hay ctx/DB)."""
     try:
-        row = ctx.content_db().execute(
-            "SELECT data FROM content_entities WHERE id = ?",
-            (entity_id,)).fetchone()
-    except Exception:
-        return None
+        conn = ctx.content_db()
+    except AttributeError:
+        return None  # ctx sin content DB (tests/ops offline)
+    row = conn.execute(
+        "SELECT data FROM content_entities WHERE id = ?",
+        (entity_id,)).fetchone()
     return json.loads(row["data"]) if row else None
 
 

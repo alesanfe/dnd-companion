@@ -95,7 +95,10 @@ export default function Wizard() {
       localStorage.removeItem(DRAFT_KEY)   // nada empezado
       return
     }
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(d))
+    // el borrador es best-effort: cuota llena o modo privado no deben
+    // romper el wizard
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(d)) }
+    catch { /* sin borrador local */ }
   }, [step, name, ruleset, classId, speciesId, backgroundId, abilities])
 
   const assign = (ab, val) => {

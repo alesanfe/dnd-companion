@@ -381,7 +381,10 @@ export default function CharacterSheet() {
       cnv.height = Math.round(img.height * s)
       cnv.getContext('2d').drawImage(img, 0, 0, cnv.width, cnv.height)
       const url = cnv.toDataURL('image/jpeg', 0.85)
-      localStorage.setItem(`dnd-portrait-${id}`, url)
+      // caché local best-effort — si la cuota está llena el retrato
+      // igualmente se persiste en la ficha vía op() más abajo
+      try { localStorage.setItem(`dnd-portrait-${id}`, url) }
+      catch { /* cuota llena — sin caché local */ }
       setPortrait(url)
       URL.revokeObjectURL(img.src)
       // persiste en la ficha (narrative.portrait_url) para sincronizar

@@ -230,10 +230,11 @@ function PackagesCard() {
   const { t, tf } = useT()
   const dlg = useDialogs()
   const [pkgs, setPkgs] = useState(null)
+  const [loadErr, setLoadErr] = useState(null)
   const [msg, setMsg] = useState(null)
   const load = () => api.listPackages()
-    .then((r) => setPkgs(r.packages || []))
-    .catch(() => setPkgs([]))
+    .then((r) => { setPkgs(r.packages || []); setLoadErr(null) })
+    .catch((e) => setLoadErr(errText(e, t)))
   useEffect(() => { load() }, [])
   const onFile = async (e) => {
     const f = e.target.files?.[0]
@@ -290,7 +291,9 @@ function PackagesCard() {
                     } catch (ex) { setMsg(`⚠ ${ex.message}`) }
                   }}>✕</button>
         </div>))}
-      {pkgs?.length === 0 && <p className="muted">{t('pkg.empty')}</p>}
+      {loadErr && <p className="error" role="alert">{loadErr}</p>}
+      {pkgs?.length === 0 && !loadErr &&
+        <p className="muted">{t('pkg.empty')}</p>}
       <p className="muted" style={{ fontSize: '.8rem' }}>
         {t('pkg.hint')}</p>
     </section>
@@ -382,15 +385,20 @@ function SyncQueue({ onChanged }) {
   const [ops, setOps] = useState(null)
   const [dead, setDead] = useState(null)
   const [confl, setConfl] = useState(null)
+  const [loadErr, setLoadErr] = useState(null)
   const load = () => {
-    pendingOps().then(setOps).catch(() => setOps([]))
-    deadOps().then(setDead).catch(() => setDead([]))
-    conflictedOps().then(setConfl).catch(() => setConfl([]))
+    setLoadErr(null)
+    const fail = (e) => setLoadErr(errText(e, t))
+    pendingOps().then(setOps).catch(fail)
+    deadOps().then(setDead).catch(fail)
+    conflictedOps().then(setConfl).catch(fail)
   }
   useEffect(() => { load() }, [])
-  if (!ops?.length && !dead?.length && !confl?.length) return null
+  if (!ops?.length && !dead?.length && !confl?.length && !loadErr)
+    return null
   return (<div>
     <strong>{t('sync.queueTitle')}</strong>
+    {loadErr && <p className="error" role="alert">{loadErr}</p>}
     <ul style={{ margin: '.3rem 0', paddingLeft: '1rem' }}>
       {(ops || []).map((o) => (
         <li key={o.id} className="row">
@@ -456,12 +464,13 @@ function SyncQueue({ onChanged }) {
 function SyncConflicts() {
   const { t, tf } = useT()
   const [rows, setRows] = useState(null)
+  const [loadErr, setLoadErr] = useState(null)
   const [msg, setMsg] = useState(null)
   const load = () => api.opConflicts()
-    .then((r) => setRows(r.conflicts || []))
-    .catch(() => setRows([]))
+    .then((r) => { setRows(r.conflicts || []); setLoadErr(null) })
+    .catch((e) => setLoadErr(errText(e, t)))
   useEffect(() => { load() }, [])
-  if (!rows?.length) return null
+  if (!rows?.length && !loadErr) return null
   const act = async (fn, id, label) => {
     setMsg(null)
     try {
@@ -472,6 +481,8 @@ function SyncConflicts() {
   }
   return (
     <div role="alert">
+      {loadErr && <p className="error" role="alert">{loadErr}</p>}
+      {rows?.length > 0 && <>
       <strong>⚠ {tf('set.conflicts', { n: rows.length })}
       </strong>{' '}
       <span className="muted">
@@ -502,6 +513,7 @@ function SyncConflicts() {
               {t('set.dismiss')}</button>
           </li>))}
       </ul>
+      </>}
       {msg && <p className="muted" role="status">{msg}</p>}
     </div>
   )

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api } from '../api.js'
+import { api, errText } from '../api.js'
 import { currentUser, loadJSON } from '../lib/session.js'
 import { useT, opLabel } from '../i18n.jsx'
 import { trackTask } from '../lib/metrics.js'
@@ -15,6 +15,7 @@ export default function Dashboard() {
   const [activity, setActivity] = useState([])
   const [expr, setExpr] = useState('1d20')
   const [rollResult, setRollResult] = useState(null)
+  const [statsErr, setStatsErr] = useState(null)
 
   const lastChar = loadJSON('dnd-last-char')
   const lastCamp = loadJSON('dnd-last-campaign')
@@ -22,9 +23,11 @@ export default function Dashboard() {
 
   useEffect(() => {
     api.listCharacters()
-      .then((r) => setChars(r.characters)).catch(() => setChars([]))
+      .then((r) => setChars(r.characters))
+      .catch((e) => { setChars([]); setStatsErr(errText(e, t)) })
     api.listCampaigns()
-      .then((r) => setCamps(r.campaigns)).catch(() => setCamps([]))
+      .then((r) => setCamps(r.campaigns))
+      .catch((e) => { setCamps([]); setStatsErr(errText(e, t)) })
   }, [])
 
   // actividad reciente: últimas operaciones de la ficha más reciente
@@ -117,6 +120,8 @@ export default function Dashboard() {
             className="result-pill">{rollResult}</strong>}
         </form>
       </section>
+
+      {statsErr && <p className="error" role="alert">{statsErr}</p>}
 
       {(chars?.length > 0 || camps?.length > 0) && (
         <section className="card">

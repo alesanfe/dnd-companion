@@ -45,6 +45,7 @@ export default function Wizard() {
   const [abilities, setAbilities] = useState(draft.abilities ?? {})
   const [remaining, setRemaining] = useState([...STANDARD_ARRAY])
   const [err, setErr] = useState(null)
+  const [optsLoading, setOptsLoading] = useState(true)
   const [busy, setBusy] = useState(false)
 
   // nombre legible de la opción elegida (las listas traen .name);
@@ -63,21 +64,25 @@ export default function Wizard() {
   })
 
   useEffect(() => {
+    setOptsLoading(true)
     // all_sources: ofrece también homebrew/UA/terceros importados
-    api.contentOptions('class', ruleset, true)
+    const pClass = api.contentOptions('class', ruleset, true)
       .then((r) => setClasses(officialFirst(r.options)))
       .catch((e) => setErr(errText(e, t)))
     // 2024 usa 'species'; 2014 usa 'race'; 'mixed' trae ambos
-    Promise.all([
+    const pSpecies = Promise.all([
       api.contentOptions('race', ruleset, true),
       api.contentOptions('species', ruleset, true),
     ]).then(([a, b]) => {
       const seen = new Set()
       setSpecies(officialFirst([...a.options, ...b.options]
         .filter((o) => !seen.has(o.id) && seen.add(o.id))))
-    }).catch(() => {})
-    api.contentOptions('background', ruleset, true)
-      .then((r) => setBackgrounds(officialFirst(r.options))).catch(() => {})
+    }).catch((e) => setErr(errText(e, t)))
+    const pBg = api.contentOptions('background', ruleset, true)
+      .then((r) => setBackgrounds(officialFirst(r.options)))
+      .catch((e) => setErr(errText(e, t)))
+    Promise.allSettled([pClass, pSpecies, pBg])
+      .then(() => setOptsLoading(false))
   }, [ruleset])
 
   // borrador persistente: salir del wizard o cerrar la pestaña no
@@ -127,6 +132,13 @@ export default function Wizard() {
   const sel = (list, value, set) => (
     <SearchableSelect list={list} value={value} onChange={set} />
   )
+
+  // carga/vacío del picker de opciones — antes la lista vacía
+  // quedaba en blanco (parecía rota) y un fetch fallido quedaba mudo
+  const pickState = (list) =>
+    list.length ? null
+    : optsLoading ? <p className="muted">{t('common.loading')}</p>
+    : <p className="muted">{t('wiz.noOptions')}</p>
 
   return (
     <main>
@@ -192,7 +204,9 @@ export default function Wizard() {
         <section className="card">
           <h2>2. {t('wiz.class')}</h2>
           <div className="card-grid" role="radiogroup"
-               aria-label={t('wiz.class')}>
+               aria-label={t('wiz.class')}
+               aria-busy={optsLoading && classes.length === 0}>
+            {pickState(classes)}
             {classes.map((o) => (
               <button key={o.id} className="ghost pick-card"
                       role="radio" aria-checked={classId === o.id}
@@ -216,9 +230,9 @@ export default function Wizard() {
         <section className="card">
           <h2>3. {t('wiz.species')} + {t('wiz.background')}</h2>
           <h3 style={{ marginTop: 0 }}>{t('wiz.species')}</h3>
-          {sel(species, speciesId, setSpeciesId)}
+          {pickState(species) || sel(species, speciesId, setSpeciesId)}
           <h3>{t('wiz.background')}</h3>
-          {sel(backgrounds, backgroundId, setBackgroundId)}
+          {pickState(backgrounds) || sel(backgrounds, backgroundId, setBackgroundId)}
           <GrantPreview speciesId={speciesId}
                         backgroundId={backgroundId} />
           <div className="row">

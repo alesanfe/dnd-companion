@@ -693,6 +693,7 @@ es: {
   'wiz.filterPh': 'Buscar… ({n} opciones)',
   'wiz.filterAria': 'Filtrar opciones',
   'wiz.choose': '— elegir —',
+  'wiz.noOptions': 'Sin opciones disponibles para este reglamento.',
 
   'search.typeAria': 'Tipo de entidad',
   'search.allTypes': 'todo',
@@ -1740,6 +1741,7 @@ en: {
   'wiz.filterPh': 'Search… ({n} options)',
   'wiz.filterAria': 'Filter options',
   'wiz.choose': '— choose —',
+  'wiz.noOptions': 'No options available for this ruleset.',
 
   'search.typeAria': 'Entity type',
   'search.allTypes': 'all',

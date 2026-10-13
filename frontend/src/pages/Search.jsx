@@ -42,6 +42,7 @@ export default function Search() {
   const [compare, setCompare] = useState([])   // ids a comparar (máx 2)
   const [preview, setPreview] = useState(null) // id en el panel derecho
   const [err, setErr] = useState(null)
+  const [searching, setSearching] = useState(false)
 
   useEffect(() => {
     api.contentSources().then((r) => setSources(r.sources)).catch(() => {})
@@ -57,6 +58,7 @@ export default function Search() {
     const ty = filters.type ?? type
     const ed = filters.edition ?? edition
     const so = filters.source ?? source
+    setSearching(true)
     try {
       const cmd = (ty ? `/${ty} ` : '') + term0.trim() +
                   (ed ? ` ruleset:${ed}` : '')
@@ -73,6 +75,7 @@ export default function Search() {
             ...rec.filter((x) => x !== term0.trim())].slice(0, 8)))
       }
     } catch (e2) { setErr(errText(e2, t)); trackTask('search', false) }
+    finally { setSearching(false) }
   }
   const go = (e) => { e?.preventDefault(); doSearch() }
 
@@ -106,7 +109,8 @@ export default function Search() {
             'trait'].map((ty) => (
             <option key={ty} value={ty}>{etypeLabel(t, ty)}</option>))}
         </select>
-        <button type="submit">{t('search.button')}</button>
+        <button type="submit" disabled={searching}>
+          {t('search.button')}</button>
         {/* el atajo existe desde la paleta pero nadie lo anunciaba —
             kbd visible junto al campo que dispara */}
         <span className="muted" style={{ fontSize: '.8rem',
@@ -145,6 +149,8 @@ export default function Search() {
         </div>
       </details>
       {err && <p className="error" role="alert">{err}</p>}
+      {searching &&
+        <p className="muted" role="status">{t('common.loading')}</p>}
       {asked && (
         <section className="card">
           <h2>{t('search.assistant')}</h2>
@@ -166,7 +172,7 @@ export default function Search() {
           doSearch(term)
         }} />)}
 
-      {results.length === 0 && q.trim() && (
+      {results.length === 0 && q.trim() && !searching && (
         <p className="empty">{t('search.empty')}
           {(type || edition || source) && (
             <button className="ghost" style={{ marginLeft: '.6rem' }}

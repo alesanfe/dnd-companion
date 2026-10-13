@@ -412,7 +412,9 @@ function SyncQueue({ onChanged }) {
                   title={t('sync.discard')}
                   aria-label={t('sync.discard')}
                   onClick={async () => {
-                    await dropOp(o.id); load(); onChanged?.()
+                    try {
+                      await dropOp(o.id); load(); onChanged?.()
+                    } catch (e2) { setLoadErr(errText(e2, t)) }
                   }}>✕</button>
         </li>))}
       {/* rechazadas por el servidor — se perdieron y el usuario lo
@@ -427,7 +429,9 @@ function SyncQueue({ onChanged }) {
                   title={t('sync.discard')}
                   aria-label={t('sync.discard')}
                   onClick={async () => {
-                    await dropOp(o.id); load(); onChanged?.()
+                    try {
+                      await dropOp(o.id); load(); onChanged?.()
+                    } catch (e2) { setLoadErr(errText(e2, t)) }
                   }}>✕</button>
         </li>))}
       {/* 409 al reenviar: el servidor ganó — reintentar vuelve a
@@ -441,20 +445,26 @@ function SyncQueue({ onChanged }) {
           <button className="ghost" style={{ minHeight: 24 }}
                   title={t('sync.retry')} aria-label={t('sync.retry')}
                   onClick={async () => {
-                    await markOp(o.id, 'pending')
-                    await flushQueue(); load(); onChanged?.()
+                    try {
+                      await markOp(o.id, 'pending')
+                      await flushQueue(); load(); onChanged?.()
+                    } catch (e2) { setLoadErr(errText(e2, t)) }
                   }}>↻</button>
           <button className="ghost" style={{ minHeight: 24 }}
                   title={t('sync.discard')}
                   aria-label={t('sync.discard')}
                   onClick={async () => {
-                    await dropOp(o.id); load(); onChanged?.()
+                    try {
+                      await dropOp(o.id); load(); onChanged?.()
+                    } catch (e2) { setLoadErr(errText(e2, t)) }
                   }}>✕</button>
         </li>))}
     </ul>
     {ops?.length > 0 && (
       <button className="ghost" onClick={async () => {
-        await flushQueue(); load(); onChanged?.()
+        try {
+          await flushQueue(); load(); onChanged?.()
+        } catch (e2) { setLoadErr(errText(e2, t)) }
       }}>{t('sync.flushNow')}</button>)}
   </div>)
 }

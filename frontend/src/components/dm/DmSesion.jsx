@@ -72,7 +72,9 @@ export default function DmSesion({ c }) {
           <form className="row" onSubmit={async (e) => {
             e.preventDefault()
             if (!pickId) return
-            setCampaign(await api.getCampaign(pickId))
+            try {
+              setCampaign(await api.getCampaign(pickId))
+            } catch (e) { setErr(errText(e, t)) }
           }}>
             <label className="muted">{t('ses.openExisting')}
               <select value={pickId} aria-label={t('ses.openExisting')}
@@ -91,18 +93,22 @@ export default function DmSesion({ c }) {
               {t('ses.switch')}</button></p>
           <div className="row">
             <button className="ghost" onClick={async () => {
-              const ex = await api.exportCampaign(campaign.id)
-              const blob = new Blob([JSON.stringify(ex, null, 2)],
-                                    { type: 'application/json' })
-              const a = document.createElement('a')
-              a.href = URL.createObjectURL(blob)
-              a.download = 'campania.json'
-              a.click()
+              try {
+                const ex = await api.exportCampaign(campaign.id)
+                const blob = new Blob([JSON.stringify(ex, null, 2)],
+                                      { type: 'application/json' })
+                const a = document.createElement('a')
+                a.href = URL.createObjectURL(blob)
+                a.download = 'campania.json'
+                a.click()
+              } catch (e) { setErr(errText(e, t)) }
             }}>{t('ses.exportBackup')}</button>
-            <button className="ghost" onClick={async () =>
-              setEventFeed(eventFeed ? null
-                : (await api.campaignEvents(campaign.id)).events)
-            }>{t('ses.audit')}</button>
+            <button className="ghost" onClick={async () => {
+              try {
+                setEventFeed(eventFeed ? null
+                  : (await api.campaignEvents(campaign.id)).events)
+              } catch (e) { setErr(errText(e, t)) }
+            }}>{t('ses.audit')}</button>
             {/* DELETE /campaigns existía sin UI — borrar la campaña
                 completa (fichas, entidades, eventos) pide el nombre */}
             <button className="ghost"
@@ -112,10 +118,12 @@ export default function DmSesion({ c }) {
               if (await dlg.prompt(tf('camp.delPrompt',
                             { name: campaign.name })) !== campaign.name)
                 return
-              await api.deleteCampaign(campaign.id)
-              localStorage.removeItem('dnd-last-campaign')
-              setCampaign(null)
-              setCamps(null)
+              try {
+                await api.deleteCampaign(campaign.id)
+                localStorage.removeItem('dnd-last-campaign')
+                setCampaign(null)
+                setCamps(null)
+              } catch (e) { setErr(errText(e, t)) }
             }}>{t('camp.delBtn')}</button>
           </div>
           {eventFeed && eventFeed.map((e) => (
@@ -175,16 +183,20 @@ export default function DmSesion({ c }) {
                  aria-label={t('ses.titlePh')}
                  onChange={(e) => setSessTitle(e.target.value)} />
           <button disabled={!sessTitle} onClick={async () => {
-            await api.createSession(campaign.id, {
-              title: sessTitle, number: sessions.length + 1 })
-            setSessTitle('')
-            const r = await api.listSessions(campaign.id)
-            setSessions(r.sessions)
+            try {
+              await api.createSession(campaign.id, {
+                title: sessTitle, number: sessions.length + 1 })
+              setSessTitle('')
+              const r = await api.listSessions(campaign.id)
+              setSessions(r.sessions)
+            } catch (e) { setErr(errText(e, t)) }
           }}>{t('ses.create')}</button>
           <button onClick={async () => {
-            const r = timeline ? null
-                               : await api.timeline(campaign.id)
-            setTimeline(r?.timeline || null)
+            try {
+              const r = timeline ? null
+                                 : await api.timeline(campaign.id)
+              setTimeline(r?.timeline || null)
+            } catch (e) { setErr(errText(e, t)) }
           }}>{t('ses.timeline')}</button>
         </div>
         {sessions.map((s) => (
@@ -194,10 +206,12 @@ export default function DmSesion({ c }) {
               <span className="muted">· {s.status}</span>
               {s.status !== 'done' && (
                 <button style={{ minHeight: 32 }} onClick={async () => {
-                  await api.patchSession(campaign.id, s.id, {
-                    status: s.status === 'prep' ? 'active' : 'done' })
-                  api.listSessions(campaign.id)
-                    .then((r) => setSessions(r.sessions))
+                  try {
+                    await api.patchSession(campaign.id, s.id, {
+                      status: s.status === 'prep' ? 'active' : 'done' })
+                    const r = await api.listSessions(campaign.id)
+                    setSessions(r.sessions)
+                  } catch (e) { setErr(errText(e, t)) }
                 }}>{s.status === 'prep'
                     ? t('ses.start') : t('common.close')}</button>
               )}
@@ -209,9 +223,11 @@ export default function DmSesion({ c }) {
                       onClick={async () => {
                 if (!await dlg.confirm(tf('ses.delConfirm',
                                 { title: s.title }))) return
-                await api.deleteSession(campaign.id, s.id)
-                const r = await api.listSessions(campaign.id)
-                setSessions(r.sessions)
+                try {
+                  await api.deleteSession(campaign.id, s.id)
+                  const r = await api.listSessions(campaign.id)
+                  setSessions(r.sessions)
+                } catch (e) { setErr(errText(e, t)) }
               }}>🗑</button>
             </div>
             <ul>
@@ -221,11 +237,13 @@ export default function DmSesion({ c }) {
                   {(sc.data.monsters || []).length > 0 && (
                     <button style={{ minHeight: 32 }}
                             onClick={async () => {
-                      const r = await api.startScene(campaign.id, sc.id)
-                      refresh(r.combat_id)
+                      try {
+                        const r = await api.startScene(campaign.id, sc.id)
+                        refresh(r.combat_id)
                       // escena → tablero: el combate nace y el DM cae
                       // en el mapa para colocar tokens ("Del combate")
-                      setDmTab?.('mapa')
+                        setDmTab?.('mapa')
+                      } catch (e) { setErr(errText(e, t)) }
                     }}>▶ {t('ses.combatBtn')}</button>
                   )}
                 </li>

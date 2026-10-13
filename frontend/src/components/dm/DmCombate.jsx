@@ -107,7 +107,9 @@ export default function DmCombate({ c }) {
         <button onClick={async () => {
           const lv = partyLevels.split(',').map((x) => +x.trim()).filter(Boolean)
           const cr = crs.split(',').map((x) => x.trim()).filter(Boolean)
-          setDifficulty(await api.encounterDifficulty(lv, cr))
+          try {
+            setDifficulty(await api.encounterDifficulty(lv, cr))
+          } catch (e) { setErr(errText(e, t)) }
         }}>{t('com.calc')}</button>
       </div>
       {difficulty && (
@@ -154,16 +156,20 @@ export default function DmCombate({ c }) {
           {/* crear el combate y meter la composición de un tirón —
               cada op devuelve la versión nueva para encadenar */}
           <button className="ghost" onClick={async () => {
-            const r = await api.createCombat(
-              combatName || t('com.defaultName'), campaign.id)
-            let v = r.version ?? 1
-            for (const m of suggested.monsters) {
-              const op = await api.applyOp({ id: r.id, version: v },
-                'combatant.add', { content_entity_id: m.id }, 'combat')
-              if (op.queued) break   // offline — el resto luego
-              v = op.version ?? v + 1
-            }
-            refresh(r.id)
+            let cid = null
+            try {
+              const r = await api.createCombat(
+                combatName || t('com.defaultName'), campaign.id)
+              cid = r.id
+              let v = r.version ?? 1
+              for (const m of suggested.monsters) {
+                const op = await api.applyOp({ id: r.id, version: v },
+                  'combatant.add', { content_entity_id: m.id }, 'combat')
+                if (op.queued) break   // offline — el resto luego
+                v = op.version ?? v + 1
+              }
+            } catch (e) { setErr(errText(e, t)) }
+            if (cid) refresh(cid)   // fallo a medias → combate parcial visible
           }}>▶ {t('com.start')}</button>
           <ul style={{ margin: 0 }}>
             {suggested.monsters.map((m) => (
@@ -208,23 +214,29 @@ export default function DmCombate({ c }) {
             <button onClick={() => cop('combat.prev_turn', {})}>
               {t('com.prev')}</button>
             <button onClick={async () => {
-              await api.addParty(combat.id)
-              refresh(combat.id)
+              try {
+                await api.addParty(combat.id)
+                refresh(combat.id)
+              } catch (e) { setErr(errText(e, t)) }
             }}>{t('com.addParty')}</button>
             <button onClick={async () => {
-              let ver = combat.version
-              for (const cb of combat.combat.combatants) {
-                const r = await api.applyOp(
-                  { id: combat.id, version: ver },
-                  'combatant.initiative.roll',
-                  { combatant_id: cb.id }, 'combat')
-                ver = r.version ?? ver + 1   // la versión avanza por op
-              }
-              refresh(combat.id)
+              try {
+                let ver = combat.version
+                for (const cb of combat.combat.combatants) {
+                  const r = await api.applyOp(
+                    { id: combat.id, version: ver },
+                    'combatant.initiative.roll',
+                    { combatant_id: cb.id }, 'combat')
+                  ver = r.version ?? ver + 1   // la versión avanza por op
+                }
+              } catch (e) { setErr(errText(e, t)) }
+              refresh(combat.id)   // iniciativas parciales también se ven
             }}>{t('dm.init')}</button>
-            <button className="ghost" onClick={async () =>
-              setDifficulty(await api.combatDifficulty(combat.id))
-            }>{t('com.difficultyBtn')}</button>
+            <button className="ghost" onClick={async () => {
+              try {
+                setDifficulty(await api.combatDifficulty(combat.id))
+              } catch (e) { setErr(errText(e, t)) }
+            }}>{t('com.difficultyBtn')}</button>
             <button className="ghost" aria-expanded={!!areaDmg}
                     onClick={() => setAreaDmg(areaDmg ? null : {})}>
               {t('com.areaDmg')}</button>
@@ -247,8 +259,10 @@ export default function DmCombate({ c }) {
               if (!await dlg.confirm(tf('com.delConfirm', {
                 name: combat.combat.name, round: combat.combat.round })))
                 return
-              await api.deleteCombat(combat.id)
-              setCombat(null)
+              try {
+                await api.deleteCombat(combat.id)
+                setCombat(null)
+              } catch (e) { setErr(errText(e, t)) }
             }}>🗑</button>
           </div>
           {xpMsg && (
@@ -289,20 +303,22 @@ export default function DmCombate({ c }) {
                   const targets = ordered.filter((cb) => areaDmg[cb.id])
                   let ver = combat.version
                   const res = []
-                  for (const cb of targets) {
-                    const r = await api.applyOp(
-                      { id: combat.id, version: ver },
-                      'combatant.damage',
-                      { combatant_id: cb.id, amount: areaAmt,
-                        damage_type: areaType }, 'combat')
-                    ver = r.version ?? ver + 1
-                    const ev = (r.events || []).find(
-                      (e) => e.type === 'character.hp.changed')
-                    res.push(`${cb.name}: ${areaAmt} → ${
-                      ev?.payload?.amount ?? areaAmt}${
-                      ev?.payload?.note ? ` (${ev.payload.note})` : ''}`)
-                  }
-                  setAreaResults(res)
+                  try {
+                    for (const cb of targets) {
+                      const r = await api.applyOp(
+                        { id: combat.id, version: ver },
+                        'combatant.damage',
+                        { combatant_id: cb.id, amount: areaAmt,
+                          damage_type: areaType }, 'combat')
+                      ver = r.version ?? ver + 1
+                      const ev = (r.events || []).find(
+                        (e) => e.type === 'character.hp.changed')
+                      res.push(`${cb.name}: ${areaAmt} → ${
+                        ev?.payload?.amount ?? areaAmt}${
+                        ev?.payload?.note ? ` (${ev.payload.note})` : ''}`)
+                    }
+                  } catch (e) { setErr(errText(e, t)) }
+                  setAreaResults(res)   // las ops aplicadas no se pierden
                   refresh(combat.id)
                 }}>{t('sheet.apply')}</button>
               </div>

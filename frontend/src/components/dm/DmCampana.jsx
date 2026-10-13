@@ -82,34 +82,36 @@ export default function DmCampana({ c }) {
                  onChange={(e) => setEntForm({ ...entForm, stock: e.target.value })} />
         )}
         <button disabled={!entForm.name} onClick={async () => {
-          const data = { notes: entForm.notes }
-          if (entForm.kind === 'scene' && entForm.monsters.trim()) {
-            // resuelve nombres a ids de contenido (primer resultado)
-            const ids = []
-            for (const term of entForm.monsters.split(',')) {
-              const s = await api.search(term.trim(), 'monster')
-              if (s.results[0]) ids.push(s.results[0].id)
+          try {
+            const data = { notes: entForm.notes }
+            if (entForm.kind === 'scene' && entForm.monsters.trim()) {
+              // resuelve nombres a ids de contenido (primer resultado)
+              const ids = []
+              for (const term of entForm.monsters.split(',')) {
+                const s = await api.search(term.trim(), 'monster')
+                if (s.results[0]) ids.push(s.results[0].id)
+              }
+              data.monsters = ids
             }
-            data.monsters = ids
-          }
-          if (entForm.kind === 'shop' && entForm.stock?.trim()) {
-            // stock: "nombre | precio_cp | cantidad" separado por comas
-            data.stock = entForm.stock.split(',').map((x) => {
-              const [nm, pr, qt] = x.split('|').map((s) => s.trim())
-              return nm ? { name: nm, price_cp: +pr || 0,
-                            quantity: +qt || 1 } : null
-            }).filter(Boolean)
-          }
-          await api.createEntity(campaign.id, {
-            kind: entForm.kind, name: entForm.name,
-            data,
-            // las tiendas nacen públicas: los jugadores compran
-            // directamente en su ficha (inv.shop)
-            visibility: entForm.kind === 'shop' ? 'public' : 'dm',
-          })
-          setEntForm({ ...entForm, name: '', notes: '', monsters: '',
-                       stock: '' })
-          reload()
+            if (entForm.kind === 'shop' && entForm.stock?.trim()) {
+              // stock: "nombre | precio_cp | cantidad" separado por comas
+              data.stock = entForm.stock.split(',').map((x) => {
+                const [nm, pr, qt] = x.split('|').map((s) => s.trim())
+                return nm ? { name: nm, price_cp: +pr || 0,
+                              quantity: +qt || 1 } : null
+              }).filter(Boolean)
+            }
+            await api.createEntity(campaign.id, {
+              kind: entForm.kind, name: entForm.name,
+              data,
+              // las tiendas nacen públicas: los jugadores compran
+              // directamente en su ficha (inv.shop)
+              visibility: entForm.kind === 'shop' ? 'public' : 'dm',
+            })
+            setEntForm({ ...entForm, name: '', notes: '', monsters: '',
+                         stock: '' })
+            reload()
+          } catch (e) { setErr(errText(e, t)) }
         }}>{t('camp.createPrivate')}</button>
       </div>
       <button onClick={reload}>{t('camp.loadList')}</button>
@@ -129,8 +131,10 @@ export default function DmCampana({ c }) {
                       onClick={async () => {
                 if (!await dlg.confirm(
                       tf('camp.deleteConfirm', { name: e.name }))) return
-                await api.deleteEntity(campaign.id, e.id)
-                reload()
+                try {
+                  await api.deleteEntity(campaign.id, e.id)
+                  reload()
+                } catch (e2) { setErr(errText(e2, t)) }
               }}>×</button>
               {e.kind === 'shop' && (
                 <button className="ghost" title={t('camp.stockHint')}
@@ -143,24 +147,30 @@ export default function DmCampana({ c }) {
                   if (!nm) return
                   // append con optimistic lock + rebase — stock se
                   // toca desde varios sitios (compra del jugador)
-                  await api.patchEntityRebase(campaign.id, e, (d) => ({
-                    ...d,
-                    stock: [...(d.stock || []),
-                            { name: nm, price_cp: +pr || 0,
-                              quantity: +qt || 1 }],
-                  }))
-                  reload()
+                  try {
+                    await api.patchEntityRebase(campaign.id, e, (d) => ({
+                      ...d,
+                      stock: [...(d.stock || []),
+                              { name: nm, price_cp: +pr || 0,
+                                quantity: +qt || 1 }],
+                    }))
+                    reload()
+                  } catch (e2) { setErr(errText(e2, t)) }
                 }}>📦</button>)}
               {e.kind === 'scene' && (e.data.monsters || []).length > 0 && (
                 <button style={{ minHeight: 32 }} onClick={async () => {
-                  const r = await api.startScene(campaign.id, e.id)
-                  refresh(r.combat_id)
+                  try {
+                    const r = await api.startScene(campaign.id, e.id)
+                    refresh(r.combat_id)
+                  } catch (e2) { setErr(errText(e2, t)) }
                 }}>▶ {t('ses.combatBtn')}</button>
               )}
               {e.visibility === 'dm' && (
                 <button onClick={async () => {
-                  await api.revealEntity(campaign.id, e.id)
-                  reload()
+                  try {
+                    await api.revealEntity(campaign.id, e.id)
+                    reload()
+                  } catch (e2) { setErr(errText(e2, t)) }
                 }}>{t('dm.reveal')}</button>
               )}
               {/* 📺 proyectar al grupo: la entidad pública aparece como
@@ -320,15 +330,17 @@ export default function DmCampana({ c }) {
             e.preventDefault()
             const f = e.target
             if (!f.rtype.value.trim()) return
-            await api.createRelationship(campaign.id, {
-              from_id: f.rfrom.value, to_id: f.rto.value,
-              type: f.rtype.value.trim(),
-              description: f.rdesc.value.trim() || null,
-              world_date: f.rdate.value.trim() || null,
-              visibility: f.rpub.checked ? 'public' : 'dm',
-            })
-            f.rdesc.value = ''; f.rdate.value = ''
-            loadRels()
+            try {
+              await api.createRelationship(campaign.id, {
+                from_id: f.rfrom.value, to_id: f.rto.value,
+                type: f.rtype.value.trim(),
+                description: f.rdesc.value.trim() || null,
+                world_date: f.rdate.value.trim() || null,
+                visibility: f.rpub.checked ? 'public' : 'dm',
+              })
+              f.rdesc.value = ''; f.rdate.value = ''
+              loadRels()
+            } catch (e2) { setErr(errText(e2, t)) }
           }}>
             <select name="rfrom" required aria-label={t('rel.from')}>
               {entities.map((e) => (
@@ -375,8 +387,10 @@ export default function DmCampana({ c }) {
                 <button className="ghost"
                         aria-label={t('rel.delAria')}
                         onClick={async () => {
-                  await api.deleteRelationship(campaign.id, r.id)
-                  loadRels()
+                  try {
+                    await api.deleteRelationship(campaign.id, r.id)
+                    loadRels()
+                  } catch (e2) { setErr(errText(e2, t)) }
                 }}>×</button>)}
             </div>))}
         </details>)}

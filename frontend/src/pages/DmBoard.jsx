@@ -139,11 +139,12 @@ export default function DmBoard() {
   useEffect(() => {
     if (!campaign) return
     api.listSessions(campaign.id)
-      .then((r) => setSessions(r.sessions)).catch(() => {})
+      .then((r) => setSessions(r.sessions)).catch((e) => setErr(errText(e, t)))
     api.listEntities(campaign.id)
-      .then((r) => setEntities(r.entities)).catch(() => {})
+      .then((r) => setEntities(r.entities)).catch((e) => setErr(errText(e, t)))
     api.listCharacters(campaign.id)
-      .then((r) => setPartyChars(r.characters || [])).catch(() => {})
+      .then((r) => setPartyChars(r.characters || []))
+      .catch((e) => setErr(errText(e, t)))
     // restaurar el combate activo — recargar /dm a mitad de
     // encuentro dejaba el tracker vacío aunque el combate seguía vivo
     api.listCombats(campaign.id, 'active')
@@ -165,7 +166,7 @@ export default function DmBoard() {
     // quedaba en blanco: las pestañas devuelven null sin campaign)
     const pick = () => api.listCampaigns()
       .then((r) => setCampPick(r.campaigns || []))
-      .catch(() => setCampPick([]))
+      .catch((e) => { setCampPick([]); setErr(errText(e, t)) })
     if (!raw) { pick(); return }
     let last = null
     try { last = JSON.parse(raw)?.id } catch { last = raw }

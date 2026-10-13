@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api } from '../api.js'
+import { api, errText } from '../api.js'
 import { useT, etypeLabel } from '../i18n.jsx'
 
 const DICE_RE = /^\s*\d*d\d+([+\-dkslh!a-z0-9]*)\s*$/i
@@ -17,6 +17,7 @@ export default function CommandPalette() {
   const [ents, setEnts] = useState([])  // entidades de campaña
   const [results, setResults] = useState([])   // {kind,label,sub,run}
   const [idx, setIdx] = useState(0)
+  const [err, setErr] = useState(null)
   const nav = useNavigate()
   const inputRef = useRef(null)
   const dlgRef = useRef(null)
@@ -51,8 +52,10 @@ export default function CommandPalette() {
     if (!open) return
     const prev = document.activeElement
     inputRef.current?.focus()
+    setErr(null)
     api.listCharacters().then((r) =>
-      setChars(r.characters || [])).catch(() => setChars([]))
+      setChars(r.characters || []))
+      .catch((e) => { setChars([]); setErr(errText(e, t)) })
     api.listCampaigns().then((r) => {
       const cs = r.campaigns || []
       setCamps(cs)
@@ -65,7 +68,7 @@ export default function CommandPalette() {
             ({ ...e, campaign_name: cp.name })))
           .catch(() => [])))
         .then((lists) => setEnts(lists.flat()))
-    }).catch(() => setCamps([]))
+    }).catch((e) => { setCamps([]); setErr(errText(e, t)) })
     return () => {
       if (prev && document.contains(prev)) prev.focus()
     }
@@ -181,7 +184,7 @@ export default function CommandPalette() {
         }))
         setResults((prev) => [
           ...prev.filter((p) => p.kind !== 'content'), ...content])
-      }).catch(() => {})
+      }).catch((e) => setErr(errText(e, t)))
     }, 200)
     return () => clearTimeout(tm)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -222,6 +225,9 @@ export default function CommandPalette() {
                    pick(results[idx])
                  }
                }} />
+        {err && (
+          <p className="error" role="alert"
+             style={{ margin: '.5rem 0 0' }}>{err}</p>)}
         <ul style={{ listStyle: 'none', margin: '.5rem 0 0',
                      padding: 0 }}>
           {results.map((r, i) => (

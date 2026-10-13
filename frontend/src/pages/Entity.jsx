@@ -315,7 +315,7 @@ function AddToCharacter({ entity }) {
                 setOpen(!open)
                 if (!open) api.listCharacters()
                   .then((r) => setChars(r.characters))
-                  .catch(() => setChars([]))
+                  .catch((e) => setErr(errText(e, t)))
               }}>＋ PJ</button>
       {open && (
         <div className="card" role="dialog"

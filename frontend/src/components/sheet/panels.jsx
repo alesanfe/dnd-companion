@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { api } from '../../api.js'
+import { api, errText } from '../../api.js'
 import { useT } from '../../i18n.jsx'
 import { COND_RULES } from './data.js'
 
@@ -32,14 +32,17 @@ export function CastPanel({ spellId, slots, pactSlots = {},
                              preparedIds }) {
   const { t, tf } = useT()
   const [sp, setSp] = useState(null)
+  const [spErr, setSpErr] = useState(null)
   const [lvl, setLvl] = useState(null)   // clave de opción: 'r3'|'p2'
   useEffect(() => {
     api.getEntity(spellId).then((e) => {
       setSp(e)
       setLvl(`r${e.data?.level ?? 0}`)
-    }).catch(() => {})
+    }).catch((e) => setSpErr(errText(e, t)))
   }, [spellId])
-  if (!sp) return null
+  if (!sp) return spErr
+    ? <p className="error" role="alert">{spErr}</p>
+    : null
   const sd = sp.data || {}
   const base = sd.level ?? 0
   const conc = !!(sd.concentration || sd.duration === 'concentration' ||

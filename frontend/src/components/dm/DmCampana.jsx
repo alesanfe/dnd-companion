@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { api } from '../../api.js'
+import { api, errText } from '../../api.js'
 import WikiText from '../WikiText.jsx'
 import { useDialogs } from '../ui/Dialogs.jsx'
 
@@ -18,6 +18,7 @@ export default function DmCampana({ c }) {
   const [editNotes, setEditNotes] = useState(null) // entidad en edición
   const [shareEnt, setShareEnt] = useState(null)   // entidad compartiendo
   const [notesDraft, setNotesDraft] = useState('')
+  const [err, setErr] = useState(null)
   const dlg = useDialogs()
   if (!campaign) return null
   const show = dmTab === 'campana'
@@ -34,6 +35,8 @@ export default function DmCampana({ c }) {
                 title={t('camp.vttHint')}
                 onClick={async () => {
           const data = await api.exportVtt(campaign.id)
+            .catch((e) => { setErr(errText(e, t)); return null })
+          if (!data) return
           const blob = new Blob([JSON.stringify(data, null, 2)],
                                 { type: 'application/json' })
           const a = document.createElement('a')
@@ -42,6 +45,7 @@ export default function DmCampana({ c }) {
           a.click()
         }}>{t('dm.exportvtt')}</button>
       </h2>
+      {err && <p className="error" role="alert">{err}</p>}
       <div className="row">
         <select value={entForm.kind}
                 onChange={(e) => setEntForm({ ...entForm, kind: e.target.value })}>
@@ -167,7 +171,7 @@ export default function DmCampana({ c }) {
                         aria-label={`${t('camp.present')} ${e.name}`}
                         onClick={() =>
                           api.present(campaign.id, e.id)
-                            .catch(() => {})}>📺</button>)}
+                            .catch((ev) => setErr(errText(ev, t)))}>📺</button>)}
               <button className="ghost" title={t('camp.editNotes')}
                       aria-label={tf('camp.notesAria',
                                      { name: e.name })}
@@ -187,7 +191,7 @@ export default function DmCampana({ c }) {
                   if (shareEnt !== e.id && !members)
                     api.listMembers(campaign.id)
                       .then((r) => setMembers(r.members))
-                      .catch(() => {})
+                      .catch((ev) => setErr(errText(ev, t)))
                 }}>👥</button>)}
             </>)}
         </div>
@@ -291,7 +295,7 @@ export default function DmCampana({ c }) {
                  e.target.open && members === null &&
                  api.listMembers(campaign.id)
                    .then((r) => setMembers(r.members))
-                   .catch(() => setMembers([]))}>
+                   .catch((ev) => setErr(errText(ev, t)))}>
         <summary className="muted" style={{ cursor: 'pointer' }}>
           {t('mem.title')} {members ? `(${members.length})` : ''}</summary>
         {(members || []).map((m) => (

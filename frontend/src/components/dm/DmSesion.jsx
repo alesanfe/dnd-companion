@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api } from '../../api.js'
+import { api, errText } from '../../api.js'
 import { opLabel } from '../../i18n.jsx'
 import { useDialogs } from '../ui/Dialogs.jsx'
 
@@ -21,6 +21,7 @@ export default function DmSesion({ c }) {
   const [busy, setBusy] = useState(false)
   const [loot, setLoot] = useState({ coin: 'gp', amount: '' })
   const [lootMsg, setLootMsg] = useState(null)
+  const [err, setErr] = useState(null)
   const dlg = useDialogs()
   useEffect(() => {
     if (!campaign || partyChars.length === 0) {
@@ -29,7 +30,7 @@ export default function DmSesion({ c }) {
     }
     api.pendingRolls(campaign.id, partyChars.map((p) => p.id))
       .then((r) => setPendingReqs(r.pending || []))
-      .catch(() => {})
+      .catch((e) => setErr(errText(e, t)))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaign?.id, rollFeed.length, partyChars.length])
   // campañas existentes — sin esto recargar /dm obligaba a crear una
@@ -43,11 +44,12 @@ export default function DmSesion({ c }) {
         setCamps(r.campaigns)
         setPickId(r.campaigns[0]?.id || '')
       })
-      .catch(() => setCamps([]))
+      .catch((e) => { setCamps([]); setErr(errText(e, t)) })
   }, [campaign, camps])
   return (<>
     <section className="card" hidden={!show}>
       <h2>{t('dm.campaign')}</h2>
+      {err && <p className="error" role="alert">{err}</p>}
       {!campaign ? (<>
         <form className="row" onSubmit={async (e) => {
           e.preventDefault()
@@ -297,7 +299,7 @@ export default function DmSesion({ c }) {
                     .then(() => api.pendingRolls(
                       campaign.id, partyChars.map((p) => p.id)))
                     .then((r) => setPendingReqs(r.pending || []))
-                    .catch(() => {})}>
+                    .catch((e) => setErr(errText(e, t)))}>
             {t('ses.request')}
           </button>
         </div>
@@ -307,12 +309,12 @@ export default function DmSesion({ c }) {
             <button className="ghost"
                     onClick={() => api.partyRest(campaign.id, 'short')
                       .then(() => setLootMsg(t('ses.restedShort')))
-                      .catch(() => {})}>
+                      .catch((e) => setErr(errText(e, t)))}>
               {t('ses.restShort')}</button>
             <button className="ghost"
                     onClick={() => api.partyRest(campaign.id, 'long')
                       .then(() => setLootMsg(t('ses.restedLong')))
-                      .catch(() => {})}>
+                      .catch((e) => setErr(errText(e, t)))}>
               {t('ses.restLong')}</button>
           </div>)}
         {/* reparto del botín — una op currency.earn por PJ */}
@@ -337,7 +339,7 @@ export default function DmSesion({ c }) {
                       .then((r) => setLootMsg(tf('ses.lootSplit', {
                         share: r.share, coin: loot.coin,
                         n: r.awarded })))
-                      .catch(() => {})}>
+                      .catch((e) => setErr(errText(e, t)))}>
               {t('ses.lootSplitBtn')}
             </button>
             {lootMsg && <span className="muted">{lootMsg}</span>}

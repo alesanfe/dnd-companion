@@ -45,7 +45,8 @@ export default function Search() {
   const [searching, setSearching] = useState(false)
 
   useEffect(() => {
-    api.contentSources().then((r) => setSources(r.sources)).catch(() => {})
+    api.contentSources().then((r) => setSources(r.sources))
+      .catch((e) => setErr(errText(e, t)))
   }, [])
   useEffect(() => {
     sessionStorage.setItem('dnd-search',

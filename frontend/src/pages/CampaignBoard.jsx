@@ -44,16 +44,16 @@ export default function CampaignBoard() {
         // "continuar campaña" del dashboard
         if (cp?.name) localStorage.setItem('dnd-last-campaign',
           JSON.stringify({ id, name: cp.name, at: Date.now() }))
-      }).catch(() => {})
+      }).catch((e) => setErr(errText(e, t)))
     api.listEntities(id, null, 'player')
       .then((r) => setEntities(r.entities))
       .catch((e) => setErr(errText(e, t)))
     api.listSessions(id)
       .then((r) => setSessions(r.sessions || []))
-      .catch(() => {})
+      .catch((e) => setErr(errText(e, t)))
     api.listRelationships(id, null, 'player')
       .then((r) => setRels(r.relationships || []))
-      .catch(() => {})
+      .catch((e) => setErr(errText(e, t)))
     api.listCharacters(id).then((r) => {
       setChars(r.characters)
       if (r.characters.length) {
@@ -62,7 +62,7 @@ export default function CampaignBoard() {
         api.pendingRolls(id, r.characters.map((c) => c.id))
           .then((x) => setPend(x.pending || [])).catch(() => {})
       }
-    }).catch(() => {})
+    }).catch((e) => setErr(errText(e, t)))
     // combate activo en vista de jugador (sin PG exactos)
     api.listCombats(id, 'active')
       .then((r) => r.combats?.length

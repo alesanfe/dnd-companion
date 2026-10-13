@@ -50,7 +50,8 @@ export default function CharacterList() {
   useEffect(() => {
     load()
     api.listCampaigns?.()
-      .then((r) => setCamps(r.campaigns || [])).catch(() => {})
+      .then((r) => setCamps(r.campaigns || []))
+      .catch((e) => setErr(errText(e, t)))
   }, [])
   const campName = (cid) =>
     camps.find((c) => c.id === cid)?.name || t('camp.name')

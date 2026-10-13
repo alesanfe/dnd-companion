@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useDialogs } from '../ui/Dialogs.jsx'
-import { api } from '../../api.js'
+import { api, errText } from '../../api.js'
 import { AB_LONG, SKILL_ES } from '../sheet/data.js'
 
 /** Pestaña Combate: calculadora de dificultad, nuevo encuentro,
@@ -21,6 +21,7 @@ export default function DmCombate({ c }) {
   const [suggestDiff, setSuggestDiff] = useState('medium')
   const [suggested, setSuggested] = useState(null)
   const [delegMembers, setDelegMembers] = useState(null)
+  const [err, setErr] = useState(null)
   const dlg = useDialogs()
   if (!campaign) return null
 
@@ -92,6 +93,7 @@ export default function DmCombate({ c }) {
   return (<>
     <section className="card" hidden={!show}>
       <h2>{t('dm.difficulty')}</h2>
+      {err && <p className="error" role="alert">{err}</p>}
       <div className="row">
         {/* labels visibles — rellenados, "3,3,3,3" no dice qué es */}
         <label className="muted">{t('com.levelsLbl')}
@@ -230,9 +232,10 @@ export default function DmCombate({ c }) {
                 auditable y deshacible */}
             <button className="ghost" title={t('com.xpTitle')}
                     onClick={async () => {
-                      const r = await api.awardXp(combat.id).catch(() => null)
-                      setXpMsg(r === null ? null
-                        : r.total_xp
+                      const r = await api.awardXp(combat.id)
+                        .catch((e) => { setErr(errText(e, t)); return null })
+                      if (r === null) return
+                      setXpMsg(r.total_xp
                           ? tf('com.xpAwarded', {
                               total: r.total_xp, share: r.per_player })
                           : t('com.xpNone'))
@@ -510,7 +513,7 @@ export default function DmCombate({ c }) {
                           if (delegMembers === null)
                             api.listMembers(campaign.id)
                               .then((r) => setDelegMembers(r.members))
-                              .catch(() => {})
+                              .catch((e) => setErr(errText(e, t)))
                         }}
                         onChange={(e) => cop('combatant.delegate', {
                           combatant_id: sel.id,

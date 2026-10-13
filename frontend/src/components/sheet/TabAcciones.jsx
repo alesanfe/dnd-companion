@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { Section } from './panels.jsx'
-import { api } from '../../api.js'
+import { api, errText } from '../../api.js'
 
 /** Pestaña Acciones: acciones agrupadas, efectos activos y dados. */
 export default function TabAcciones({ c }) {
@@ -11,16 +11,15 @@ export default function TabAcciones({ c }) {
 
   /* las acciones se cargan solas al abrir la pestaña la primera
      vez — patrón Fight Club: todo lo tirable a la vista */
-  const loadActions = async () => {
-    const r = await api.characterActions(id)
-    setActions(r.actions)
-  }
+  const loadActions = () => api.characterActions(id)
+    .then((r) => setActions(r.actions))
+    .catch((e) => setNotice(errText(e, t)))
   useEffect(() => {
     if (actions !== null || !show('acciones')) return
     let alive = true
     api.characterActions(id)
       .then((r) => { if (alive) setActions(r.actions) })
-      .catch(() => {})
+      .catch((e) => { if (alive) setNotice(errText(e, t)) })
     return () => { alive = false }
     // hud en deps: en modo focus, marcar 'acciones' en el HUD debe
     // disparar la carga — show() depende de hud, no de tab

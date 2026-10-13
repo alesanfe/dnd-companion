@@ -74,16 +74,17 @@ export default function CharacterSheet() {
   const [invTab, setInvTab] = useState('equipado')  // inventario interno
 
   const loadMeta = () => {
-    api.derivedAll(id).then(setDerived).catch(() => {})
+    api.derivedAll(id).then(setDerived)
+      .catch((e) => setErr(errText(e, t)))
     api.contentOptions('condition').then((r) =>
       setCondOptions((r.options || []).map((o) =>
-        o.id.split(':').pop()))).catch(() => {})
+        o.id.split(':').pop()))).catch((e) => setErr(errText(e, t)))
   }
   useEffect(() => { loadMeta() }, [id])
   useEffect(() => {
     if (!char?.campaign_id) return
     api.listEntities(char.campaign_id, 'shop', 'player')
-      .then((r) => setShops(r.entities)).catch(() => {})
+      .then((r) => setShops(r.entities)).catch((e) => setErr(errText(e, t)))
   }, [char?.campaign_id])
 
   const applyChar = (c) => {
@@ -95,7 +96,7 @@ export default function CharacterSheet() {
         .then((r) => {
           const p = (r.pending || [])[0]
           if (p) setRollRequest(p)
-        }).catch(() => {})
+        }).catch((e) => setErr(errText(e, t)))
     // retrato: prioriza el guardado en la ficha (sincronizable),
     // luego el local del navegador
     setPortrait(c.data?.narrative?.portrait_url ||

@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # v2.4.0 fallaba al pullear gcr.io/openssf/scorecard-action:v2.4.0
-      - uses: ossf/scorecard-action@v2.4.4
+      - uses: ossf/scorecard-action@v2.5.0
         with:
           results_file: results.sarif
           results_format: sarif

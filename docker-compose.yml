@@ -13,7 +13,14 @@ services:
       # orígenes extra para CORS (solo si el front se sirve desde
       # otro dominio/puerto; el proxy nginx del front es same-origin)
       - DND_CORS_ORIGINS=${DND_CORS_ORIGINS:-http://localhost:5173}
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    # --proxy-headers: nginx frontend ya manda X-Real-IP/X-Forwarded-For;
+    # sin él request.client.host = IP del frontend para TODOS → los
+    # buckets de throttle (login/register) colapsan a uno global y un
+    # atacante agota el cupo de todos (DoS de auth). '--forwarded-allow-ips=*'
+    # es seguro aquí porque el backend solo es alcanzable por la red
+    # interna del compose (expose, sin publish) — si algún día se
+    # publica el puerto, esto permite spoofear XFF: revisar entonces.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request;urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)"]

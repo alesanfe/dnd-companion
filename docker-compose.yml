@@ -22,6 +22,8 @@ services:
       retries: 3
       start_period: 10s
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     mem_limit: 192m
 
   frontend:
@@ -32,4 +34,6 @@ services:
       backend:
         condition: service_healthy
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     mem_limit: 64m
